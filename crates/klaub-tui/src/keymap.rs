@@ -467,10 +467,10 @@ mod tests {
 
     #[test]
     fn an_unknown_action_is_named_with_the_known_ones() {
-        let error = Keymap::from_overrides(&table(&[("togle_reviewed", "e")])).unwrap_err();
+        let error = Keymap::from_overrides(&table(&[("no_such_action", "e")])).unwrap_err();
         assert_eq!(
             error,
-            KeymapError::UnknownAction("togle_reviewed".to_owned())
+            KeymapError::UnknownAction("no_such_action".to_owned())
         );
         assert!(error.to_string().contains("toggle_reviewed"));
     }

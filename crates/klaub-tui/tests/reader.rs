@@ -289,9 +289,9 @@ fn the_help_lists_the_configured_key() {
 #[test]
 fn an_invalid_key_table_is_reported_before_the_reader_opens() {
     let mut keys = std::collections::BTreeMap::new();
-    keys.insert("toggle_reviewd".to_owned(), "e".to_owned());
+    keys.insert("no_such_action".to_owned(), "e".to_owned());
     let error = klaub_tui::Keymap::from_overrides(&keys).unwrap_err();
-    assert!(error.to_string().contains("toggle_reviewd"));
+    assert!(error.to_string().contains("no_such_action"));
 }
 
 #[test]
