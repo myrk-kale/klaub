@@ -148,6 +148,25 @@ fn entry_for<'a>(files: &'a [FileEntry], side: &SymbolRef) -> Option<&'a FileEnt
     index_for(files, side).map(|i| &files[i])
 }
 
+/// The symbol a reference names as a [`SymbolView`], looked up like [`symbol_of_ref`].
+pub(crate) fn view_of_ref<'a>(
+    files: &'a [FileEntry],
+    side: &SymbolRef,
+    after: bool,
+) -> Option<crate::contract::SymbolView<'a>> {
+    let entry = entry_for(files, side)?;
+    let parsed = if after {
+        entry.analysis.after.as_deref()
+    } else {
+        entry.analysis.before.as_deref()
+    }?;
+    parsed.symbols.get(side.index)?;
+    Some(crate::contract::SymbolView {
+        file: parsed,
+        index: side.index,
+    })
+}
+
 /// The parsed symbol a reference names, looked up in the file the reference points into and not in
 /// the file the change is filed under.
 pub(crate) fn symbol_of_ref<'a>(
@@ -245,6 +264,18 @@ struct Task<'a> {
 /// Builds the analysis of one snapshot.
 pub fn analyze(ports: &Ports, request: &SnapshotRequest, config: &Config) -> Result<Analysis> {
     let snapshot = ports.snapshots.capture(request)?;
+    analyze_snapshot(ports, snapshot, config)
+}
+
+/// Analyses a snapshot that was already captured.
+///
+/// This is how a review is recomputed under different settings (a silenced rule) without taking a
+/// new snapshot: the worktree is not read again, so the content under review cannot move.
+pub(crate) fn analyze_snapshot(
+    ports: &Ports,
+    snapshot: Snapshot,
+    config: &Config,
+) -> Result<Analysis> {
     let parsing = Parsing {
         ports,
         worktree: snapshot.worktree.id.clone(),

@@ -13,6 +13,7 @@
 
 mod actions;
 mod app;
+mod keymap;
 mod labels;
 mod terminal;
 mod theme;
@@ -24,9 +25,10 @@ mod widgets;
 
 pub use app::{
     App, CodeState, Confirm, ConfirmAction, DELIVERY_OPTIONS, Depth, Editor, EditorPurpose,
-    Filters, FinishStage, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay, StatusKind,
-    TreeKind, TreeRow,
+    Filters, FinishStage, FlowLine, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay,
+    StatusKind, TreeKind, TreeRow,
 };
+pub use keymap::{Keymap, KeymapError};
 pub use terminal::run;
 pub use theme::Theme;
 pub use ui::draw;

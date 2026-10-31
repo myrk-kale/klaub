@@ -115,6 +115,39 @@ pub struct ReviewSession {
     flow: FlowView,
     drift: Drift,
     reports: Reports,
+    /// `[rules] disabled` as configured, before the rules this review silenced were added.
+    base_disabled: Vec<String>,
+}
+
+/// `config` with the rules a review silenced added to the ones the configuration disables.
+fn with_muted(config: &Config, base_disabled: &[String], muted: &[String]) -> Config {
+    let mut effective = config.clone();
+    let mut disabled: Vec<String> = base_disabled.to_vec();
+    disabled.extend(muted.iter().cloned());
+    disabled.sort();
+    disabled.dedup();
+    effective.rules.disabled = disabled;
+    effective
+}
+
+/// How a review ended, for `klaub review --wait`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewOutcome {
+    /// The review id.
+    pub review_id: String,
+    /// Draft, finished, prepared or submitted.
+    pub status: klaub_core::review::ReviewStatus,
+    /// How many comments the review holds.
+    pub comments: usize,
+    /// The review file, relative to the worktree.
+    pub file: String,
+}
+
+impl ReviewOutcome {
+    /// The human finished the review (feedback exists), as opposed to closing a draft.
+    pub fn finished(&self) -> bool {
+        self.status != klaub_core::review::ReviewStatus::Draft
+    }
 }
 
 fn target(
@@ -239,6 +272,19 @@ impl ReviewSession {
             review.brief = parse_brief(&text)?;
         }
 
+        let base_disabled = config.rules.disabled.clone();
+        let analysis = if review.muted_rules.is_empty() {
+            analysis
+        } else {
+            // The rules this review silenced apply from the first screen. The snapshot is the one
+            // already captured, so nothing is read from the worktree again.
+            let effective = with_muted(config, &base_disabled, &review.muted_rules);
+            Arc::new(analysis::analyze_snapshot(
+                &ports,
+                analysis.snapshot.clone(),
+                &effective,
+            )?)
+        };
         let flow = Self::read_flow(&ports, &analysis)?;
         let reports = Reports::from_analysis(&analysis);
         let mut session = Self {
@@ -249,10 +295,78 @@ impl ReviewSession {
             flow,
             drift: Drift::Unchanged,
             reports,
+            base_disabled,
         };
         session.sync_flow_ref();
         session.save()?;
         Ok(session)
+    }
+
+    /// The configuration in force: the configured one plus the rules this review silenced.
+    fn effective_config(&self) -> Config {
+        with_muted(
+            &self.analysis.config,
+            &self.base_disabled,
+            &self.review.muted_rules,
+        )
+    }
+
+    /// Rule ids this review silenced as false positives.
+    pub fn muted_rules(&self) -> &[String] {
+        &self.review.muted_rules
+    }
+
+    /// Silences a rule for this review and recomputes the queue on the same snapshot.
+    ///
+    /// The findings of that rule disappear and the scores that counted them drop. The change under
+    /// review does not move: no new snapshot is captured. The choice is saved with the review and
+    /// carried into the next round. Only a rule that produced a finding in this review can be
+    /// silenced, so a typo cannot hide a rule nobody has seen.
+    ///
+    /// # Errors
+    ///
+    /// Fails when no finding of the current queue has this rule id, or when saving fails.
+    pub fn mute_rule(&mut self, rule_id: &str) -> Result<()> {
+        if self.review.muted_rules.iter().any(|r| r == rule_id) {
+            return Ok(());
+        }
+        let known = self
+            .analysis
+            .queue
+            .iter()
+            .flat_map(|item| item.findings.iter())
+            .any(|finding| finding.rule_id == rule_id);
+        if !known {
+            return Err(Error::not_found("rule", rule_id));
+        }
+        self.review.muted_rules.push(rule_id.to_owned());
+        self.review.muted_rules.sort();
+        self.recompute_queue()
+    }
+
+    /// Brings back every rule this review silenced.
+    ///
+    /// # Errors
+    ///
+    /// Fails when saving fails.
+    pub fn unmute_all_rules(&mut self) -> Result<()> {
+        if self.review.muted_rules.is_empty() {
+            return Ok(());
+        }
+        self.review.muted_rules.clear();
+        self.recompute_queue()
+    }
+
+    fn recompute_queue(&mut self) -> Result<()> {
+        let effective = self.effective_config();
+        let fresh = Arc::new(analysis::analyze_snapshot(
+            &self.ports,
+            self.analysis.snapshot.clone(),
+            &effective,
+        )?);
+        self.review.updated_at = self.now();
+        self.analysis = fresh;
+        self.save()
     }
 
     /// The immutable analysis being reviewed.
@@ -596,11 +710,8 @@ impl ReviewSession {
     /// Takes a new snapshot, relocates the anchors of existing comments (uncertain ones become
     /// `stale`), and keeps "reviewed" marks only for units whose content did not change.
     pub fn refresh(&mut self) -> Result<()> {
-        let fresh = Arc::new(analysis::analyze(
-            &self.ports,
-            &self.request,
-            &self.analysis.config,
-        )?);
+        let effective = self.effective_config();
+        let fresh = Arc::new(analysis::analyze(&self.ports, &self.request, &effective)?);
         let unchanged = |unit: &UnitId| -> bool {
             let before = Self::fingerprint(&self.analysis, unit);
             before.is_some() && before == Self::fingerprint(&fresh, unit)
@@ -671,11 +782,11 @@ impl ReviewSession {
         let before = change
             .before
             .as_ref()
-            .and_then(|r| crate::analysis::symbol_of_ref(&self.analysis.files, r, false));
+            .and_then(|r| crate::analysis::view_of_ref(&self.analysis.files, r, false));
         let after = change
             .after
             .as_ref()
-            .and_then(|r| crate::analysis::symbol_of_ref(&self.analysis.files, r, true));
+            .and_then(|r| crate::analysis::view_of_ref(&self.analysis.files, r, true));
         let impact = change
             .after
             .as_ref()
@@ -688,6 +799,22 @@ impl ReviewSession {
             after,
             impact.as_ref(),
         ))
+    }
+
+    /// What changed in a non-code file (a migration, a dependency manifest, a settings file).
+    ///
+    /// `None` when `unit` is a symbol or the file is not one of those kinds.
+    pub fn file_contract(&self, unit: &UnitId) -> Option<crate::file_contract::FileContract> {
+        let info = self.analysis.units.get(unit)?;
+        if info.change_index.is_some() {
+            return None;
+        }
+        let change = self.analysis.snapshot.files.get(info.file_index)?;
+        crate::file_contract::inspect_file(
+            change.path.as_str(),
+            change.before_text().map(AsRef::as_ref),
+            change.after_text().map(AsRef::as_ref),
+        )
     }
 
     /// The changed unit that holds `key`, when the symbol is part of the change.
@@ -982,6 +1109,16 @@ impl ReviewSession {
                 linked.len().saturating_sub(passed + failed),
             )),
             flow: self.review.flow.clone(),
+        }
+    }
+
+    /// How the review stands, for a caller that waited for the human to finish.
+    pub fn outcome(&self) -> ReviewOutcome {
+        ReviewOutcome {
+            review_id: self.review.review_id.to_string(),
+            status: self.review.status,
+            comments: self.review.comments.len(),
+            file: self.review_file(),
         }
     }
 

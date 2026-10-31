@@ -817,6 +817,88 @@ fn ids_and_paths_in_the_queue_are_stable_between_runs() {
     assert!(provider.discover(repo.path()).is_ok());
 }
 
+#[test]
+fn the_outcome_tells_a_closed_draft_from_a_finished_review() {
+    let repo = project();
+    edit(&repo);
+    let mut session = open(&repo, &Config::default(), &OpenOptions::default());
+
+    let draft = session.outcome();
+    assert!(!draft.finished(), "{draft:?}");
+    assert_eq!(draft.comments, 0);
+    assert!(draft.file.contains(".klaub/reviews/"), "{}", draft.file);
+
+    let find = unit(&session, "find");
+    session
+        .add_comment(&find, Version::After, None, "parameterise this", None)
+        .unwrap();
+    assert_eq!(session.outcome().comments, 1);
+    assert!(!session.outcome().finished(), "a comment alone is a draft");
+
+    session.finish().unwrap();
+    let finished = session.outcome();
+    assert!(finished.finished(), "{finished:?}");
+    assert_eq!(finished.review_id, draft.review_id);
+    assert_eq!(finished.file, draft.file);
+}
+
+/// A repository whose one change adds an `except` block that only discards the error.
+fn swallowing_repo() -> TempRepo {
+    let repo = TempRepo::new();
+    repo.write("service.py", "def handle(value):\n    return int(value)\n");
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "def handle(value):\n    try:\n        return int(value)\n    except Exception:\n        pass\n",
+    );
+    repo
+}
+
+fn has_rule(session: &ReviewSession, rule: &str) -> bool {
+    session
+        .analysis()
+        .queue
+        .iter()
+        .flat_map(|item| item.findings.iter())
+        .any(|finding| finding.rule_id == rule)
+}
+
+#[test]
+fn a_silenced_rule_leaves_the_queue_but_not_the_snapshot_and_survives_reopening() {
+    let repo = swallowing_repo();
+    let config = Config::default();
+    let mut session = open(&repo, &config, &OpenOptions::default());
+    let snapshot = session.analysis().snapshot.id.clone();
+    let unit_id = unit(&session, "handle");
+    let score_with = session.analysis().item(&unit_id).unwrap().score.total();
+    assert!(has_rule(&session, "risk.swallowed_error"));
+
+    session.mute_rule("risk.swallowed_error").unwrap();
+
+    assert!(!has_rule(&session, "risk.swallowed_error"));
+    assert_eq!(
+        session.analysis().snapshot.id,
+        snapshot,
+        "silencing a rule must not take a new snapshot"
+    );
+    assert!(session.analysis().item(&unit_id).unwrap().score.total() < score_with);
+    assert_eq!(session.muted_rules(), ["risk.swallowed_error"]);
+
+    // A rule nobody has seen cannot be silenced by mistake.
+    assert!(session.mute_rule("risk.no_such_rule").is_err());
+    assert_eq!(session.muted_rules(), ["risk.swallowed_error"]);
+
+    // The choice is part of the saved review.
+    drop(session);
+    let mut reopened = open(&repo, &config, &OpenOptions::default());
+    assert_eq!(reopened.muted_rules(), ["risk.swallowed_error"]);
+    assert!(!has_rule(&reopened, "risk.swallowed_error"));
+
+    reopened.unmute_all_rules().unwrap();
+    assert!(has_rule(&reopened, "risk.swallowed_error"));
+    assert!(reopened.muted_rules().is_empty());
+}
+
 // ---- a symbol that moves to another file -------------------------------------------------------
 
 /// `compute` leaves `old.py` and appears, unchanged, in `new.py`.

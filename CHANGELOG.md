@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Contract inspector (`i`).** The declaration of a callable is split into parameters and return type for Python, JavaScript/TypeScript, Rust and Go. Decorators, the routes a symbol serves, the exceptions its body raises or throws (and the error a Rust `Result` or a Go `error` declares), observable effects (risk markers and I/O-looking calls) and, for a type, its public members and what kind of data type it looks like are shown as `+`/`-` lists before and after. The entrypoints that can reach the symbol are named with their certainty. A declaration it cannot read is reported as unknown.
+- **Contracts for files without symbols.** The same key opens a contract for migrations (SQL, Alembic, Django, Rails), dependency manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, `requirements*.txt`, `go.mod`) and settings files (JSON, TOML, YAML, `.env`): what was added, removed or changed. Secret values and every `.env` value are never shown. Anything it cannot read falls back to the textual diff and says so.
+- `klaub-parse` records the exceptions a body raises and the I/O-looking calls it makes (parser version 2, so cached parses are refreshed).
+- **Configurable keys.** `[keys]` moves any global reader action to another single character. The table is validated as a whole (unknown action, not one printable character, reserved key, two actions on one key) and the reader refuses to open with an invalid one. The help and the palette show the configured keys. See `docs/configuration.md`, which also documents every other configuration section.
+- **A first-review notice.** The first review of a worktree with no `.klaub/` explains that the folder is local data, that Klaub does not add it to `.gitignore` or `.git/info/exclude`, never commits it, and always leaves it out of the changes it reviews.
+- **False positives.** A finding can be silenced for one review from "Why this priority" (`w`): press its number, confirm, and its rule is silenced. The queue is recomputed on the same snapshot (the worktree is not read again), the choice is saved in the review and carried into the next round, and "Bring back silenced rules" in the palette undoes it. Only a rule that produced a finding in the review can be silenced.
+- **Flow as a tree.** The Flow view indents branches under the step they leave, marks a step reached twice as `↺ shown above`, shows how each row was reached (`calls ◐`), folds and unfolds branches with `←`, `→` and `Space`, and shows a `path:` of breadcrumbs from the first step to the selected one. `Enter` opens the selected step's real symbol whatever is folded.
+- **History.** `<` and `>` walk back and forward through the units visited, as in a browser. A new move forgets what was ahead; the history holds the last 64 units.
+- **`klaub review --wait`** stays until the reader is closed and reports how the review ended: exit 0 when finished, 3 when closed as a draft, with the review export on standard output under `--format json` and nothing else there.
+- **`klaub reviews export --format sarif`**: a SARIF 2.1.0 log, one result per comment. The level is a hint about attention (P0 `error`, P1 `warning`, the rest `note`), not a defect classification; the exact priority travels in `properties`.
+- **`klaub doctor`** also proves every grammar parses a sample, inspects the parse cache read-only (a damaged one is reported and left alone), says which clipboard program Copy would use, notes an SSH session and what it means for the clipboard, and counts saved crash reports. See `docs/ssh.md`.
+- **Local crash reports.** If Klaub panics it saves a short report (version, platform, subcommand name, a bounded panic message and the place in Klaub's source, with the home directory as `~`) under its state directory. `klaub crashes list` and `klaub crashes show` read them. Nothing is sent anywhere.
+- Latency benchmarks for the specification's targets: `cargo bench -p klaub-app --bench latency` and `cargo bench -p klaub-tui --bench ui`, with one recorded run and its caveats in `docs/benchmarks.md`.
+- `fixtures/` with flow documents (one current, one stale, one with a missing symbol, four that must be refused) and JUnit and Coverage.py reports, each read by a test; `docs/acceptance.md` (what CI checks and what needs a person with a real agent) and `docs/adding-a-language.md`.
+
+### Changed
+
+- `o` now does what the specification says (§8.2): it opens the current unit in its whole file and stays there, where `S` still toggles between the symbol and the file. The contract inspector, which had taken `o`, is now `i`.
+- The confirmation before preparing text in the agent shows the process running in the pane and warns when it is a shell, so the text is not pasted onto a shell prompt by surprise.
+- The `Security` workflow runs on every pull request instead of only those that touch a manifest, so its checks can be required on `main`.
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

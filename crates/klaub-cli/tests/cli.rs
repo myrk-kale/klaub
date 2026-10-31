@@ -433,3 +433,143 @@ fn the_reviewer_needs_a_known_session() {
         .failure()
         .stderr(predicate::str::contains("cannot load session"));
 }
+
+// ---- diagnostics -----------------------------------------------------------------------------------
+
+fn doctor_checks(sandbox: &Sandbox, configure: impl FnOnce(&mut Command)) -> Vec<Value> {
+    let mut command = sandbox.klaub();
+    command.args(["doctor", "--format", "json"]);
+    configure(&mut command);
+    let output = command.output().unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    value["checks"].as_array().unwrap().clone()
+}
+
+fn check_named<'a>(checks: &'a [Value], name: &str) -> Option<&'a Value> {
+    checks.iter().find(|c| c["name"] == name)
+}
+
+#[test]
+fn doctor_proves_every_grammar_parses() {
+    let sandbox = Sandbox::new();
+    let checks = doctor_checks(&sandbox, |_| {});
+    let grammars = check_named(&checks, "grammars").expect("a grammars check");
+    assert_eq!(grammars["status"], "ok", "{grammars}");
+    assert!(grammars["detail"].as_str().unwrap().contains("6 languages"));
+}
+
+#[test]
+fn doctor_reports_a_missing_cache_as_normal_and_a_damaged_one_without_repairing_it() {
+    let sandbox = Sandbox::new();
+    let checks = doctor_checks(&sandbox, |_| {});
+    let cache = check_named(&checks, "cache").unwrap();
+    assert_eq!(cache["status"], "ok");
+    assert!(cache["detail"].as_str().unwrap().contains("no cache yet"));
+    assert!(
+        !sandbox.root.path().join("cache/analysis.sqlite3").exists(),
+        "asking must not create the cache"
+    );
+
+    std::fs::create_dir_all(sandbox.root.path().join("cache")).unwrap();
+    let damaged = sandbox.root.path().join("cache/analysis.sqlite3");
+    let bytes = b"not a database ".repeat(200);
+    std::fs::write(&damaged, &bytes).unwrap();
+    let checks = doctor_checks(&sandbox, |_| {});
+    let cache = check_named(&checks, "cache").unwrap();
+    assert_eq!(cache["status"], "warn", "{cache}");
+    assert_eq!(
+        std::fs::read(&damaged).unwrap(),
+        bytes,
+        "doctor must not repair"
+    );
+}
+
+#[test]
+fn over_ssh_doctor_says_so_and_explains_the_clipboard() {
+    let sandbox = Sandbox::new();
+    let local = doctor_checks(&sandbox, |c| {
+        c.env_remove("SSH_CONNECTION")
+            .env_remove("SSH_TTY")
+            .env_remove("SSH_CLIENT");
+    });
+    assert!(check_named(&local, "ssh").is_none());
+
+    let remote = doctor_checks(&sandbox, |c| {
+        c.env("SSH_CONNECTION", "203.0.113.5 50000 198.51.100.7 22")
+            .env("TERM", "xterm-256color")
+            .env_remove("TMUX");
+    });
+    let ssh = check_named(&remote, "ssh").expect("an ssh check over SSH");
+    assert_eq!(ssh["status"], "warn");
+    let detail = ssh["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("best effort") && detail.contains("Show file"),
+        "{detail}"
+    );
+    let terminal = check_named(&remote, "terminal").unwrap();
+    assert_eq!(terminal["status"], "ok", "a normal TERM over SSH is fine");
+}
+
+#[test]
+fn a_dumb_terminal_is_a_warning_not_a_failure() {
+    let sandbox = Sandbox::new();
+    let checks = doctor_checks(&sandbox, |c| {
+        c.env("TERM", "dumb");
+    });
+    assert_eq!(check_named(&checks, "terminal").unwrap()["status"], "warn");
+}
+
+#[test]
+fn crash_reports_are_listed_and_shown_but_only_from_the_listing() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .klaub()
+        .args(["crashes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No crash reports."));
+    sandbox
+        .klaub()
+        .args(["crashes", "show"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no crash reports"));
+
+    let dir = sandbox.root.path().join("state/crashes");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("crash-1800000000-1.txt"),
+        "klaub crash report\nmessage:  boom\n",
+    )
+    .unwrap();
+    std::fs::write(sandbox.root.path().join("state/private.txt"), "private").unwrap();
+
+    sandbox
+        .klaub()
+        .args(["crashes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("crash-1800000000-1.txt"));
+    sandbox
+        .klaub()
+        .args(["crashes", "show"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("message:  boom"))
+        .stderr(predicate::str::contains("before you share"));
+    sandbox
+        .klaub()
+        .args(["crashes", "show", "../private.txt"])
+        .assert()
+        .failure();
+
+    let checks = doctor_checks(&sandbox, |_| {});
+    let crashes = check_named(&checks, "crashes").unwrap();
+    assert_eq!(crashes["status"], "warn");
+    assert!(
+        crashes["detail"]
+            .as_str()
+            .unwrap()
+            .contains("Nothing was sent")
+    );
+}

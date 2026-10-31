@@ -496,3 +496,47 @@ fn highlighting_covers_keywords_strings_comments_and_numbers() {
         "spans must not overlap"
     );
 }
+
+#[test]
+fn explicit_raises_and_io_calls_are_recorded_on_the_symbol_that_makes_them() {
+    let file = parse(
+        r#"
+import requests
+
+def fetch(url, retries):
+    if not url:
+        raise ValueError("url is required")
+    if retries < 0:
+        raise errors.BadRetries
+    try:
+        return requests.get(url)
+    except Exception as exc:
+        raise exc
+
+def quiet():
+    return 1
+
+def outer():
+    def inner():
+        raise KeyError("inner")
+    return inner
+"#,
+    );
+    let fetch = symbol(&file, "fetch");
+    assert_eq!(
+        fetch.features.raises,
+        vec!["ValueError", "errors.BadRetries", "exc"],
+        "a raise is recorded by the name it writes, once, in source order"
+    );
+    assert_eq!(fetch.features.io_calls, vec!["requests.get"]);
+
+    assert!(symbol(&file, "quiet").features.raises.is_empty());
+    assert!(
+        symbol(&file, "outer").features.raises.is_empty(),
+        "a nested function's raise belongs to the nested function"
+    );
+    assert_eq!(
+        symbol(&file, "outer.inner").features.raises,
+        vec!["KeyError"]
+    );
+}

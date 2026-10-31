@@ -48,6 +48,14 @@ pub(crate) enum Action {
     Explain,
     /// Show what changed about the current symbol's contract.
     InspectContract,
+    /// Bring back the rules this review silenced.
+    RestoreRules,
+    /// Open the current unit in the whole file.
+    OpenWholeFile,
+    /// Go back to the unit visited before this one.
+    HistoryBack,
+    /// Go forward again after going back.
+    HistoryForward,
     /// Run the associated tests (after confirmation).
     RunTests,
     /// Re-read test reports.
@@ -189,9 +197,29 @@ pub(crate) const ENTRIES: &[Entry] = &[
         key: "w",
     },
     Entry {
+        action: Action::RestoreRules,
+        name: "Bring back silenced rules",
+        key: "",
+    },
+    Entry {
         action: Action::InspectContract,
         name: "Inspect the contract",
+        key: "i",
+    },
+    Entry {
+        action: Action::OpenWholeFile,
+        name: "Open the unit in the whole file",
         key: "o",
+    },
+    Entry {
+        action: Action::HistoryBack,
+        name: "Back to the previous unit",
+        key: "<",
+    },
+    Entry {
+        action: Action::HistoryForward,
+        name: "Forward to the next unit in the history",
+        key: ">",
     },
     Entry {
         action: Action::ToggleVersion,
@@ -350,6 +378,33 @@ pub(crate) fn perform(app: &mut App, action: Action) {
             Some(unit) => app.overlay = Some(Overlay::Contract(unit)),
             None => app.say(StatusKind::Info, "Select a unit first."),
         },
+        Action::RestoreRules => {
+            let muted = app.session.muted_rules().to_vec();
+            if muted.is_empty() {
+                app.say(StatusKind::Info, "No rule is silenced in this review.");
+            } else {
+                app.overlay = Some(Overlay::Confirm(Confirm {
+                    title: "Bring back the silenced rules?".to_owned(),
+                    lines: vec![
+                        format!("silenced here: {}", muted.join(", ")),
+                        "Their findings return and the queue is recomputed on this snapshot."
+                            .to_owned(),
+                    ],
+                    action: ConfirmAction::RestoreRules,
+                }));
+            }
+        }
+        Action::OpenWholeFile => open_whole_file(app),
+        Action::HistoryBack => {
+            if !app.history_back() {
+                app.say(StatusKind::Info, "No earlier unit in the history.");
+            }
+        }
+        Action::HistoryForward => {
+            if !app.history_forward() {
+                app.say(StatusKind::Info, "No later unit in the history.");
+            }
+        }
         Action::RunTests => ask_run_tests(app),
         Action::ReloadReports => {
             app.session.reload_reports();
@@ -665,6 +720,23 @@ fn toggle_version(app: &mut App) {
     app.rebuild_code();
 }
 
+/// `o`: the current unit, read inside its whole file. Unlike `S` it does not toggle: pressing it
+/// twice stays in the file.
+fn open_whole_file(app: &mut App) {
+    let Some(unit) = app.unit.clone() else {
+        app.say(StatusKind::Info, "Select a unit first.");
+        return;
+    };
+    if app.mode != Mode::Code || app.code.view.is_none() {
+        app.open_unit(&unit, None);
+    }
+    if app.code.view.is_none() || app.code.detached.is_some() {
+        return;
+    }
+    app.code.scope = Some(klaub_app::CodeScope::File);
+    app.rebuild_code();
+}
+
 fn toggle_code_scope(app: &mut App) {
     if app.code.view.is_none() || app.code.detached.is_some() {
         return;
@@ -762,28 +834,50 @@ fn ask_flow_request(app: &mut App) {
 }
 
 /// The confirmation shown before anything is pasted into the agent.
+/// Whether a process name is an interactive shell. A login shell is shown with a leading `-`.
+fn is_shell(command: &str) -> bool {
+    const SHELLS: &[&str] = &[
+        "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "pwsh", "elvish", "xonsh",
+    ];
+    let name = command.rsplit('/').next().unwrap_or(command);
+    SHELLS.contains(&name.trim_start_matches('-'))
+}
+
 pub(crate) fn prepare_confirm(
     app: &App,
     title: &str,
     text: &str,
     action: ConfirmAction,
 ) -> Confirm {
+    let mut foreground = None;
     let destination = match &app.agent {
         None => "none — Klaub is not managing an agent here; use Copy instead".to_owned(),
         Some(channel) => match channel.target() {
-            Ok(Some(target)) => sanitize_single_line(&target.description),
+            Ok(Some(target)) => {
+                foreground = Some(sanitize_single_line(&target.command));
+                sanitize_single_line(&target.description)
+            }
             Ok(None) => "none — no agent pane was found; use Copy instead".to_owned(),
             Err(error) => format!("unverified — {error}"),
         },
     };
+    let mut lines = vec![format!("destination: {destination}")];
+    if let Some(command) = &foreground {
+        lines.push(format!("running there: {command}"));
+        if is_shell(command) {
+            lines.push(format!(
+                "⚠ {command} is a shell. If your agent is not the one reading the keyboard, the text lands on a shell prompt."
+            ));
+        }
+    }
+    lines.extend([
+        "text to paste (Klaub never presses Enter; you decide when to send it):".to_owned(),
+        format!("  {}", sanitize_single_line(text)),
+        "If the agent's input already has text, the paste may be appended to it.".to_owned(),
+    ]);
     Confirm {
         title: title.to_owned(),
-        lines: vec![
-            format!("destination: {destination}"),
-            "text to paste (Klaub never presses Enter; you decide when to send it):".to_owned(),
-            format!("  {}", sanitize_single_line(text)),
-            "If the agent's input already has text, the paste may be appended to it.".to_owned(),
-        ],
+        lines,
         action,
     }
 }
@@ -813,5 +907,20 @@ pub(crate) fn followup_decision(key: char) -> Option<FollowupStatus> {
         'u' => Some(FollowupStatus::Unresolved),
         'X' => Some(FollowupStatus::Regression),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_shell;
+
+    #[test]
+    fn shells_are_recognised_by_name_even_as_login_shells_or_paths() {
+        for shell in ["bash", "-zsh", "/bin/sh", "fish", "pwsh"] {
+            assert!(is_shell(shell), "{shell}");
+        }
+        for other in ["codex", "node", "claude", "python3", "bashful", ""] {
+            assert!(!is_shell(other), "{other}");
+        }
     }
 }

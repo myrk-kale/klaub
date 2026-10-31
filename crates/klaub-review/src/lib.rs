@@ -24,7 +24,7 @@ use klaub_core::timestamp::Timestamp;
 use klaub_core::{Error, Result};
 
 pub use anchor::{Candidate, Relocation, build_anchor_fingerprint, relocate};
-pub use export::{ExportContext, export_json, export_markdown};
+pub use export::{ExportContext, export_json, export_markdown, export_sarif};
 pub use feedback::feedback_prompt;
 
 /// Longest accepted comment text, in characters.
@@ -72,6 +72,7 @@ pub fn new_review(target: &ReviewTarget, hex: &str, now: Timestamp) -> Review {
         comments: Vec::new(),
         reviewed_units: Vec::new(),
         last_unit: None,
+        muted_rules: Vec::new(),
         feedback: None,
         flow: None,
     }
@@ -311,6 +312,7 @@ pub fn next_round(previous: &Review, hex: &str, now: Timestamp, target: &ReviewT
     let mut review = new_review(target, hex, now);
     review.previous_review_id = Some(previous.review_id.clone());
     review.brief = previous.brief.clone();
+    review.muted_rules.clone_from(&previous.muted_rules);
     review.comments = previous
         .comments
         .iter()

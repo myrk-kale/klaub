@@ -175,10 +175,10 @@ fn contract_overlay_shows_the_change() {
         "Enter should open the unit in Code"
     );
 
-    press(&mut app, 'o');
+    press(&mut app, 'i');
     assert!(
         matches!(app.overlay, Some(Overlay::Contract(_))),
-        "o in Code should open the contract overlay"
+        "i in Code should open the contract overlay"
     );
     let shown = screen(&mut app, 100, 30);
     assert!(
@@ -192,6 +192,275 @@ fn contract_overlay_shows_the_change() {
 
     press(&mut app, 'x');
     assert!(app.overlay.is_none(), "any key should close the overlay");
+}
+
+/// Four functions in four files, a flow that branches at `start`, and the flow file on disk.
+fn flow_app() -> (TempRepo, App) {
+    let repo = TempRepo::new();
+    for (file, name, body) in [
+        ("a.py", "start", "mid()"),
+        ("b.py", "mid", "finish()"),
+        ("c.py", "finish", "1"),
+        ("d.py", "side", "2"),
+    ] {
+        repo.write(file, &format!("def {name}():\n    return {body}\n"));
+    }
+    repo.commit_all("initial");
+    for (file, name, body) in [
+        ("a.py", "start", "mid() + 1"),
+        ("b.py", "mid", "finish() + 1"),
+        ("c.py", "finish", "2"),
+        ("d.py", "side", "3"),
+    ] {
+        repo.write(file, &format!("def {name}():\n    return {body}\n"));
+    }
+    let mut session = open(&repo);
+    let snapshot = session.analysis().snapshot.clone();
+    let step = |id: &str, file: &str, symbol: &str| {
+        serde_json::json!({"id": id, "file_path": file, "symbol": symbol, "note": "n",
+            "changed": true, "confidence": "resolved"})
+    };
+    let edge = |from: &str, to: &str| serde_json::json!({"from": from, "to": to, "kind": "calls", "confidence": "resolved"});
+    let document = serde_json::json!({
+        "schema_version": 1, "snapshot_id": snapshot.id, "base_oid": snapshot.base_oid,
+        "worktree_id": snapshot.worktree.id, "title": "Branching flow", "summary": "s",
+        "steps": [step("start", "a.py", "start"), step("mid", "b.py", "mid"),
+                  step("finish", "c.py", "finish"), step("side", "d.py", "side")],
+        "edges": [edge("start", "mid"), edge("mid", "finish"), edge("start", "side")]
+    });
+    let path = repo.path().join(session.flow().expected_path.as_str());
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, document.to_string()).unwrap();
+    session.reload_flow().unwrap();
+    (repo, reader(session))
+}
+
+#[test]
+fn the_flow_is_an_indented_tree_with_a_breadcrumb_path() {
+    let (_repo, mut app) = flow_app();
+    press(&mut app, '0');
+    let rows = app.flow_rows();
+    assert_eq!(
+        rows.iter()
+            .map(|r| (r.row.step, r.row.depth))
+            .collect::<Vec<_>>(),
+        vec![(0, 0), (1, 1), (2, 2), (3, 1)],
+        "depth-first, branches in document order"
+    );
+
+    press(&mut app, 'j');
+    press(&mut app, 'j');
+    let shown = screen(&mut app, 110, 30);
+    assert!(
+        shown.contains("path: start › mid › finish"),
+        "the breadcrumb names every ancestor of the selected step:\n{shown}"
+    );
+}
+
+#[test]
+fn folding_hides_the_branches_and_keeps_the_step() {
+    let (_repo, mut app) = flow_app();
+    press(&mut app, '0');
+    handle_key(&mut app, key(KeyCode::Left));
+    assert_eq!(app.flow_rows().len(), 1, "start folded: only start remains");
+    assert!(screen(&mut app, 110, 30).contains('▸'));
+
+    handle_key(&mut app, key(KeyCode::Right));
+    assert_eq!(app.flow_rows().len(), 4);
+    handle_key(&mut app, key(KeyCode::Char(' ')));
+    assert_eq!(app.flow_rows().len(), 1, "space toggles");
+}
+
+#[test]
+fn enter_opens_the_step_that_is_selected_even_after_folding() {
+    let (_repo, mut app) = flow_app();
+    press(&mut app, '0');
+    press(&mut app, 'j');
+    handle_key(&mut app, key(KeyCode::Left)); // fold `mid`, hiding `finish`
+    assert_eq!(app.flow_rows().len(), 3);
+    press(&mut app, 'j'); // now on `side`
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert!(matches!(app.mode, klaub_tui::Mode::Code));
+    let unit = app.unit.clone().unwrap();
+    let label = &app.session.analysis().item(&unit).unwrap().unit.label;
+    assert!(label.contains("side"), "{label}");
+}
+
+/// Two changed functions in two files, so the queue has two units to walk between.
+fn two_units() -> (
+    TempRepo,
+    App,
+    klaub_core::ids::UnitId,
+    klaub_core::ids::UnitId,
+) {
+    let repo = TempRepo::new();
+    repo.write("a.py", "def first():\n    return 1\n");
+    repo.write("b.py", "def second():\n    return 1\n");
+    repo.commit_all("initial");
+    repo.write("a.py", "def first():\n    return 2\n");
+    repo.write("b.py", "def second():\n    return 2\n");
+    let app = reader(open(&repo));
+    let ids: Vec<_> = app
+        .session
+        .analysis()
+        .queue
+        .iter()
+        .map(|item| item.unit.id.clone())
+        .collect();
+    assert_eq!(ids.len(), 2, "{ids:?}");
+    let (one, two) = (ids[0].clone(), ids[1].clone());
+    (repo, app, one, two)
+}
+
+#[test]
+fn back_and_forward_walk_the_units_visited() {
+    let (_repo, mut app, one, two) = two_units();
+    app.open_unit(&one, None);
+    app.open_unit(&two, None);
+    assert_eq!(app.unit.as_ref(), Some(&two));
+
+    press(&mut app, '<');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&one),
+        "back returns to the unit before"
+    );
+    press(&mut app, '>');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&two),
+        "forward returns to where back left"
+    );
+
+    press(&mut app, '<');
+    press(&mut app, '<');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&one),
+        "with nothing earlier, back stays where it is"
+    );
+    handle_key(&mut app, key(KeyCode::Esc)); // a stray key does not disturb the history
+    app.open_unit(&two, None);
+    press(&mut app, '>');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&two),
+        "a new move forgets what was ahead"
+    );
+}
+
+#[test]
+fn o_reads_the_unit_inside_its_whole_file_and_stays_there() {
+    let (_repo, mut app, one, _two) = two_units();
+    app.open_unit(&one, None);
+    let symbol_lines = app.code.view.as_ref().unwrap().lines.len();
+
+    press(&mut app, 'o');
+    assert_eq!(app.code.scope, Some(klaub_app::CodeScope::File));
+    press(&mut app, 'o');
+    assert_eq!(
+        app.code.scope,
+        Some(klaub_app::CodeScope::File),
+        "o opens the file; unlike S it does not toggle back"
+    );
+    assert!(app.code.view.as_ref().unwrap().lines.len() >= symbol_lines);
+
+    press(&mut app, 'S');
+    assert_eq!(app.code.scope, Some(klaub_app::CodeScope::Symbol));
+}
+
+#[test]
+fn a_finding_can_be_silenced_from_the_explanation_after_confirming() {
+    let repo = TempRepo::new();
+    repo.write("service.py", "def handle(value):\n    return int(value)\n");
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "def handle(value):\n    try:\n        return int(value)\n    except Exception:\n        pass\n",
+    );
+    let mut app = reader(open(&repo));
+
+    press(&mut app, 'w');
+    let shown = screen(&mut app, 110, 40);
+    assert!(shown.contains("risk.swallowed_error"), "{shown}");
+    assert!(shown.contains("silence its rule"), "{shown}");
+
+    press(&mut app, '1');
+    assert!(matches!(app.overlay, Some(Overlay::Confirm(_))));
+    assert!(
+        app.session.muted_rules().is_empty(),
+        "nothing is silenced before the answer"
+    );
+    let shown = screen(&mut app, 110, 40);
+    assert!(
+        shown.contains("Silence this rule for this review?"),
+        "{shown}"
+    );
+
+    press(&mut app, 'y');
+    assert_eq!(app.session.muted_rules(), ["risk.swallowed_error"]);
+
+    press(&mut app, 'w');
+    let shown = screen(&mut app, 110, 40);
+    assert!(!shown.contains("(risk.swallowed_error)"), "{shown}");
+    assert!(
+        shown.contains("Silenced here: risk.swallowed_error"),
+        "{shown}"
+    );
+}
+
+#[test]
+fn contract_overlay_lists_parameters_raises_and_io_for_a_symbol() {
+    let repo = TempRepo::new();
+    repo.write(
+        "service.py",
+        "import requests\n\ndef lookup(name):\n    return name\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "import requests\n\ndef lookup(name, strict: bool = False) -> str:\n    if strict and not name:\n        raise ValueError(\"empty\")\n    return requests.get(name)\n",
+    );
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    press(&mut app, 'i');
+    let shown = screen(&mut app, 110, 50);
+    for expected in [
+        "parameters",
+        "+ strict: bool = False",
+        "returns",
+        "raises",
+        "+ ValueError",
+        "calls requests.get (looks like I/O)",
+    ] {
+        assert!(
+            shown.contains(expected),
+            "missing {expected:?} in:\n{shown}"
+        );
+    }
+}
+
+#[test]
+fn contract_overlay_reads_a_dependency_manifest() {
+    let repo = TempRepo::new();
+    repo.write("requirements.txt", "requests==2.0\n");
+    repo.commit_all("initial");
+    repo.write("requirements.txt", "requests==2.31\nrich==13\n");
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    press(&mut app, 'i');
+    assert!(matches!(app.overlay, Some(Overlay::Contract(_))));
+    let shown = screen(&mut app, 110, 40);
+    for expected in [
+        "dependency manifest",
+        "+ rich [requirements] ==13",
+        "~ requests [requirements]: ==2.0 -> ==2.31",
+    ] {
+        assert!(
+            shown.contains(expected),
+            "missing {expected:?} in:\n{shown}"
+        );
+    }
 }
 
 #[test]
@@ -236,6 +505,76 @@ fn mark_reviewed() {
 
     press(&mut app, 'r');
     assert!(app.session.review().is_reviewed(&unit));
+}
+
+/// A reader whose configuration moves `toggle_reviewed` to `e`.
+fn reader_with_keys(repo: &TempRepo, keys: &[(&str, &str)]) -> App {
+    let mut config = Config::default();
+    for (action, key) in keys {
+        config.keys.insert((*action).to_owned(), (*key).to_owned());
+    }
+    let session = ReviewSession::open(
+        ports(repo, &config),
+        SnapshotRequest::worktree(repo.path()),
+        &config,
+        &OpenOptions::default(),
+    )
+    .unwrap();
+    reader(session)
+}
+
+#[test]
+fn a_configured_key_replaces_the_default_one() {
+    let repo = changed_repo();
+    let mut app = reader_with_keys(&repo, &[("toggle_reviewed", "e")]);
+    let unit = app.unit.clone().unwrap();
+
+    press(&mut app, 'r');
+    assert!(
+        !app.session.review().is_reviewed(&unit),
+        "the old key no longer marks the unit"
+    );
+    press(&mut app, 'e');
+    assert!(app.session.review().is_reviewed(&unit));
+}
+
+#[test]
+fn the_help_lists_the_configured_key() {
+    let repo = changed_repo();
+    let mut app = reader_with_keys(&repo, &[("toggle_reviewed", "e")]);
+    press(&mut app, '?');
+    let help = screen(&mut app, 100, 60);
+    let row = help
+        .lines()
+        .find(|line| line.contains("Mark reviewed"))
+        .expect("the help lists the reviewed action")
+        .replace('│', " ");
+    assert!(
+        row.trim_start().starts_with("e "),
+        "the help row for reviewed units shows the new key: {row:?}"
+    );
+}
+
+#[test]
+fn an_invalid_key_table_is_reported_before_the_reader_opens() {
+    let mut keys = std::collections::BTreeMap::new();
+    keys.insert("no_such_action".to_owned(), "e".to_owned());
+    let error = klaub_tui::Keymap::from_overrides(&keys).unwrap_err();
+    assert!(error.to_string().contains("no_such_action"));
+}
+
+#[test]
+fn the_storage_notice_explains_klaub_dir_and_closes_on_any_key() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo)).with_storage_notice();
+    let shown = screen(&mut app, 100, 30);
+    assert!(shown.contains("Where Klaub keeps its files"), "{shown}");
+    assert!(shown.contains(".gitignore"), "{shown}");
+
+    press(&mut app, 'z');
+    assert!(app.overlay.is_none(), "any key closes the notice");
+    let shown = screen(&mut app, 100, 30);
+    assert!(!shown.contains("Where Klaub keeps its files"));
 }
 
 /// A comment carrying the sequences a terminal must never act on.

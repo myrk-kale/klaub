@@ -52,8 +52,11 @@ pub(crate) enum Command {
     /// Inspect and control wrapped sessions.
     #[command(subcommand)]
     Session(SessionCommand),
-    /// Check the environment: git, tmux, terminal and directories.
+    /// Check the environment: git, tmux, terminal, grammars, the cache and directories.
     Doctor(FormatArgs),
+    /// Read the crash reports Klaub saved on this machine. Nothing is ever sent.
+    #[command(subcommand)]
+    Crashes(CrashesCommand),
     /// Print version and build information.
     Version(FormatArgs),
     /// Print a shell completion script.
@@ -70,6 +73,18 @@ pub(crate) enum Format {
     Text,
     /// JSON on standard output, nothing else.
     Json,
+}
+
+/// What `klaub reviews export` can write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ExportFormat {
+    /// The review document as JSON.
+    Json,
+    /// A Markdown summary for a pull request or an issue.
+    #[value(alias = "text")]
+    Markdown,
+    /// A SARIF 2.1.0 log, one result per comment.
+    Sarif,
 }
 
 #[derive(Debug, Args)]
@@ -121,6 +136,27 @@ pub(crate) struct ReviewArgs {
     /// A local brief file to import into the review. Read once, never fetched.
     #[arg(long, value_name = "FILE")]
     pub(crate) brief: Option<PathBuf>,
+
+    /// Stay until the review is closed and report how it ended: exit 0 when it was finished, 3
+    /// when it was closed as a draft. Meant for an agent that runs the reviewer and waits for the
+    /// human; it needs a terminal like any review.
+    #[arg(long)]
+    pub(crate) wait: bool,
+
+    /// With --wait: `json` prints the review export on standard output and nothing else.
+    #[arg(long, value_enum, default_value_t = Format::Text, requires = "wait")]
+    pub(crate) format: Format,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CrashesCommand {
+    /// List the saved reports, oldest first.
+    List(FormatArgs),
+    /// Print one report. Read it before sharing it.
+    Show {
+        /// The report file name from `list`; the newest when omitted.
+        name: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -192,13 +228,13 @@ pub(crate) enum ReviewsCommand {
         #[arg(long, value_enum, default_value_t = Format::Json)]
         format: Format,
     },
-    /// Write the review as JSON or Markdown.
+    /// Write the review as JSON, Markdown or SARIF.
     Export {
         /// Review id (`rev_...`).
         id: String,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = Format::Json)]
-        format: Format,
+        /// Output format. `text` is an alias of `markdown`.
+        #[arg(long, value_enum, default_value_t = ExportFormat::Json)]
+        format: ExportFormat,
     },
 }
 
@@ -310,6 +346,35 @@ mod tests {
         };
         assert!(args.detach);
         assert_eq!(args.command, vec!["codex", "--detach"]);
+    }
+
+    #[test]
+    fn wait_is_a_review_option_and_json_needs_it() {
+        let parsed =
+            Cli::try_parse_from(["klaub", "review", "--wait", "--format", "json"]).unwrap();
+        let Command::Review(args) = parsed.command else {
+            panic!("expected review")
+        };
+        assert!(args.wait);
+        assert!(Cli::try_parse_from(["klaub", "review", "--format", "json"]).is_err());
+    }
+
+    #[test]
+    fn export_formats_include_sarif_and_keep_text_as_markdown() {
+        for (given, expected) in [
+            ("json", ExportFormat::Json),
+            ("markdown", ExportFormat::Markdown),
+            ("text", ExportFormat::Markdown),
+            ("sarif", ExportFormat::Sarif),
+        ] {
+            let parsed =
+                Cli::try_parse_from(["klaub", "reviews", "export", "rev_x", "--format", given])
+                    .unwrap();
+            let Command::Reviews(ReviewsCommand::Export { format, .. }) = parsed.command else {
+                panic!("expected export")
+            };
+            assert_eq!(format, expected, "{given}");
+        }
     }
 
     #[test]
