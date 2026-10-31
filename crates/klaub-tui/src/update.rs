@@ -147,51 +147,6 @@ fn after_refresh(app: &mut App) {
 
 // ---- global keys ---------------------------------------------------------------------------------
 
-fn key_action(c: char) -> Option<Action> {
-    Some(match c {
-        '1' => Action::Mode(Mode::Queue),
-        '2' => Action::Mode(Mode::Structure),
-        '3' => Action::Mode(Mode::Code),
-        '4' | 'g' => Action::Mode(Mode::Impact),
-        '5' => Action::Mode(Mode::Comments),
-        '6' | 'b' => Action::Mode(Mode::Context),
-        '7' | 't' => Action::Mode(Mode::Tests),
-        '8' => Action::Mode(Mode::Followup),
-        '9' => Action::Mode(Mode::Coverage),
-        '0' | 'f' => Action::Mode(Mode::Flow),
-        'n' => Action::NextUnreviewed,
-        'P' => Action::PrevUnreviewed,
-        'N' => Action::NextCritical,
-        'r' => Action::ToggleReviewed,
-        'm' => Action::ToggleBookmark,
-        ',' => Action::NextBookmark,
-        'c' => Action::Comment,
-        'w' => Action::Explain,
-        'v' => Action::ToggleVersion,
-        ']' => Action::NextChange,
-        '[' => Action::PrevChange,
-        'S' => Action::ToggleCodeScope,
-        '/' => Action::Search,
-        'H' => Action::FilterHigh,
-        'u' => Action::FilterUnreviewed,
-        'I' => Action::FilterIntroduced,
-        'T' => Action::FilterNoTests,
-        'W' => Action::FilterNew,
-        's' => Action::CycleScope,
-        'M' => Action::CycleModule,
-        'x' => Action::ClearFilters,
-        '+' | '=' => Action::DeeperTree,
-        '-' => Action::ShallowerTree,
-        'X' => Action::RunTests,
-        'U' => Action::ReloadReports,
-        'L' => Action::ReloadFlow,
-        'R' => Action::Refresh,
-        'F' => Action::Finish,
-        '?' => Action::Help,
-        _ => return None,
-    })
-}
-
 fn function_key(n: u8) -> Option<Action> {
     Some(match n {
         1 => Action::Help,
@@ -244,7 +199,7 @@ fn global_key(app: &mut App, key: KeyEvent, quit_was_armed: bool) {
             }
         }
         KeyCode::Char(c) if !control => {
-            if let Some(action) = key_action(c) {
+            if let Some(action) = app.keymap.action(c) {
                 perform(app, action);
             }
         }
@@ -398,6 +353,10 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
             return true;
         }
         KeyCode::Char('o') => {
+            perform(app, Action::OpenWholeFile);
+            return true;
+        }
+        KeyCode::Char('i') => {
             perform(app, Action::InspectContract);
             return true;
         }
@@ -714,7 +673,7 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
     };
     match overlay {
         Overlay::Explain(unit) => explain_key(app, unit, key),
-        Overlay::Help | Overlay::Contract(_) => {
+        Overlay::Help | Overlay::Contract(_) | Overlay::Notice { .. } => {
             // Any key closes; the overlay stays taken.
         }
         Overlay::Palette {
