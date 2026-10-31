@@ -981,7 +981,13 @@ dependencies = [
  "cargo_metadata",
  "clap",
  "clap_complete",
+ "klaub-app",
  "klaub-core",
+ "klaub-flow",
+ "klaub-git",
+ "klaub-parse",
+ "klaub-review",
+ "klaub-storage",
  "klaub-tmux",
  "klaub-tui",
  "predicates",
@@ -1121,8 +1127,15 @@ dependencies = [
 name = "klaub-tui"
 version = "0.1.0"
 dependencies = [
+ "klaub-app",
  "klaub-core",
+ "klaub-git",
+ "klaub-parse",
+ "klaub-storage",
  "ratatui",
+ "tempfile",
+ "tracing",
+ "unicode-width",
 ]
 
 [[package]]

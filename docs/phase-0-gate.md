@@ -19,6 +19,20 @@ The tests in [`crates/klaub-tmux/tests/phase0_gate.rs`](../crates/klaub-tmux/tes
 
 The CLI end-to-end tests in [`crates/klaub-cli/tests/cli.rs`](../crates/klaub-cli/tests/cli.rs) add: refusing to nest inside tmux, validating the command before starting anything, and the `wrap` → `list` → `kill` lifecycle.
 
+The private server binds these prefix chords (default prefix `Ctrl+B`). `Prefix+R` and `Prefix+A` only switch windows. The others select the review window and then send a function key to its pane.
+
+| Chord | Effect |
+| --- | --- |
+| Prefix+R | Focus the review window |
+| Prefix+A | Focus the agent window |
+| Prefix+I | Impact (`F5`) |
+| Prefix+C | Comments (`F6`) |
+| Prefix+T | Tests (`F7`) |
+| Prefix+B | Brief / context (`F8`) |
+| Prefix+L | Flow (`F9`) |
+| Prefix+d | Detach |
+| Prefix+? | Show the chord list |
+
 CI runs the suite on Linux (tmux from the distribution) and macOS (Homebrew). The [tmux asset workflow](../.github/workflows/tmux-asset.yml) additionally builds the pinned tmux for each release target and repeats a `wrap`/`list`/`kill` smoke test with that tmux **embedded** and no tmux on the search path.
 
 ## What still needs a human

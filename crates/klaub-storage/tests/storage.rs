@@ -37,6 +37,7 @@ fn review(id: &str, worktree: &str, updated: i64) -> Review {
         brief: Brief::default(),
         comments: vec![],
         reviewed_units: vec![],
+        last_unit: None,
         feedback: None,
         flow: None,
     }

@@ -35,6 +35,20 @@ pub(crate) enum Command {
     Wrap(WrapArgs),
     /// Open the reviewer.
     Review(ReviewArgs),
+    /// List and export stored reviews.
+    #[command(subcommand)]
+    Reviews(ReviewsCommand),
+    /// Show the feedback produced by a finished review.
+    Feedback(FeedbackArgs),
+    /// Inspect and run the tests associated with a review.
+    #[command(subcommand)]
+    Tests(TestsCommand),
+    /// Inspect the flow diagram of a change.
+    #[command(subcommand)]
+    Flow(FlowCommand),
+    /// Install a packaged skill into a coding agent's configuration.
+    #[command(subcommand)]
+    Skills(SkillsCommand),
     /// Inspect and control wrapped sessions.
     #[command(subcommand)]
     Session(SessionCommand),
@@ -95,6 +109,18 @@ pub(crate) struct ReviewArgs {
     /// The wrapped session this reviewer belongs to (set by `klaub wrap`).
     #[arg(long, env = "KLAUB_SESSION", value_name = "ID")]
     pub(crate) session: Option<String>,
+
+    /// The revision to compare against (default: the configured base, usually HEAD).
+    #[arg(long, value_name = "REV")]
+    pub(crate) base: Option<String>,
+
+    /// What to compare: worktree, staged, unstaged or branch.
+    #[arg(long, value_enum)]
+    pub(crate) scope: Option<ReviewScope>,
+
+    /// A local brief file to import into the review. Read once, never fetched.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) brief: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -139,6 +165,120 @@ pub(crate) enum FocusTarget {
     Agent,
     /// The review window.
     Review,
+}
+
+/// What `klaub review` compares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ReviewScope {
+    /// The base revision against the working tree, including untracked files.
+    Worktree,
+    /// The base revision against the index.
+    Staged,
+    /// The index against the working tree.
+    Unstaged,
+    /// The merge base of the base revision and HEAD against HEAD.
+    Branch,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ReviewsCommand {
+    /// List the reviews stored in this worktree.
+    List(FormatArgs),
+    /// Print one review.
+    Show {
+        /// Review id (`rev_...`).
+        id: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Json)]
+        format: Format,
+    },
+    /// Write the review as JSON or Markdown.
+    Export {
+        /// Review id (`rev_...`).
+        id: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Json)]
+        format: Format,
+    },
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FeedbackArgs {
+    /// Review id (`rev_...`).
+    pub(crate) id: String,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = Format::Text)]
+    pub(crate) format: Format,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum TestsCommand {
+    /// List the test associations of a review. Lists only; it runs nothing.
+    List {
+        /// Review id (`rev_...`).
+        #[arg(long, value_name = "ID")]
+        review: String,
+    },
+    /// Run the configured test command for a review. Shows the command and asks first.
+    Run {
+        /// Review id (`rev_...`).
+        #[arg(long, value_name = "ID")]
+        review: String,
+        /// Restrict the run to these test ids.
+        #[arg(long, value_name = "TEST")]
+        select: Vec<String>,
+        /// Do not ask for confirmation.
+        #[arg(long, short)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum FlowCommand {
+    /// Report whether the current snapshot has a flow diagram.
+    Status,
+    /// Print the snapshot context a flow diagram must describe, as JSON.
+    Context,
+    /// Validate a flow document.
+    Validate {
+        /// The flow document to check.
+        file: PathBuf,
+    },
+    /// Print the instruction that asks an agent for a flow diagram. Prints only; it sends nothing.
+    Prompt,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SkillsCommand {
+    /// Install a packaged skill into an agent's configuration directory.
+    Install {
+        /// Which skill to install.
+        skill: SkillName,
+        /// The agent whose configuration receives the skill.
+        #[arg(long, value_enum)]
+        harness: Harness,
+        /// Replace a skill the user already customised.
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+/// Skills shipped with Klaub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum SkillName {
+    /// The skill that writes a flow diagram of a change.
+    Flow,
+    /// The skill that turns review comments into agent instructions.
+    Feedback,
+}
+
+/// Agents a skill can be installed for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum Harness {
+    /// Codex (`$CODEX_HOME/skills`, or `~/.codex/skills`).
+    Codex,
+    /// Claude Code (`~/.claude/skills`).
+    Claude,
 }
 
 #[cfg(test)]

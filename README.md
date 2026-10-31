@@ -22,7 +22,7 @@
 
 ---
 
-> **Status: under active development.** The foundation and the roadmap below are in the repository; features are marked as they land. See the [changelog](CHANGELOG.md).
+> **Status: under active development.** Phase 0 and phase 1 are implemented. The semantic reader has a queue, structure, code with before and after, impact, comments, context, tests, follow-up, coverage and flow. Phase 2 and phase 3 are not done. A manual check against a real Codex or Claude Code session is still pending. The first tagged release is v0.1.0. See the [changelog](CHANGELOG.md).
 
 ## Why Klaub
 
@@ -49,9 +49,32 @@ flowchart LR
     File -. "Prepare in agent<br/>(paste, no Enter)" .-> Agent
 ```
 
-## Quick start
+## Install
 
-There is no release yet. Build from source (Rust 1.90+, `git`, and a `tmux` 3.2+ on your `PATH` until release builds embed one):
+The first tagged release is v0.1.0. Prebuilt binaries exist for Linux x86_64 and macOS Apple Silicon. Intel macOS is not in the release matrix. On an Intel Mac, build from source.
+
+### Homebrew
+
+Works on macOS and on Linux where Homebrew is installed. The formula lives in the `myrk-kale/homebrew-klaub` tap. There is no prebuilt bottle for Intel macOS. Those machines build from source.
+
+```shell
+brew tap myrk-kale/klaub
+brew install klaub
+```
+
+### curl
+
+macOS and Linux. The script checks the SHA-256 of the archive before it installs anything. It supports Linux x86_64 and macOS Apple Silicon only.
+
+`KLAUB_VERSION` picks a version (`0.1.0`). `KLAUB_INSTALL_DIR` picks the directory (default `~/.local/bin`).
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
+```
+
+### From source
+
+Needs Rust 1.90+, git, and a system tmux 3.2 or newer on `PATH` until the release embeds one. Point `KLAUB_TMUX_PATH` at that tmux.
 
 ```shell
 git clone https://github.com/myrk-kale/klaub && cd klaub
@@ -60,14 +83,28 @@ export KLAUB_TMUX_PATH="$(command -v tmux)"
 klaub doctor
 ```
 
+## Quick start
+
 ```shell
 cd my-project
 klaub wrap codex                 # or: klaub wrap -- claude --model <model>
 # Ctrl+B, R   open the reviewer     Ctrl+B, A   back to the agent     Ctrl+B, d   detach
+# Ctrl+B, I   impact   C   comments   T   tests   B   brief   L   flow
 klaub session list               # later: klaub session attach
 ```
 
-Working today: the wrapper (phase 0). The semantic reader (queue, code, impact, comments and *Prepare in agent*) lands with phase 1; see the roadmap below.
+The prefix is `Ctrl+B` unless you set `--prefix` or `KLAUB_TMUX_PREFIX`. `Prefix+?` prints the chords. `Prefix+R` and `Prefix+A` switch windows. `Prefix+I`, `C`, `T`, `B` and `L` open the reviewer and send `F5` through `F9` to it (impact, comments, tests, brief, flow).
+
+`klaub review` opens the semantic reader, including from inside the wrap. A review of the worktree is the default.
+
+Other commands:
+
+- `klaub review --base REV --scope worktree|staged|unstaged|branch --brief FILE` compares against a revision, a scope, or a local brief file.
+- `klaub reviews list` lists stored reviews. `show ID` prints one. `export ID` writes JSON or Markdown.
+- `klaub feedback ID` prints the feedback of a finished review.
+- `klaub tests list --review ID` lists test associations. `run --review ID` shows the command and asks before running it.
+- `klaub flow status` reports whether the snapshot has a flow diagram. `context` prints the snapshot context as JSON. `validate FILE` checks a flow document. `prompt` prints the instruction that asks an agent for one, and sends nothing.
+- `klaub skills install flow|feedback --harness codex|claude` copies a packaged skill into that agent's configuration.
 
 ## Documentation
 
@@ -85,8 +122,8 @@ Working today: the wrapper (phase 0). The semantic reader (queue, code, impact, 
 | --- | --- | --- |
 | Foundation | Workspace, lints, CI, community files, ADRs | ✅ |
 | 0 | Embedded tmux, `wrap`, pane identity, safe bracketed paste, minimal TUI ([gate](docs/phase-0-gate.md)) | ✅ implemented; manual check with real harnesses pending |
-| 1 | Git snapshots, Python and JS/TS, semantic matching, queue, reverse call graph, comments, brief, tests evidence, incremental risk | ⏳ |
-| 2 | Architecture rules, contract inspector, follow-up, review coverage, `Flow` and the `klaub-flow` skill | ⏳ |
+| 1 | Git snapshots, Python and JS/TS, semantic matching, queue, reverse call graph, comments, brief, tests evidence, incremental risk | ✅ implemented |
+| 2 | Architecture rules, contract inspector, follow-up, review coverage, `Flow` and the `klaub-flow` skill | ⏳ engines and the basic views exist (rules, follow-up, coverage, flow validation, the skill file). The phase is not closed. |
 | 3 | More languages, general feedback skill, export formats, harness adapter seam | ⏳ |
 
 ## Contributing

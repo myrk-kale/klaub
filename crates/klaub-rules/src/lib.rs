@@ -574,7 +574,12 @@ impl<'a> Evaluator<'a> {
     }
 }
 
-/// Orders the queue: priority first, introduced findings and higher scores before the rest.
+/// Orders the queue.
+///
+/// [`SortOrder::Priority`] puts the higher priority first, then units with more introduced
+/// findings and a higher score. [`SortOrder::Execution`] puts a unit reachable from more
+/// entrypoints first ([`QueueItem::entrypoints`]) and breaks the remaining ties the same way.
+/// [`SortOrder::Module`] groups by module, then uses the priority ordering.
 pub fn sort_queue(items: &mut [QueueItem], order: SortOrder, modules: &ModuleMap) {
     let introduced = |i: &QueueItem| {
         i.findings
@@ -591,7 +596,8 @@ pub fn sort_queue(items: &mut [QueueItem], order: SortOrder, modules: &ModuleMap
             .then(a.unit.file.cmp(&b.unit.file))
             .then(a.unit.label.cmp(&b.unit.label));
         match order {
-            SortOrder::Priority | SortOrder::Execution => by_priority,
+            SortOrder::Priority => by_priority,
+            SortOrder::Execution => b.entrypoints.cmp(&a.entrypoints).then(by_priority),
             SortOrder::Module => modules
                 .module_of(&a.unit.file)
                 .cmp(&modules.module_of(&b.unit.file))
@@ -612,4 +618,58 @@ pub fn is_test_path(config: &Config, path: &RepoPath) -> bool {
     .into_iter()
     .flatten()
     .any(|pattern| klaub_core::glob::matches(pattern, path.as_str()))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::sort_queue;
+    use klaub_core::config::SortOrder;
+    use klaub_core::finding::{Priority, QueueItem, ReviewUnit, ScoreBreakdown, UnitKind};
+    use klaub_core::path::RepoPath;
+    use klaub_core::semantic::{ChangeKind, file_unit_id};
+    use klaub_graph::ModuleMap;
+
+    /// A queue item whose only interesting facts are its priority and how many entrypoints reach it.
+    fn item(path: &str, priority: Priority, entrypoints: u32) -> QueueItem {
+        let file = RepoPath::new(path).unwrap();
+        QueueItem {
+            unit: ReviewUnit {
+                id: file_unit_id(&file),
+                kind: UnitKind::File,
+                file: file.clone(),
+                symbol: None,
+                symbol_kind: None,
+                label: file.to_string(),
+                semantic: true,
+            },
+            change: ChangeKind::Modified,
+            priority,
+            score: ScoreBreakdown::default(),
+            findings: Vec::new(),
+            tags: Vec::new(),
+            entrypoints,
+            scope: None,
+            entry_scope: None,
+        }
+    }
+
+    #[test]
+    fn execution_order_ranks_reach_before_priority() {
+        let wide = item("src/wide.py", Priority::P2, 4);
+        let urgent = item("src/urgent.py", Priority::P0, 1);
+        let modules = ModuleMap::default();
+
+        let mut by_priority = [wide.clone(), urgent.clone()];
+        sort_queue(&mut by_priority, SortOrder::Priority, &modules);
+        assert_eq!(by_priority[0].unit.label, "src/urgent.py");
+
+        let mut by_execution = [wide, urgent];
+        sort_queue(&mut by_execution, SortOrder::Execution, &modules);
+        assert_eq!(
+            by_execution[0].unit.label, "src/wide.py",
+            "more entrypoints rank first, ahead of a higher priority"
+        );
+        assert_eq!(by_execution[1].unit.label, "src/urgent.py");
+    }
 }

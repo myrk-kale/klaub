@@ -7,6 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stderr)]
 
 use std::path::{Path, PathBuf};
+use std::process::Command as Process;
 
 use assert_cmd::Command;
 use assert_cmd::cargo::cargo_bin_cmd;
@@ -20,6 +21,26 @@ fn find_tmux() -> Option<PathBuf> {
     std::env::split_paths(&std::env::var_os("PATH")?)
         .map(|dir| dir.join("tmux"))
         .find(|path| path.is_file())
+}
+
+/// Makes `dir` a Git repository with one commit, which is the least a review can open.
+fn init_repo(dir: &Path) {
+    let git = |args: &[&str]| {
+        let status = Process::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed in {}", dir.display());
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.name", "Klaub Test"]);
+    git(&["config", "user.email", "test@klaub.invalid"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    std::fs::write(dir.join("README.md"), "reviewed by the test\n").unwrap();
+    git(&["add", "README.md"]);
+    git(&["commit", "-q", "-m", "initial"]);
 }
 
 struct Sandbox {
@@ -308,6 +329,8 @@ fn the_review_window_stays_open() {
     if !require_tmux(&sandbox) {
         return;
     }
+    // The reviewer analyses the worktree it starts in, so that directory has to be a repository.
+    init_repo(sandbox.worktree());
     let output = sandbox
         .klaub()
         .args(["wrap", "--detach", "--", "sh", "-c", "sleep 120"])

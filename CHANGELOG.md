@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-31
+
 ### Added
 
 - `klaub-storage`: atomic, advisory-locked JSON reviews (symlinked `.klaub/` refused), a SQLite parse cache that heals itself, confined readers for briefs, reports and flows, and layered configuration loading.
@@ -21,7 +23,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `klaub-git`: immutable, content-addressed snapshots through the Git CLI for the worktree, staged, unstaged, branch and commit-range scopes; rename detection, untracked and ignored-file handling, binary/oversized/symlink metadata, generated-file flags, a cheap drift probe, and project file listing and reading for call-graph building. Repositories are treated as untrusted: external diff drivers, textconv and fsmonitor never run, option-like revisions are rejected and symlinks cannot lead out of the worktree.
 - **Phase 0** (the gate): `klaub wrap <command>` runs any interactive program in a private tmux session with an `agent` and a `review` window; `klaub session list|attach|kill`, `klaub doctor`, `klaub version`, `klaub completions`.
 - `klaub-tmux`: verified embedded tmux (SHA-256 checked before every execution, private `0700` extraction), one private server per session, pane-identity checks, and a bracketed, single-line, never-`Enter` paste. Nine integration tests run against a real tmux server and assert the exact bytes the harness receives.
-- `klaub-tui`: the review window's first screen (Elm-style state/view, tested with Ratatui's `TestBackend`, hostile text sanitised).
+- `klaub-tui`: the fullscreen semantic reader (Elm-style state, input and view, drawn with Ratatui). Ten modes over the review queue, a command palette and help generated from one key table, and overlays for commenting, confirming and finishing. Every string that comes from the repository, a comment or a document is sanitised before it is drawn, and a terminal below 50×10 is told to resize instead of rendering a broken frame.
+- `klaub review` now opens that reader over the worktree: it wires the Git, tree-sitter and storage adapters, resumes an existing review, and inside `klaub wrap` can prepare feedback in the agent's input after confirmation. On its own it can only copy or show the feedback. Running the configured tests goes through a shell-less process adapter with a time limit. `--base`, `--scope` and `--brief` choose the comparison and import a local brief.
+- `klaub reviews list|show|export`, `klaub feedback`, `klaub tests list|run`, `klaub flow status|context|validate|prompt` and `klaub skills install`. `tests run` shows the exact command and asks before it starts. `flow prompt` only prints text. Installing a skill refuses to replace one the user has edited unless `--force` is given.
+- tmux session chords `Prefix+I`, `Prefix+C`, `Prefix+T`, `Prefix+B` and `Prefix+L` open the reviewer directly on impact, comments, tests, context and flow.
+- Packaged skills `klaub-flow` and `klaub-feedback`, installed on request into the Codex or Claude Code skills directory.
+- Render tests for the reader: queue order, before/after, comments, reviewed marks, hostile terminal sequences, a too-small terminal, finishing without ever sending Enter, the drift banner, and the contract panel.
+- A contract inspector (`o` in the code view) showing, for one changed symbol, the change kind, the confidence, the signature before and after, the effects named by markers the symbol already carries, and the direct callers. What the analysis cannot know is stated as unknown rather than guessed.
+- Search also matches comment ids, test ids and acceptance-criterion text. `m` bookmarks a unit and `,` jumps to the next bookmark. Reopening a review returns to the unit you were on.
+- The execution sort order ranks a change reached from more entrypoints first.
+- Fixture measurements for symbol matching, temporal classification, test association and anchor stability (`crates/klaub-app/tests/metrics.rs`), plus notes on what has not been measured (`docs/benchmarks.md`) and on Windows support (`docs/windows.md`).
 - Release pipeline: `scripts/build-tmux.sh` (pinned tmux 3.8, libevent 2.1.13, ncurses 6.6), the `tmux asset` and `Release` workflows (checksums, build-provenance attestations, changelog-based notes), `scripts/install.sh`.
 - ADRs 0008 (one private server per session) and 0009 (the pasted instruction is one line).
 - `klaub-core`: the I/O-free domain model (snapshots, symbols, semantic changes, findings, reviews, test evidence, flow contract), the configuration schema with line/column errors and layered merging, terminal-text sanitisation, and the ports every adapter implements.

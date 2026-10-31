@@ -46,6 +46,7 @@ sha2 = "0.11"
 flate2 = "1.1"
 uuid = { version = "1.18", features = ["v4"] }
 ratatui = "0.30"
+unicode-width = "0.2"
 clap_complete = "4.6"
 
 # Workspace-internal crates.

@@ -10,6 +10,7 @@
 //!   change is persisted at once, so a crash loses nothing that was confirmed.
 
 mod analysis;
+mod contract;
 mod session;
 mod view;
 
@@ -21,6 +22,7 @@ use klaub_core::ports::{
 };
 
 pub use analysis::{Analysis, FileEntry, UnitInfo, analyze};
+pub use contract::{ContractDelta, inspect};
 pub use session::{FlowView, OpenOptions, Reports, ReviewSession, TestPanel};
 pub use view::{CodeLine, CodeScope, CodeView, HighlightedSpan};
 
