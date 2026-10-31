@@ -143,11 +143,37 @@ jobs:
           path: lcov.info
           retention-days: 14
 
+  package:
+    name: Packages for crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+      # Builds every crate from the archive that would be uploaded, so a file that only exists
+      # in the repository (an include_str! of a path outside the crate, say) fails here and not
+      # on release day.
+      - run: cargo package --workspace --locked
+
+  skills:
+    name: Skills are installable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: The Vercel skills CLI finds both skills
+        shell: bash
+        run: |
+          npx -y skills@1 add . --list 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > skills.txt
+          cat skills.txt
+          grep -q "Found 2 skills" skills.txt
+          grep -q "klaub-flow" skills.txt
+          grep -q "klaub-feedback" skills.txt
+
   # A single required check for branch protection, independent of the matrix shape.
   ci-success:
     name: CI success
     if: always()
-    needs: [fmt, clippy, test, docs, msrv, deny, typos, coverage]
+    needs: [fmt, clippy, test, docs, msrv, deny, typos, coverage, package, skills]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all required jobs succeeded

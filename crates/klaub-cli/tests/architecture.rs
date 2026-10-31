@@ -25,7 +25,7 @@ const DOMAIN_SERVICES: &[&str] = &[
 const APPLICATION: &str = "klaub-app";
 const DRIVEN_ADAPTERS: &[&str] = &["klaub-git", "klaub-parse", "klaub-storage", "klaub-tmux"];
 const TUI: &str = "klaub-tui";
-const CLI: &str = "klaub-cli";
+const CLI: &str = "klaub";
 
 /// APIs that reach outside the process. They belong in adapters, behind ports.
 const FORBIDDEN_IO_APIS: &[&str] = &[

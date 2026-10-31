@@ -1,6 +1,6 @@
 [package]
-name = "klaub-cli"
-description = "Command line interface of Klaub, a semantic code reviewer for humans that wraps any coding agent."
+name = "klaub"
+description = "Klaub: a terminal code reviewer for AI coding agents. Review changes by function, ranked by risk, offline and with no LLM."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ homepage.workspace = true
 authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
-readme = false
+readme = "../../README.md"
 
 [lib]
 name = "klaub_cli"

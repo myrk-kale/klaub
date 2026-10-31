@@ -50,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "klaub-cli") | .version')"
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "klaub") | .version')"
           if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "tag $GITHUB_REF_NAME does not match the workspace version $version" >&2
             exit 1
@@ -61,7 +61,7 @@ jobs:
           name: tmux-${{ matrix.target }}
           path: assets/tmux/${{ matrix.target }}
       - name: Build
-        run: cargo build --release --locked -p klaub-cli
+        run: cargo build --release --locked -p klaub
       - name: Package
         shell: bash
         env:
@@ -128,3 +128,16 @@ jobs:
             --title "klaub ${GITHUB_REF_NAME}" \
             --notes-file notes.md \
             "${flags[@]}"
+
+  crates:
+    name: Dispatch the crates.io publish
+    if: github.event_name == 'push'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Run crates.yml for this tag (Trusted Publishing needs a run of its own)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run crates.yml -R "$GITHUB_REPOSITORY" -f tag="$GITHUB_REF_NAME"

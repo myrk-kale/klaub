@@ -2,8 +2,9 @@
 //!
 //! Release builds embed a gzip-compressed tmux together with the SHA-256 of the
 //! decompressed executable. It is extracted once into a private directory and
-//! its hash is verified **before every execution**. A development build without
-//! an embedded asset never guesses: the user must name a tmux binary explicitly.
+//! its hash is verified **before every execution**. A build without an embedded asset (a
+//! `cargo install`, a development build) uses a tmux the user named, or else the first `tmux` on
+//! `PATH`, and says that it is not verified.
 
 use std::fs;
 use std::io::{Read, Write};
@@ -64,6 +65,8 @@ pub enum TmuxSource {
     },
     /// Named explicitly by the user (`--tmux-path`, `KLAUB_TMUX_PATH`). Not verified.
     Explicit,
+    /// The first `tmux` on `PATH`, used because this build embeds none. Not verified.
+    System,
 }
 
 /// A tmux executable ready to be run.
@@ -77,10 +80,23 @@ pub struct ResolvedTmux {
     pub version: String,
 }
 
-/// Chooses the tmux binary: an explicit path wins, otherwise the embedded one.
+/// Chooses the tmux binary: an explicit path wins, then the embedded one, then the first `tmux` on
+/// `PATH` (the case of a build made with `cargo install`).
 ///
 /// `bin_dir` is where the embedded executable is extracted (`<cache>/bin`).
 pub fn resolve(explicit: Option<&Path>, bin_dir: &Path) -> Result<ResolvedTmux> {
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let dirs: Vec<PathBuf> = std::env::split_paths(&path_var).collect();
+    resolve_in(explicit, bin_dir, &dirs)
+}
+
+/// [`resolve`] with the directories to search for a system tmux given instead of read from the
+/// environment.
+fn resolve_in(
+    explicit: Option<&Path>,
+    bin_dir: &Path,
+    path_dirs: &[PathBuf],
+) -> Result<ResolvedTmux> {
     if let Some(path) = explicit {
         return resolve_explicit(path);
     }
@@ -102,11 +118,28 @@ pub fn resolve(explicit: Option<&Path>, bin_dir: &Path) -> Result<ResolvedTmux> 
             let _ = (manifest, bin_dir);
         }
     }
+    if let Some(found) = find_in(path_dirs, "tmux") {
+        let mut resolved = resolve_explicit(&found)?;
+        resolved.source = TmuxSource::System;
+        return Ok(resolved);
+    }
     Err(Error::Tmux(
-        "this build of klaub does not embed tmux; pass --tmux-path <path> or set KLAUB_TMUX_PATH \
-         (release builds embed a verified tmux)"
+        "this build of klaub does not embed tmux and none was found on PATH; install tmux 3.2 or \
+         newer, or pass --tmux-path <path> or set KLAUB_TMUX_PATH (release builds embed a \
+         verified tmux)"
             .to_owned(),
     ))
+}
+
+/// The first executable file called `name` in `dirs`.
+fn find_in(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    dirs.iter()
+        .filter(|dir| dir.is_absolute())
+        .map(|dir| dir.join(name))
+        .find(|candidate| {
+            fs::metadata(candidate)
+                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        })
 }
 
 fn resolve_explicit(path: &Path) -> Result<ResolvedTmux> {
@@ -278,6 +311,31 @@ mod tests {
 
     const SCRIPT: &[u8] = b"#!/bin/sh\necho tmux 3.9z\n";
 
+    #[test]
+    fn a_tmux_on_path_is_the_first_executable_file_of_that_name() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        // A directory called tmux, and a file that is not executable, are skipped.
+        fs::create_dir(first.path().join("tmux")).unwrap();
+        let blocked = second.path().join("tmux");
+        fs::write(&blocked, SCRIPT).unwrap();
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o644)).unwrap();
+        let third = tempfile::tempdir().unwrap();
+        let good = third.path().join("tmux");
+        fs::write(&good, SCRIPT).unwrap();
+        fs::set_permissions(&good, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let dirs = vec![
+            PathBuf::from("relative/bin"),
+            first.path().to_path_buf(),
+            second.path().to_path_buf(),
+            third.path().to_path_buf(),
+        ];
+        assert_eq!(find_in(&dirs, "tmux"), Some(good));
+        assert_eq!(find_in(&dirs, "no-such-program"), None);
+        assert_eq!(find_in(&[], "tmux"), None);
+    }
+
     fn gz(bytes: &[u8]) -> Vec<u8> {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
         encoder.write_all(bytes).unwrap();
@@ -378,9 +436,34 @@ mod tests {
 
     #[cfg(not(klaub_embedded_tmux))]
     #[test]
-    fn without_an_embedded_asset_nothing_is_guessed() {
+    fn without_an_embedded_asset_the_system_tmux_is_used_and_labelled() {
         let temp = tempfile::tempdir().unwrap();
-        let error = resolve(None, temp.path()).unwrap_err().to_string();
+        let bin = tempfile::tempdir().unwrap();
+        let fake = bin.path().join("tmux");
+        fs::write(&fake, SCRIPT).unwrap();
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let resolved = resolve_in(None, temp.path(), &[bin.path().to_path_buf()]).unwrap();
+        assert_eq!(resolved.source, TmuxSource::System);
+        assert_eq!(resolved.version, "3.9z");
+
+        // An explicit path still wins over the one on PATH.
+        let other = bin.path().join("other-tmux");
+        fs::write(&other, SCRIPT).unwrap();
+        fs::set_permissions(&other, fs::Permissions::from_mode(0o755)).unwrap();
+        let explicit = resolve_in(Some(&other), temp.path(), &[bin.path().to_path_buf()]).unwrap();
+        assert_eq!(explicit.source, TmuxSource::Explicit);
+    }
+
+    #[cfg(not(klaub_embedded_tmux))]
+    #[test]
+    fn without_an_embedded_asset_and_no_tmux_on_path_the_error_says_what_to_do() {
+        let temp = tempfile::tempdir().unwrap();
+        let empty = tempfile::tempdir().unwrap();
+        let error = resolve_in(None, temp.path(), &[empty.path().to_path_buf()])
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("--tmux-path"), "{error}");
+        assert!(error.contains("install tmux"), "{error}");
     }
 }

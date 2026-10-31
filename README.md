@@ -29,6 +29,8 @@ Install Klaub, go to a Git repository where an agent has changed files, and open
 brew tap myrk-kale/klaub && brew install klaub      # macOS and Linux with Homebrew
 # or
 curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
+# or
+cargo install klaub --locked                        # any platform with a Rust toolchain
 
 cd my-project
 klaub review                                        # review what changed since HEAD
@@ -52,6 +54,17 @@ Your first review takes six steps:
 6. Press `F` to finish. Klaub saves the comments and prepares one short instruction for the agent.
 
 Press `?` at any time for the key list.
+
+### Install the agent skills
+
+Klaub ships two skills for your coding agent: `klaub-flow` writes a flow diagram of a change, and `klaub-feedback` makes the agent address the comments of a finished review. They install with the [skills CLI](https://github.com/vercel-labs/skills) and work with Claude Code, Codex and the other agents it supports.
+
+```shell
+npx skills add myrk-kale/klaub                     # choose the skills and the agents interactively
+npx skills add myrk-kale/klaub --skill klaub-flow --agent claude-code codex
+```
+
+Installing with `cargo` builds Klaub without the bundled session runtime, so `klaub wrap` needs one to be installed on your `PATH`. The [development guide](docs/development.md) has the details, and `klaub review` works without it.
 
 ## Why Klaub
 
@@ -102,7 +115,7 @@ Ask the agent for a diagram of the change with `p` in the Flow view. The agent w
 
 ### Exports and automation
 
-`klaub reviews export` writes a review as JSON, Markdown or SARIF 2.1.0, so comments can go to code scanning tools. `klaub feedback` prints the feedback of a finished review. `klaub skills install` adds the `klaub-flow` or `klaub-feedback` skill to Codex or Claude Code.
+`klaub reviews export` writes a review as JSON, Markdown or SARIF 2.1.0, so comments can go to code scanning tools. `klaub feedback` prints the feedback of a finished review. The `klaub-flow` and `klaub-feedback` skills install with `npx skills add myrk-kale/klaub`.
 
 ## Supported languages
 
@@ -212,7 +225,6 @@ An optional mouse mode (`[ui] mouse = true`) adds wheel scrolling and clicks on 
 | `klaub feedback ID` | Print the feedback of a finished review |
 | `klaub tests list\|run` | List test associations, or run the configured command after confirming |
 | `klaub flow status\|context\|validate\|prompt` | Work with flow diagrams |
-| `klaub skills install flow\|feedback` | Install a skill for Codex or Claude Code |
 | `klaub doctor` | Check Git, the terminal, grammars, the cache, directories and SSH |
 | `klaub crashes list\|show` | Read crash reports saved on this machine. Nothing is ever sent |
 | `klaub completions SHELL` | Print a shell completion script |

@@ -73,7 +73,7 @@ jobs:
         with:
           name: tmux-${{ matrix.target }}
           path: assets/tmux/${{ matrix.target }}
-      - run: cargo build --release --locked -p klaub-cli
+      - run: cargo build --release --locked -p klaub
       - name: Smoke test with the embedded tmux
         shell: bash
         run: |

@@ -28,7 +28,7 @@ pub(super) fn run(format: Format) -> Result<ExitCode> {
                     m.tmux_version,
                     &m.sha256[..12]
                 )),
-                None => output::line("embedded tmux: none (development build; pass --tmux-path)"),
+                None => output::line("embedded tmux: none (uses tmux from PATH, or --tmux-path)"),
             }
         }
     }

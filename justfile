@@ -37,4 +37,4 @@ coverage:
 
 # Run the CLI from source: `just run review --help`.
 run *ARGS:
-    cargo run -p klaub-cli -- {{ARGS}}
+    cargo run -p klaub -- {{ARGS}}
