@@ -19,6 +19,7 @@ use klaub_core::review::{FeedbackRecord, FollowupStatus, Version};
 
 use klaub_core::text::sanitize_single_line;
 
+use crate::keymap::Keymap;
 use crate::labels;
 use crate::theme::Theme;
 use crate::viewport::Viewport;
@@ -160,6 +161,20 @@ pub enum Depth {
     /// Everything down to symbols.
     Symbol,
 }
+
+/// A row of the flow list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowLine {
+    /// The step, its depth and how it was reached.
+    pub row: klaub_app::FlowRow,
+    /// Other steps hang below this one.
+    pub has_branches: bool,
+    /// Those steps are folded away.
+    pub folded: bool,
+}
+
+/// How many visited units `<` can walk back through.
+const HISTORY_LIMIT: usize = 64;
 
 /// A row of the structure tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -306,6 +321,10 @@ pub enum ConfirmAction {
     DeleteComment(CommentId),
     /// Take a new snapshot.
     Refresh,
+    /// Silence a rule for this review (a false positive).
+    MuteRule(String),
+    /// Bring back every rule this review silenced.
+    RestoreRules,
 }
 
 /// A yes/no question with the facts needed to answer it.
@@ -366,6 +385,13 @@ pub enum Overlay {
     Contract(UnitId),
     /// Finishing the review.
     Finish(FinishStage),
+    /// A one-time explanation. Any key closes it.
+    Notice {
+        /// The heading.
+        title: String,
+        /// The text, wrapped when drawn.
+        text: String,
+    },
 }
 
 /// How a status message is drawn.
@@ -391,12 +417,18 @@ pub struct App {
     pub clipboard: Option<Arc<dyn Clipboard>>,
     /// Colours.
     pub theme: Theme,
+    /// Which character triggers which action (the defaults plus `[keys]`).
+    pub keymap: Keymap,
     /// What the main area shows.
     pub mode: Mode,
     /// Modes visited before the current one (for `Esc`).
     pub history: Vec<Mode>,
     /// The unit that Code, Impact and Tests refer to.
     pub unit: Option<UnitId>,
+    /// Units visited before the current one, oldest first. `<` walks back through them.
+    pub(crate) unit_back: Vec<UnitId>,
+    /// Units left by walking back, nearest last. `>` walks forward; any other move clears them.
+    pub(crate) unit_forward: Vec<UnitId>,
     /// Units marked for a quick return. Held only while the reader is open.
     pub(crate) bookmarks: Vec<UnitId>,
     /// Queue filters.
@@ -427,6 +459,8 @@ pub struct App {
     pub coverage_view: Viewport,
     /// Scrolling of the flow view.
     pub flow_view: Viewport,
+    /// Steps of the flow whose branches are folded away.
+    pub flow_folded: HashSet<usize>,
     /// A layer over the screen.
     pub overlay: Option<Overlay>,
     /// The last message.
@@ -443,7 +477,23 @@ pub struct App {
     pub last_probe: Instant,
 }
 
+/// What the first review of a worktree explains about `.klaub/`.
+const STORAGE_NOTICE: &str = "Your comments, briefs and flow diagrams are saved in a .klaub/ folder inside this repository. It is local data.\n\nKlaub does not add it to .gitignore or .git/info/exclude, and it never commits it. If you do not want .klaub/ in git, add it to .gitignore yourself; if you want to share a flow diagram, commit .klaub/flows/ yourself.\n\nKlaub always leaves .klaub/ out of the changes it reviews, so saving a comment never starts a new snapshot.";
+
 impl App {
+    /// Opens with the explanation of where Klaub keeps its files, for a worktree that has none yet.
+    ///
+    /// The text says what the spec requires and no more: `.klaub/` is local data, Klaub does not
+    /// touch `.gitignore` or `.git/info/exclude` and never commits it, and it never reviews it.
+    #[must_use]
+    pub fn with_storage_notice(mut self) -> Self {
+        self.overlay = Some(Overlay::Notice {
+            title: "Where Klaub keeps its files".to_owned(),
+            text: STORAGE_NOTICE.to_owned(),
+        });
+        self
+    }
+
     /// Creates the reader over an open session.
     pub fn new(
         session: ReviewSession,
@@ -452,6 +502,13 @@ impl App {
         clipboard: Option<Arc<dyn Clipboard>>,
     ) -> Self {
         let theme = Theme::new(session.analysis().config.ui.theme);
+        let keymap = match Keymap::from_overrides(&session.analysis().config.keys) {
+            Ok(keymap) => keymap,
+            Err(error) => {
+                tracing::warn!(%error, "ignoring the [keys] table; using the default keys");
+                Keymap::default()
+            }
+        };
         let has_previous_round = session.review().previous_review_id.is_some();
         let mut app = Self {
             session,
@@ -459,10 +516,13 @@ impl App {
             agent,
             clipboard,
             theme,
+            keymap,
             mode: Mode::Queue,
             history: Vec::new(),
             unit: None,
             bookmarks: Vec::new(),
+            unit_back: Vec::new(),
+            unit_forward: Vec::new(),
             filters: Filters::default(),
             queue_view: Viewport::default(),
             structure_view: Viewport::default(),
@@ -477,6 +537,7 @@ impl App {
             followup_view: Viewport::default(),
             coverage_view: Viewport::default(),
             flow_view: Viewport::default(),
+            flow_folded: HashSet::new(),
             overlay: None,
             status: None,
             deferred: None,
@@ -596,12 +657,67 @@ impl App {
     /// Makes `unit` the current one and remembers it for the next time the review is opened.
     pub(crate) fn adopt(&mut self, unit: UnitId) {
         let changed = self.unit.as_ref() != Some(&unit);
+        if changed {
+            // A new move starts a new branch of history, as in a browser.
+            if let Some(previous) = self.unit.take() {
+                self.unit_back.push(previous);
+                if self.unit_back.len() > HISTORY_LIMIT {
+                    self.unit_back.remove(0);
+                }
+            }
+            self.unit_forward.clear();
+        }
         self.unit = Some(unit);
         if changed && let Some(unit) = self.unit.clone() {
             // A failed save leaves the cursor where the reader put it; the status says why.
             if let Err(error) = self.session.remember_position(&unit) {
                 self.say(StatusKind::Error, error.to_string());
             }
+        }
+    }
+
+    /// Walks to the unit visited before this one. `false` when there is none.
+    pub(crate) fn history_back(&mut self) -> bool {
+        let Some(target) = self.unit_back.pop() else {
+            return false;
+        };
+        if let Some(current) = self.unit.take() {
+            self.unit_forward.push(current);
+        }
+        self.show_history_unit(&target);
+        true
+    }
+
+    /// Walks to the unit that `<` left. `false` when there is none.
+    pub(crate) fn history_forward(&mut self) -> bool {
+        let Some(target) = self.unit_forward.pop() else {
+            return false;
+        };
+        if let Some(current) = self.unit.take() {
+            self.unit_back.push(current);
+        }
+        self.show_history_unit(&target);
+        true
+    }
+
+    /// Puts the reader on a unit taken from the history, without touching the other direction.
+    fn show_history_unit(&mut self, unit: &UnitId) {
+        self.unit = Some(unit.clone());
+        if let Err(error) = self.session.remember_position(unit) {
+            self.say(StatusKind::Error, error.to_string());
+        }
+        self.select_in_queue(unit);
+        if matches!(self.mode, Mode::Code) {
+            let version = self.code.version;
+            self.code = CodeState {
+                version: version.or_else(|| Some(self.default_version(unit))),
+                scope: Some(CodeScope::Symbol),
+                ..CodeState::default()
+            };
+            self.rebuild_code();
+        }
+        if matches!(self.mode, Mode::Impact) {
+            self.rebuild_impact();
         }
     }
 
@@ -663,6 +779,72 @@ impl App {
         modules.sort();
         modules.dedup();
         modules
+    }
+
+    // ---- flow ---------------------------------------------------------------------------------
+
+    /// The rows of the flow the reviewer can see: the layout minus the branches they folded.
+    ///
+    /// Each row says whether it has branches below it, so the view can draw the fold mark. A step
+    /// that was already shown higher up (a cycle or a join) never has branches of its own.
+    pub fn flow_rows(&self) -> Vec<FlowLine> {
+        let Some(flow) = &self.session.flow().flow else {
+            return Vec::new();
+        };
+        let all = klaub_app::flow_layout(&flow.document);
+        let mut visible = Vec::with_capacity(all.len());
+        let mut hidden_below: Option<usize> = None;
+        for (index, row) in all.iter().enumerate() {
+            if let Some(depth) = hidden_below {
+                if row.depth > depth {
+                    continue;
+                }
+                hidden_below = None;
+            }
+            let has_branches = all
+                .get(index + 1)
+                .is_some_and(|next| next.depth > row.depth);
+            let folded = has_branches && self.flow_folded.contains(&row.step);
+            visible.push(FlowLine {
+                row: row.clone(),
+                has_branches,
+                folded,
+            });
+            if folded {
+                hidden_below = Some(row.depth);
+            }
+        }
+        visible
+    }
+
+    /// The steps from the start of the flow down to the selected row, selected one last.
+    ///
+    /// Computed on the whole layout, so folding never removes an ancestor from the path.
+    pub fn flow_breadcrumbs(&self) -> Vec<usize> {
+        let Some(flow) = &self.session.flow().flow else {
+            return Vec::new();
+        };
+        let Some(selected) = self
+            .flow_rows()
+            .get(self.flow_view.selected)
+            .map(|line| line.row.clone())
+        else {
+            return Vec::new();
+        };
+        let all = klaub_app::flow_layout(&flow.document);
+        let Some(position) = all.iter().position(|row| *row == selected) else {
+            return vec![selected.step];
+        };
+        let mut path = vec![selected.step];
+        let mut depth = selected.depth;
+        for row in all[..position].iter().rev() {
+            if row.depth < depth {
+                path.push(row.step);
+                depth = row.depth;
+            }
+        }
+        path.reverse();
+        path
     }
 
     // ---- structure ---------------------------------------------------------------------------

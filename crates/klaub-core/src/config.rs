@@ -430,6 +430,11 @@ pub struct Config {
     pub flows: FlowsConfig,
     /// `[rules]`
     pub rules: RulesConfig,
+    /// `[keys]`: action id to the single character that triggers it in the reader.
+    ///
+    /// The reader owns the list of action ids and checks every entry when it opens, so a typo is
+    /// reported there with the id that was not recognised.
+    pub keys: std::collections::BTreeMap<String, String>,
 }
 
 impl Config {

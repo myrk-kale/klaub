@@ -22,7 +22,7 @@ use klaub_core::{Error, Result};
 use tree_sitter::{Node, Parser};
 
 /// Version of the extraction logic. Bump it whenever output for the same input can change.
-pub const PARSER_VERSION: u32 = 1;
+pub const PARSER_VERSION: u32 = 2;
 
 /// Deepest syntax nesting that is analysed; deeper content is ignored (and reported as an error).
 const MAX_DEPTH: u32 = 250;
@@ -83,6 +83,10 @@ pub(crate) trait Profile: Sync {
         in_loop: bool,
         src: &[u8],
     ) -> Vec<(MarkerKind, String)>;
+    /// The exception a `raise`/`throw` statement names, when `node` is one.
+    fn raised(&self, _node: Node<'_>, _src: &[u8]) -> Option<String> {
+        None
+    }
     fn entrypoints(&self, ctx: &EntryCtx<'_, '_>) -> Vec<EntrypointHint>;
     fn highlight(&self, node: Node<'_>, src: &[u8]) -> Option<HighlightClass>;
 }
@@ -241,6 +245,8 @@ impl<'t> Extractor<'_, 't> {
             complexity: 1,
             max_nesting: 0,
             markers: Vec::new(),
+            raises: Vec::new(),
+            io_calls: Vec::new(),
             imports: Vec::new(),
             calls: Vec::new(),
             too_deep: false,
@@ -280,6 +286,8 @@ impl<'t> Extractor<'_, 't> {
         symbol.features.max_nesting = scan.max_nesting;
         symbol.features.line_count = symbol.span.line_count();
         symbol.features.markers = scan.markers;
+        symbol.features.raises = scan.raises;
+        symbol.features.io_calls = scan.io_calls;
         self.imports.extend(scan.imports);
         self.calls.extend(scan.calls);
         self.too_deep |= scan.too_deep;
@@ -298,6 +306,8 @@ struct Scan<'a, 'p, 't> {
     complexity: u32,
     max_nesting: u32,
     markers: Vec<Marker>,
+    raises: Vec<String>,
+    io_calls: Vec<String>,
     imports: Vec<ImportRef>,
     calls: Vec<CallSite>,
     too_deep: bool,
@@ -345,6 +355,17 @@ impl<'t> Scan<'_, '_, 't> {
                     detail,
                 });
             }
+            if crate::markers::io_call(&call.receiver, &call.name) {
+                let label = match &call.receiver {
+                    Receiver::Path(path) if !path.is_empty() => {
+                        format!("{}.{}", path.join("."), call.name)
+                    }
+                    _ => call.name.clone(),
+                };
+                if !self.io_calls.contains(&label) {
+                    self.io_calls.push(label);
+                }
+            }
             self.calls.push(CallSite {
                 caller: self.symbol,
                 name: call.name,
@@ -352,6 +373,11 @@ impl<'t> Scan<'_, '_, 't> {
                 line,
                 in_loop: loops > 0,
             });
+        }
+        if let Some(raised) = self.profile.raised(node, self.src)
+            && !self.raises.contains(&raised)
+        {
+            self.raises.push(raised);
         }
         self.imports.extend(self.profile.imports(node, self.src));
         for (marker, detail) in self.profile.node_markers(node, self.src) {

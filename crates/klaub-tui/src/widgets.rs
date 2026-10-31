@@ -68,6 +68,29 @@ pub(crate) fn percent(done: usize, total: usize) -> usize {
     raw.min(if done < total { 99 } else { 100 })
 }
 
+/// Like [`fit`], but keeps the end of the text and cuts the start, marking the cut with `…`. A
+/// breadcrumb path is read from its tail, so that is the part that must survive a narrow terminal.
+pub(crate) fn fit_tail(text: &str, width: usize) -> String {
+    if text.width() <= width {
+        return text.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut kept: Vec<char> = Vec::new();
+    let mut used = 1; // the ellipsis
+    for c in text.chars().rev() {
+        let w = c.width().unwrap_or(0);
+        if used + w > width {
+            break;
+        }
+        kept.push(c);
+        used += w;
+    }
+    kept.reverse();
+    std::iter::once('…').chain(kept).collect()
+}
+
 /// Splits `text` into lines no wider than `width` columns, breaking at spaces where possible.
 pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);

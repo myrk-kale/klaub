@@ -186,6 +186,16 @@ pub struct SymbolFeatures {
     pub is_async: bool,
     /// Structural evidence for rules.
     pub markers: Vec<Marker>,
+    /// Names of the exceptions the body raises or throws explicitly (`ValueError`), in source
+    /// order and without repeats. Only what is written in the body: nothing is inferred from
+    /// the functions it calls.
+    #[serde(default)]
+    pub raises: Vec<String>,
+    /// Calls that look like network, file or database I/O (`requests.get`, `cursor.execute`),
+    /// in source order and without repeats. A judgement from the call's name and receiver, not
+    /// from types.
+    #[serde(default)]
+    pub io_calls: Vec<String>,
 }
 
 /// A named code unit.
