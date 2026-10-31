@@ -75,6 +75,18 @@ pub(crate) enum Format {
     Json,
 }
 
+/// What `klaub reviews export` can write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ExportFormat {
+    /// The review document as JSON.
+    Json,
+    /// A Markdown summary for a pull request or an issue.
+    #[value(alias = "text")]
+    Markdown,
+    /// A SARIF 2.1.0 log, one result per comment.
+    Sarif,
+}
+
 #[derive(Debug, Args)]
 pub(crate) struct FormatArgs {
     /// Output format.
@@ -216,13 +228,13 @@ pub(crate) enum ReviewsCommand {
         #[arg(long, value_enum, default_value_t = Format::Json)]
         format: Format,
     },
-    /// Write the review as JSON or Markdown.
+    /// Write the review as JSON, Markdown or SARIF.
     Export {
         /// Review id (`rev_...`).
         id: String,
-        /// Output format.
-        #[arg(long, value_enum, default_value_t = Format::Json)]
-        format: Format,
+        /// Output format. `text` is an alias of `markdown`.
+        #[arg(long, value_enum, default_value_t = ExportFormat::Json)]
+        format: ExportFormat,
     },
 }
 
@@ -345,6 +357,24 @@ mod tests {
         };
         assert!(args.wait);
         assert!(Cli::try_parse_from(["klaub", "review", "--format", "json"]).is_err());
+    }
+
+    #[test]
+    fn export_formats_include_sarif_and_keep_text_as_markdown() {
+        for (given, expected) in [
+            ("json", ExportFormat::Json),
+            ("markdown", ExportFormat::Markdown),
+            ("text", ExportFormat::Markdown),
+            ("sarif", ExportFormat::Sarif),
+        ] {
+            let parsed =
+                Cli::try_parse_from(["klaub", "reviews", "export", "rev_x", "--format", given])
+                    .unwrap();
+            let Command::Reviews(ReviewsCommand::Export { format, .. }) = parsed.command else {
+                panic!("expected export")
+            };
+            assert_eq!(format, expected, "{given}");
+        }
     }
 
     #[test]

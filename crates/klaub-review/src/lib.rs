@@ -24,7 +24,7 @@ use klaub_core::timestamp::Timestamp;
 use klaub_core::{Error, Result};
 
 pub use anchor::{Candidate, Relocation, build_anchor_fingerprint, relocate};
-pub use export::{ExportContext, export_json, export_markdown};
+pub use export::{ExportContext, export_json, export_markdown, export_sarif};
 pub use feedback::feedback_prompt;
 
 /// Longest accepted comment text, in characters.

@@ -1,6 +1,6 @@
 //! Exports: the JSON schema of `klaub reviews show --format json` and a Markdown rendering.
 
-use klaub_core::finding::FindingDelta;
+use klaub_core::finding::{FindingDelta, Priority};
 use klaub_core::review::{CommentStatus, CriterionStatus, FlowRef, Review};
 use klaub_core::text::sanitize_terminal_text;
 use serde_json::{Value, json};
@@ -64,6 +64,73 @@ pub fn export_json(review: &Review, context: &ExportContext) -> Value {
 fn line(text: &str) -> String {
     sanitize_terminal_text(text).replace('\n', " ")
 }
+
+/// The review as a [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+/// log, so hosts that read SARIF (code scanning views, editors) can show the comments in place.
+///
+/// Every comment becomes one result of the single rule `klaub.review-comment`, anchored to its file
+/// and, when it has one, its line range. SARIF levels describe code defects and a comment is not
+/// one, so the mapping is a hint about attention, not a verdict: `P0` is `error`, `P1` is
+/// `warning`, everything else (including a comment without a priority) is `note`. The exact
+/// priority, the version the lines refer to (`before` or `after`), the follow-up decision and the
+/// anchor's confidence travel in `properties`. A comment on the old version points at lines of the
+/// old file; `properties.version` says so.
+pub fn export_sarif(review: &Review) -> Value {
+    let results: Vec<Value> = review
+        .comments
+        .iter()
+        .map(|comment| {
+            let level = match comment.severity {
+                Some(Priority::P0) => "error",
+                Some(Priority::P1) => "warning",
+                _ => "note",
+            };
+            let mut physical = json!({
+                "artifactLocation": { "uri": comment.anchor.file_path.as_str() },
+            });
+            if let Some((start, end)) = comment.anchor.line_range {
+                physical["region"] = json!({ "startLine": start, "endLine": end.max(start) });
+            }
+            json!({
+                "ruleId": SARIF_RULE,
+                "level": level,
+                "message": { "text": comment.text },
+                "locations": [{ "physicalLocation": physical }],
+                "partialFingerprints": { "klaubAnchor/v1": comment.anchor.fingerprint },
+                "properties": {
+                    "comment_id": comment.comment_id,
+                    "priority": comment.severity.map(Priority::label),
+                    "version": comment.anchor.version,
+                    "symbol": comment.anchor.qualified_name,
+                    "status": comment.status,
+                    "followup_status": comment.followup_status,
+                    "anchor_confidence": comment.anchor_confidence,
+                },
+            })
+        })
+        .collect();
+    json!({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": { "driver": {
+                "name": "Klaub",
+                "version": env!("CARGO_PKG_VERSION"),
+                "informationUri": "https://github.com/myrk-kale/klaub",
+                "rules": [{
+                    "id": SARIF_RULE,
+                    "name": "ReviewComment",
+                    "shortDescription": { "text": "A comment written by a human reviewer" },
+                    "help": { "text": "Written by a person reading the code in Klaub. The level is a hint about attention, not a defect classification." },
+                }],
+            }},
+            "automationDetails": { "id": review.review_id },
+            "results": results,
+        }],
+    })
+}
+
+const SARIF_RULE: &str = "klaub.review-comment";
 
 /// A Markdown rendering of the review, for pull request descriptions or issue trackers.
 pub fn export_markdown(review: &Review) -> String {
@@ -139,7 +206,6 @@ mod tests {
     use super::*;
     use crate::tests::anchor;
     use crate::{ReviewTarget, add_comment, new_review};
-    use klaub_core::finding::Priority;
     use klaub_core::ids::{SnapshotId, WorktreeId};
     use klaub_core::snapshot::Scope;
     use klaub_core::timestamp::Timestamp;
@@ -216,5 +282,45 @@ mod tests {
             "terminal sequences never reach a document"
         );
         assert!(markdown.contains("tricky red second line"));
+    }
+
+    #[test]
+    fn sarif_has_one_result_per_comment_with_a_mapped_level_and_the_exact_priority() {
+        let log = export_sarif(&review());
+        assert_eq!(log["version"], "2.1.0");
+        let results = log["runs"][0]["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2);
+
+        let first = &results[0];
+        assert_eq!(first["ruleId"], "klaub.review-comment");
+        assert_eq!(first["level"], "warning", "P1 maps to warning");
+        assert_eq!(first["message"]["text"], "handle the empty case");
+        assert_eq!(first["properties"]["priority"], "P1");
+        assert_eq!(
+            first["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+            "src/a.py"
+        );
+        assert!(first["partialFingerprints"]["klaubAnchor/v1"].is_string());
+
+        let second = &results[1];
+        assert_eq!(
+            second["level"], "note",
+            "no priority is a note, not a defect"
+        );
+        assert!(second["properties"]["priority"].is_null());
+    }
+
+    #[test]
+    fn sarif_declares_its_one_rule_and_says_the_level_is_not_a_verdict() {
+        let log = export_sarif(&review());
+        let driver = &log["runs"][0]["tool"]["driver"];
+        assert_eq!(driver["name"], "Klaub");
+        assert_eq!(driver["rules"].as_array().unwrap().len(), 1);
+        assert!(
+            driver["rules"][0]["help"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("not a defect classification")
+        );
     }
 }
