@@ -51,7 +51,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # The two extra runners are the expansion targets of the specification (§19): Linux on
+        # aarch64 and macOS on Intel.
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm, macos-15-intel]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
