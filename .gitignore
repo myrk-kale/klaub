@@ -33,3 +33,6 @@ rustc-ice-*.txt
 lcov.info
 *.profraw
 .DS_Store
+
+# Local tooling state
+.serena/
