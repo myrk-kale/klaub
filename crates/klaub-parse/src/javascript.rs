@@ -12,7 +12,7 @@ use crate::engine::{
     CallParts, Def, EntryCtx, Profile, collapse, external, header, line_of, string_value, text,
 };
 use crate::markers::{
-    dynamic_exec_call, io_call, plausible_secret, secret_name, shell_call, sql_sink,
+    dynamic_exec_call, exception_name, io_call, plausible_secret, secret_name, shell_call, sql_sink,
 };
 
 pub(crate) struct JavaScript {
@@ -562,6 +562,20 @@ impl Profile for JavaScript {
             }
             _ => vec![],
         }
+    }
+
+    fn raised(&self, node: Node<'_>, src: &[u8]) -> Option<String> {
+        if node.kind() != "throw_statement" {
+            return None;
+        }
+        let mut cursor = node.walk();
+        let expression = node.named_children(&mut cursor).next()?;
+        let name = match expression.kind() {
+            "new_expression" => expression.child_by_field_name("constructor")?,
+            "call_expression" => expression.child_by_field_name("function")?,
+            _ => expression,
+        };
+        exception_name(text(name, src))
     }
 
     fn node_markers(&self, node: Node<'_>, src: &[u8]) -> Vec<(MarkerKind, String)> {

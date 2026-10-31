@@ -969,6 +969,7 @@ dependencies = [
  "klaub-tests",
  "serde_json",
  "tempfile",
+ "toml",
  "tracing",
 ]
 

@@ -410,6 +410,60 @@ fn a_finding_can_be_silenced_from_the_explanation_after_confirming() {
 }
 
 #[test]
+fn contract_overlay_lists_parameters_raises_and_io_for_a_symbol() {
+    let repo = TempRepo::new();
+    repo.write(
+        "service.py",
+        "import requests\n\ndef lookup(name):\n    return name\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "import requests\n\ndef lookup(name, strict: bool = False) -> str:\n    if strict and not name:\n        raise ValueError(\"empty\")\n    return requests.get(name)\n",
+    );
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    press(&mut app, 'i');
+    let shown = screen(&mut app, 110, 50);
+    for expected in [
+        "parameters",
+        "+ strict: bool = False",
+        "returns",
+        "raises",
+        "+ ValueError",
+        "calls requests.get (looks like I/O)",
+    ] {
+        assert!(
+            shown.contains(expected),
+            "missing {expected:?} in:\n{shown}"
+        );
+    }
+}
+
+#[test]
+fn contract_overlay_reads_a_dependency_manifest() {
+    let repo = TempRepo::new();
+    repo.write("requirements.txt", "requests==2.0\n");
+    repo.commit_all("initial");
+    repo.write("requirements.txt", "requests==2.31\nrich==13\n");
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    press(&mut app, 'i');
+    assert!(matches!(app.overlay, Some(Overlay::Contract(_))));
+    let shown = screen(&mut app, 110, 40);
+    for expected in [
+        "dependency manifest",
+        "+ rich [requirements] ==13",
+        "~ requests [requirements]: ==2.0 -> ==2.31",
+    ] {
+        assert!(
+            shown.contains(expected),
+            "missing {expected:?} in:\n{shown}"
+        );
+    }
+}
+
+#[test]
 fn comment_empty_is_rejected() {
     let repo = changed_repo();
     let mut app = reader(open(&repo));
