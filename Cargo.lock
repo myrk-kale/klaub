@@ -1121,8 +1121,16 @@ dependencies = [
 name = "klaub-tui"
 version = "0.1.0"
 dependencies = [
+ "klaub-app",
  "klaub-core",
+ "klaub-flow",
+ "klaub-git",
+ "klaub-parse",
+ "klaub-review",
+ "klaub-storage",
  "ratatui",
+ "tempfile",
+ "unicode-width",
 ]
 
 [[package]]

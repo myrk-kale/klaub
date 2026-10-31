@@ -1,17 +1,19 @@
 //! # klaub-tui
 //!
-//! Klaub's terminal user interface, built with [Ratatui](https://ratatui.rs).
+//! Klaub's semantic code reviewer, built with [Ratatui](https://ratatui.rs).
 //!
-//! The crate follows an Elm-style split so the interesting parts are testable
-//! without a terminal: a plain state value, a pure function that applies input to
-//! it, and a view that draws it into a Ratatui `Frame`. Only the `terminal` module touches
-//! the real terminal.
+//! The crate follows an Elm-style split so everything interesting is testable without a terminal:
+//! [`App`] is plain state over a [`ReviewSession`](klaub_app::ReviewSession); [`handle_key`] applies
+//! one key press to it; [`draw`] renders it into a Ratatui `Frame`. Only the `terminal` module
+//! touches the real terminal.
 //!
-//! At this stage it provides the review window's welcome screen. The semantic
-//! reader (queue, code, impact, comments) builds on the same structure.
+//! Nothing here submits anything to the agent. Putting the instruction into the agent's input
+//! always goes through a confirmation that shows the destination and the exact text, and `Enter` is
+//! never sent.
 
-mod terminal;
-mod welcome;
+mod app;
+mod labels;
+mod theme;
+mod viewport;
 
-pub use terminal::run_welcome;
-pub use welcome::{Welcome, draw_welcome, is_quit_key};
+pub use app::{App, Mode};

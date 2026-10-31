@@ -12,8 +12,18 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+klaub-app.workspace = true
 klaub-core.workspace = true
+klaub-flow.workspace = true
+klaub-review.workspace = true
 ratatui.workspace = true
+unicode-width.workspace = true
+
+[dev-dependencies]
+klaub-git = { workspace = true, features = ["testing"] }
+klaub-parse.workspace = true
+klaub-storage.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
