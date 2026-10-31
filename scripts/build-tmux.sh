@@ -115,7 +115,8 @@ log "building tmux ${TMUX_VERSION}"
   export LIBEVENT_LIBS="-L${prefix}/lib -levent_core"
   export LIBNCURSES_CFLAGS="-I${prefix}/include -I${prefix}/include/ncursesw"
   export LIBNCURSES_LIBS="-L${prefix}/lib -lncursesw"
-  ./configure --prefix="${prefix}" >/dev/null
+  # utf8proc is optional; without it tmux uses the C library for character widths.
+  ./configure --prefix="${prefix}" --disable-utf8proc >/dev/null
   make -j"${jobs}" >/dev/null
 )
 

@@ -281,6 +281,62 @@ fn a_session_can_be_started_listed_and_ended() {
         .stdout(predicate::str::contains("no sessions"));
 }
 
+/// What the session's private tmux server says about its panes (for failure messages).
+fn pane_report(tmux: &Path, socket: &str) -> String {
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new(tmux)
+            .args(["-L", socket])
+            .args(args)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr)
+    };
+    let panes = run(&[
+        "list-panes",
+        "-a",
+        "-F",
+        "#{window_name} id=#{pane_id} dead=#{pane_dead} status=#{pane_dead_status} cmd=#{pane_current_command}",
+    ]);
+    let review = run(&["capture-pane", "-p", "-t", "review"]);
+    format!("{panes}\n--- review pane ---\n{review}")
+}
+
+#[test]
+fn the_review_window_stays_open() {
+    let sandbox = Sandbox::new();
+    if !require_tmux(&sandbox) {
+        return;
+    }
+    let output = sandbox
+        .klaub()
+        .args(["wrap", "--detach", "--", "sh", "-c", "sleep 120"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let id = stdout
+        .split_whitespace()
+        .find(|w| w.starts_with("ses_"))
+        .unwrap()
+        .to_owned();
+    let socket = format!("klaub-{}", id.trim_start_matches("ses_"));
+    let tmux = sandbox.tmux.clone().unwrap();
+
+    // The reviewer takes over the pane's terminal; give it time to fail if it is going to.
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let report = pane_report(&tmux, &socket);
+    assert!(
+        report.contains("review id=") && !report.contains("review id=%1 dead=1"),
+        "the review window died:\n{report}"
+    );
+    sandbox
+        .klaub()
+        .args(["session", "kill", "--yes", &id])
+        .assert()
+        .success();
+}
+
 #[test]
 fn killing_requires_confirmation_without_a_terminal() {
     let sandbox = Sandbox::new();
@@ -331,6 +387,17 @@ fn attaching_without_sessions_explains_what_to_do() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("klaub wrap"));
+}
+
+#[test]
+fn the_reviewer_explains_that_it_needs_a_terminal() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .klaub()
+        .args(["review"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("needs a terminal"));
 }
 
 #[test]
