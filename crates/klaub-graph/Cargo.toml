@@ -1,0 +1,24 @@
+[package]
+name = "klaub-graph"
+description = "Klaub domain service: call and dependency graph, entrypoints and reverse impact analysis."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+klaub-core.workspace = true
+petgraph.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+klaub-parse.workspace = true
+
+[lints]
+workspace = true

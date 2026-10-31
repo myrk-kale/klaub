@@ -1,0 +1,23 @@
+[package]
+name = "klaub-rules"
+description = "Klaub domain service: explainable rules, incremental risk, scoring and the review queue."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+klaub-core.workspace = true
+klaub-graph.workspace = true
+
+[dev-dependencies]
+klaub-match.workspace = true
+klaub-parse.workspace = true
+
+[lints]
+workspace = true
