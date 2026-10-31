@@ -92,6 +92,7 @@ pub struct ProjectGraph {
     entrypoints: HashMap<NodeIndex, Vec<Entrypoint>>,
     unresolved: HashMap<NodeIndex, u32>,
     import_edges: Vec<ImportEdge>,
+    index: ModuleIndex,
 }
 
 fn simple_name(symbol: &Symbol) -> &str {
@@ -784,7 +785,7 @@ pub fn build_graph(files: Vec<IndexedFile>, manifests: &[ManifestText]) -> Proje
     }
     import_edges.sort_by(|a, b| (&a.from, &a.to).cmp(&(&b.from, &b.to)));
 
-    drop(builder);
+    let Builder { index, .. } = builder;
     ProjectGraph {
         files,
         graph,
@@ -792,6 +793,7 @@ pub fn build_graph(files: Vec<IndexedFile>, manifests: &[ManifestText]) -> Proje
         entrypoints,
         unresolved,
         import_edges,
+        index,
     }
 }
 
@@ -831,6 +833,40 @@ impl ProjectGraph {
                 .neighbors_directed(*n, petgraph::Direction::Incoming)
                 .count()
         })
+    }
+
+    /// The project files that `parsed`, as it was at `path` (possibly an older version), imports.
+    ///
+    /// This lets callers compare the dependencies of a file before and after a change using
+    /// the same resolver.
+    pub fn imported_files(&self, path: &RepoPath, parsed: &ParsedFile) -> Vec<RepoPath> {
+        let mut out: Vec<RepoPath> = Vec::new();
+        for import in &parsed.imports {
+            let targets: Vec<usize> = match parsed.language {
+                klaub_core::language::Language::Python => {
+                    self.index
+                        .python(path.as_str(), &import.module, import.relative_level)
+                }
+                klaub_core::language::Language::JavaScript
+                | klaub_core::language::Language::TypeScript
+                | klaub_core::language::Language::Tsx => {
+                    self.index.javascript(path.as_str(), &import.module)
+                }
+                klaub_core::language::Language::Rust => {
+                    self.index.rust(path.as_str(), &import.module)
+                }
+                klaub_core::language::Language::Go => self.index.go(&import.module),
+            };
+            out.extend(
+                targets
+                    .into_iter()
+                    .map(|t| self.files[t].path.clone())
+                    .filter(|p| p != path),
+            );
+        }
+        out.sort();
+        out.dedup();
+        out
     }
 
     /// Total number of ambiguous calls that were not followed.

@@ -271,8 +271,11 @@ pub struct PriorityConfig {
     pub complexity: i32,
     /// Points when complexity grew considerably.
     pub complexity_growth: i32,
-    /// Points per technical-risk finding introduced (capped by `risk_cap`).
+    /// Points per technical-risk finding (capped by `risk_cap`).
     pub risk_per_finding: i32,
+    /// Points per *critical* finding (injection, secrets, shell and dynamic execution, disabled
+    /// certificate verification), which are also what unlocks `P0`.
+    pub risk_critical: i32,
     /// Cap for technical-risk points.
     pub risk_cap: i32,
     /// Points when no associated test was found.
@@ -312,9 +315,10 @@ impl Default for PriorityConfig {
             complexity: 10,
             complexity_growth: 8,
             risk_per_finding: 15,
-            risk_cap: 40,
+            risk_critical: 30,
+            risk_cap: 60,
             no_tests: 8,
-            architecture_violation: 25,
+            architecture_violation: 45,
             format_only: -40,
             test_file: -15,
             generated: -30,

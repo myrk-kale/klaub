@@ -1012,6 +1012,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "klaub-rules"
+version = "0.1.0"
+dependencies = [
+ "klaub-core",
+ "klaub-graph",
+ "klaub-match",
+ "klaub-parse",
+]
+
+[[package]]
 name = "klaub-tmux"
 version = "0.1.0"
 dependencies = [

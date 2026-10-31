@@ -20,6 +20,7 @@ pub mod dirs;
 pub mod error;
 pub mod finding;
 pub mod flow;
+pub mod glob;
 pub mod graph;
 pub mod ids;
 pub mod language;
