@@ -14,8 +14,6 @@ categories.workspace = true
 [dependencies]
 klaub-app.workspace = true
 klaub-core.workspace = true
-klaub-flow.workspace = true
-klaub-review.workspace = true
 ratatui.workspace = true
 unicode-width.workspace = true
 
