@@ -633,6 +633,75 @@ impl ReviewSession {
         }
     }
 
+    // ---- impact ---------------------------------------------------------------------------------
+
+    /// Callers, entrypoints and callees of a symbol of the call graph.
+    ///
+    /// `None` when the graph does not know the symbol.
+    pub fn impact(&self, key: &SymbolKey) -> Option<klaub_core::graph::ImpactReport> {
+        let options = klaub_graph::ImpactOptions {
+            max_depth: self.analysis.config.analysis.max_call_depth,
+            ..klaub_graph::ImpactOptions::default()
+        };
+        self.analysis
+            .graph
+            .impact(key, &options, &self.analysis.modules)
+    }
+
+    /// The changed unit that holds `key`, when the symbol is part of the change.
+    pub fn unit_of_symbol(&self, key: &SymbolKey) -> Option<UnitId> {
+        self.analysis
+            .queue
+            .iter()
+            .find(|item| item.unit.symbol.as_ref() == Some(key))
+            .map(|item| item.unit.id.clone())
+    }
+
+    // ---- project code ----------------------------------------------------------------------------
+
+    /// The code of any indexed project symbol (callers and callees reached through the impact view).
+    ///
+    /// Changed files are read from the snapshot; others from the worktree through the confined reader.
+    pub fn code_view_of_symbol(
+        &self,
+        parser: &dyn klaub_core::ports::SourceParser,
+        key: &SymbolKey,
+    ) -> Option<crate::CodeView> {
+        let text = match self
+            .analysis
+            .snapshot
+            .file(&key.file)
+            .and_then(|f| f.after_text())
+        {
+            Some(text) => text.to_string(),
+            None => {
+                let root = &self.analysis.snapshot.worktree.root;
+                let limit = self.analysis.config.review.max_file_bytes;
+                let bytes = self
+                    .ports
+                    .files
+                    .read_bounded(root, Path::new(key.file.as_str()), limit)
+                    .ok()?;
+                String::from_utf8(bytes).ok()?
+            }
+        };
+        self.analysis.symbol_view(parser, key, &text)
+    }
+
+    // ---- agent requests -----------------------------------------------------------------------------
+
+    /// Pastes the request for a flow diagram into the agent's input, without `Enter`.
+    ///
+    /// Unlike [`ReviewSession::prepare_in_agent`] this finishes nothing and marks nothing.
+    pub fn prepare_flow_request(&self, channel: &dyn AgentChannel) -> Result<PrepareOutcome> {
+        channel.prepare_input(&self.flow.request_prompt)
+    }
+
+    /// What a test request would run, for the confirmation dialog.
+    pub fn preview_test_run(request: &TestRunRequest) -> String {
+        klaub_tests::preview(request)
+    }
+
     // ---- tests ----------------------------------------------------------------------------------
 
     /// Test evidence for a unit: associated tests, matching results and coverage.

@@ -1,6 +1,8 @@
 //! What the reader shows: code with change marks and syntax colours.
 
+use klaub_core::graph::SymbolKey;
 use klaub_core::ids::UnitId;
+use klaub_core::language::Language;
 use klaub_core::path::RepoPath;
 use klaub_core::ports::SourceParser;
 use klaub_core::review::Version;
@@ -49,8 +51,8 @@ pub struct CodeLine {
 /// A rendering-ready view of one version of a unit's code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeView {
-    /// The unit shown.
-    pub unit: UnitId,
+    /// The unit shown; `None` for a project symbol that is not part of the change.
+    pub unit: Option<UnitId>,
     /// Its file.
     pub path: RepoPath,
     /// Which version.
@@ -137,7 +139,7 @@ impl Analysis {
             (v, None) => text_of(v).is_some(),
         };
         let mut view = CodeView {
-            unit: unit.clone(),
+            unit: Some(unit.clone()),
             path: entry.analysis.path.clone(),
             version,
             scope,
@@ -190,71 +192,22 @@ impl Analysis {
             }
         }
 
-        // Highlight ranges per line, in raw characters.
-        let language = entry.analysis.language;
-        let spans = language
-            .and_then(|l| parser.highlight(l, text).ok())
-            .unwrap_or_default();
-        let index = LineIndex::new(text);
-        let raw_lines: Vec<&str> = text.lines().collect();
-        let mut per_line: Vec<Vec<(usize, usize, HighlightClass)>> =
-            vec![Vec::new(); raw_lines.len()];
-        for span in &spans {
-            let first = index.line_of(span.start) as usize;
-            let last = index.line_of(span.end.saturating_sub(1).max(span.start)) as usize;
-            for line in first..=last.min(raw_lines.len()) {
-                let Some(start_byte) = index.line_start(u32::try_from(line).unwrap_or(u32::MAX))
-                else {
-                    continue;
-                };
-                let raw = raw_lines[line - 1];
-                let from = if line == first {
-                    text[start_byte..]
-                        .char_indices()
-                        .find(|(i, _)| start_byte + i >= span.start)
-                        .map_or(0, |(i, _)| text[start_byte..start_byte + i].chars().count())
-                } else {
-                    0
-                };
-                let to = if line == last {
-                    let end_in_line = span.end.saturating_sub(start_byte).min(raw.len());
-                    raw[..char_boundary_at_or_before(raw, end_in_line)]
-                        .chars()
-                        .count()
-                } else {
-                    raw.chars().count()
-                };
-                if to > from {
-                    per_line[line - 1].push((from, to, span.class));
-                }
-            }
-        }
-
+        let range = match (scope, view.symbol_lines) {
+            (CodeScope::Symbol, Some((start, end))) => start as usize..=end as usize,
+            _ => 1..=text.lines().count(),
+        };
         let marks = match version {
             Version::After => &entry.analysis.line_diff.after,
             Version::Before => &entry.analysis.line_diff.before,
         };
-        let range = match (scope, view.symbol_lines) {
-            (CodeScope::Symbol, Some((start, end))) => start as usize..=end as usize,
-            _ => 1..=raw_lines.len(),
-        };
-        for (i, raw) in raw_lines.iter().enumerate() {
-            let number = u32::try_from(i + 1).unwrap_or(u32::MAX);
-            if !range.contains(&(i + 1)) {
-                continue;
-            }
-            let (text, spans) = display(raw, &per_line[i]);
-            let in_symbol = view
-                .symbol_lines
-                .is_none_or(|(s, e)| (s..=e).contains(&number));
-            view.lines.push(CodeLine {
-                number,
-                text,
-                mark: marks.get(i).copied().unwrap_or(LineMark::Same),
-                spans,
-                in_symbol,
-            });
-        }
+        view.lines = render_lines(
+            parser,
+            entry.analysis.language,
+            text,
+            marks,
+            range,
+            view.symbol_lines,
+        );
 
         // Starts of change regions inside what is shown.
         let first_shown = view.lines.first().map_or(0, |l| l.number);
@@ -279,6 +232,112 @@ impl Analysis {
         view.changes.dedup();
         Some(view)
     }
+}
+
+impl Analysis {
+    /// The code of a project symbol that is not part of the change (a caller reached through the
+    /// impact view), read from the "after" side. `text` is the file's content.
+    pub fn symbol_view(
+        &self,
+        parser: &dyn SourceParser,
+        key: &SymbolKey,
+        text: &str,
+    ) -> Option<CodeView> {
+        let parsed = self.parsed.get(&key.file)?;
+        let symbol = &parsed.symbols[parsed.find(&key.qualified_name)?];
+        let marks: &[LineMark] = self
+            .file(&key.file)
+            .map_or(&[], |entry| entry.analysis.line_diff.after.as_slice());
+        let symbol_lines = Some((symbol.span.start_line, symbol.span.end_line));
+        let lines = render_lines(
+            parser,
+            Some(parsed.language),
+            text,
+            marks,
+            symbol.span.start_line as usize..=symbol.span.end_line as usize,
+            symbol_lines,
+        );
+        let changes = lines
+            .iter()
+            .filter(|l| l.mark != LineMark::Same)
+            .map(|l| l.number)
+            .collect();
+        Some(CodeView {
+            unit: None,
+            path: key.file.clone(),
+            version: Version::After,
+            scope: CodeScope::Symbol,
+            lines,
+            notice: Some("not part of this change · shown for context".to_owned()),
+            changes,
+            symbol_lines,
+            other_version_exists: false,
+        })
+    }
+}
+
+/// Turns source text into drawable lines: highlighting, tab expansion, sanitising and change marks.
+fn render_lines(
+    parser: &dyn SourceParser,
+    language: Option<Language>,
+    text: &str,
+    marks: &[LineMark],
+    range: std::ops::RangeInclusive<usize>,
+    symbol_lines: Option<(u32, u32)>,
+) -> Vec<CodeLine> {
+    let spans = language
+        .and_then(|l| parser.highlight(l, text).ok())
+        .unwrap_or_default();
+    let index = LineIndex::new(text);
+    let raw_lines: Vec<&str> = text.lines().collect();
+    let mut per_line: Vec<Vec<(usize, usize, HighlightClass)>> = vec![Vec::new(); raw_lines.len()];
+    for span in &spans {
+        let first = index.line_of(span.start) as usize;
+        let last = index.line_of(span.end.saturating_sub(1).max(span.start)) as usize;
+        for line in first..=last.min(raw_lines.len()) {
+            let Some(start_byte) = index.line_start(u32::try_from(line).unwrap_or(u32::MAX)) else {
+                continue;
+            };
+            let raw = raw_lines[line - 1];
+            let from = if line == first {
+                text[start_byte..]
+                    .char_indices()
+                    .find(|(i, _)| start_byte + i >= span.start)
+                    .map_or(0, |(i, _)| text[start_byte..start_byte + i].chars().count())
+            } else {
+                0
+            };
+            let to = if line == last {
+                let end_in_line = span.end.saturating_sub(start_byte).min(raw.len());
+                raw[..char_boundary_at_or_before(raw, end_in_line)]
+                    .chars()
+                    .count()
+            } else {
+                raw.chars().count()
+            };
+            if to > from {
+                per_line[line - 1].push((from, to, span.class));
+            }
+        }
+    }
+
+    let mut lines = Vec::new();
+    for (i, raw) in raw_lines.iter().enumerate() {
+        let number = u32::try_from(i + 1).unwrap_or(u32::MAX);
+        if !range.contains(&(i + 1)) {
+            continue;
+        }
+        let (text, spans) = display(raw, &per_line[i]);
+        let in_symbol = symbol_lines.is_none_or(|(s, e)| (s..=e).contains(&number));
+        lines.push(CodeLine {
+            number,
+            text,
+            mark: marks.get(i).copied().unwrap_or(LineMark::Same),
+            spans,
+            in_symbol,
+        });
+    }
+    lines
 }
 
 #[cfg(test)]
