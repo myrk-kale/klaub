@@ -1,6 +1,12 @@
 //! Rust and Go extraction.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::cast_possible_truncation,
+    clippy::format_collect,
+    clippy::needless_raw_string_hashes
+)]
 
 use klaub_core::graph::{EdgeOrigin, EntrypointKind};
 use klaub_core::language::Language;
