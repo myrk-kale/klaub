@@ -6,12 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- `[keys]` in the configuration moves any reader action to another single character. The table is validated as a whole (unknown action, not one printable character, reserved key, two actions on one key) and the reader refuses to open with an invalid one. The help and the palette show the configured keys. See `docs/configuration.md`.
-- The first review of a worktree that has no `.klaub/` yet opens with a short explanation: the folder is local data, Klaub does not add it to `.gitignore` or `.git/info/exclude`, never commits it, and always leaves it out of the changes it reviews.
-- `docs/configuration.md`, a tour of every configuration section.
-
 ## [0.1.0] - 2026-10-31
 
 ### Added
