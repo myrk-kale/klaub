@@ -37,6 +37,7 @@ tree-sitter-typescript = "0.23"
 tree-sitter-rust = "0.24"
 tree-sitter-go = "0.25"
 similar = "3.2"
+petgraph = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.11"
@@ -48,6 +49,8 @@ clap_complete = "4.6"
 # Workspace-internal crates.
 klaub-core = { path = "crates/klaub-core", version = "0.1.0" }
 klaub-git = { path = "crates/klaub-git", version = "0.1.0" }
+klaub-graph = { path = "crates/klaub-graph", version = "0.1.0" }
+klaub-rules = { path = "crates/klaub-rules", version = "0.1.0" }
 klaub-match = { path = "crates/klaub-match", version = "0.1.0" }
 klaub-parse = { path = "crates/klaub-parse", version = "0.1.0" }
 klaub-tmux = { path = "crates/klaub-tmux", version = "0.1.0" }
