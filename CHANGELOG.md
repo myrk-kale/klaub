@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `o` now does what the specification says (§8.2): it opens the current unit in its whole file and stays there, where `S` still toggles between the symbol and the file. The contract inspector, which had taken `o`, moved to `i`.
+
+### Added
+
+- `<` and `>` walk back and forward through the units visited (§16), as in a browser: a new move forgets what was ahead, and the history holds the last 64 units.
+
 ### Added
 
 - `[keys]` in the configuration moves any reader action to another single character. The table is validated as a whole (unknown action, not one printable character, reserved key, two actions on one key) and the reader refuses to open with an invalid one. The help and the palette show the configured keys. See `docs/configuration.md`.
@@ -35,7 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - tmux session chords `Prefix+I`, `Prefix+C`, `Prefix+T`, `Prefix+B` and `Prefix+L` open the reviewer directly on impact, comments, tests, context and flow.
 - Packaged skills `klaub-flow` and `klaub-feedback`, installed on request into the Codex or Claude Code skills directory.
 - Render tests for the reader: queue order, before/after, comments, reviewed marks, hostile terminal sequences, a too-small terminal, finishing without ever sending Enter, the drift banner, and the contract panel.
-- A contract inspector (`o` in the code view) showing, for one changed symbol, the change kind, the confidence, the signature before and after, the effects named by markers the symbol already carries, and the direct callers. What the analysis cannot know is stated as unknown rather than guessed.
+- A contract inspector (`i` in the code view) showing, for one changed symbol, the change kind, the confidence, the signature before and after, the effects named by markers the symbol already carries, and the direct callers. What the analysis cannot know is stated as unknown rather than guessed.
 - Search also matches comment ids, test ids and acceptance-criterion text. `m` bookmarks a unit and `,` jumps to the next bookmark. Reopening a review returns to the unit you were on.
 - The execution sort order ranks a change reached from more entrypoints first.
 - Fixture measurements for symbol matching, temporal classification, test association and anchor stability (`crates/klaub-app/tests/metrics.rs`), plus notes on what has not been measured (`docs/benchmarks.md`) and on Windows support (`docs/windows.md`).

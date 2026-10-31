@@ -210,6 +210,16 @@ const BINDABLE: &[Bindable] = &[
         defaults: &['L'],
     },
     Bindable {
+        id: "history_back",
+        action: Action::HistoryBack,
+        defaults: &['<'],
+    },
+    Bindable {
+        id: "history_forward",
+        action: Action::HistoryForward,
+        defaults: &['>'],
+    },
+    Bindable {
         id: "refresh",
         action: Action::Refresh,
         defaults: &['R'],
@@ -229,7 +239,7 @@ const BINDABLE: &[Bindable] = &[
 /// Characters no binding may take. `q` quits, `:` opens the palette, and the rest are the keys the
 /// modes use for themselves (movement, the follow-up decisions, horizontal scroll, the contract
 /// inspector, the flow request).
-const RESERVED: &[char] = &['q', ':', ' ', 'j', 'k', 'h', 'l', 'y', 'o', 'p', 'V'];
+const RESERVED: &[char] = &['q', ':', ' ', 'j', 'k', 'h', 'l', 'y', 'o', 'i', 'p', 'V'];
 
 /// Why a `[keys]` table was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -451,8 +461,8 @@ mod tests {
 
     #[test]
     fn an_action_with_two_defaults_gives_up_both_when_moved() {
-        let map = Keymap::from_overrides(&table(&[("impact", "i")])).unwrap();
-        assert_eq!(map.action('i'), Some(Action::Mode(Mode::Impact)));
+        let map = Keymap::from_overrides(&table(&[("impact", "z")])).unwrap();
+        assert_eq!(map.action('z'), Some(Action::Mode(Mode::Impact)));
         assert_eq!(map.action('4'), None);
         assert_eq!(map.action('g'), None);
     }
@@ -514,8 +524,8 @@ mod tests {
             name: "Go to Impact",
             key: "4  g  F5",
         };
-        let map = Keymap::from_overrides(&table(&[("impact", "i")])).unwrap();
-        assert_eq!(map.label(&entry), "i  F5");
+        let map = Keymap::from_overrides(&table(&[("impact", "z")])).unwrap();
+        assert_eq!(map.label(&entry), "z  F5");
         assert_eq!(Keymap::default().label(&entry), "4  g  F5");
     }
 }

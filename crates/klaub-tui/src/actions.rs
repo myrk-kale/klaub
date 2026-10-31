@@ -48,6 +48,12 @@ pub(crate) enum Action {
     Explain,
     /// Show what changed about the current symbol's contract.
     InspectContract,
+    /// Open the current unit in the whole file.
+    OpenWholeFile,
+    /// Go back to the unit visited before this one.
+    HistoryBack,
+    /// Go forward again after going back.
+    HistoryForward,
     /// Run the associated tests (after confirmation).
     RunTests,
     /// Re-read test reports.
@@ -191,7 +197,22 @@ pub(crate) const ENTRIES: &[Entry] = &[
     Entry {
         action: Action::InspectContract,
         name: "Inspect the contract",
+        key: "i",
+    },
+    Entry {
+        action: Action::OpenWholeFile,
+        name: "Open the unit in the whole file",
         key: "o",
+    },
+    Entry {
+        action: Action::HistoryBack,
+        name: "Back to the previous unit",
+        key: "<",
+    },
+    Entry {
+        action: Action::HistoryForward,
+        name: "Forward to the next unit in the history",
+        key: ">",
     },
     Entry {
         action: Action::ToggleVersion,
@@ -350,6 +371,17 @@ pub(crate) fn perform(app: &mut App, action: Action) {
             Some(unit) => app.overlay = Some(Overlay::Contract(unit)),
             None => app.say(StatusKind::Info, "Select a unit first."),
         },
+        Action::OpenWholeFile => open_whole_file(app),
+        Action::HistoryBack => {
+            if !app.history_back() {
+                app.say(StatusKind::Info, "No earlier unit in the history.");
+            }
+        }
+        Action::HistoryForward => {
+            if !app.history_forward() {
+                app.say(StatusKind::Info, "No later unit in the history.");
+            }
+        }
         Action::RunTests => ask_run_tests(app),
         Action::ReloadReports => {
             app.session.reload_reports();
@@ -662,6 +694,23 @@ fn toggle_version(app: &mut App) {
         Some(Version::Before) => Version::After,
         _ => Version::Before,
     });
+    app.rebuild_code();
+}
+
+/// `o`: the current unit, read inside its whole file. Unlike `S` it does not toggle: pressing it
+/// twice stays in the file.
+fn open_whole_file(app: &mut App) {
+    let Some(unit) = app.unit.clone() else {
+        app.say(StatusKind::Info, "Select a unit first.");
+        return;
+    };
+    if app.mode != Mode::Code || app.code.view.is_none() {
+        app.open_unit(&unit, None);
+    }
+    if app.code.view.is_none() || app.code.detached.is_some() {
+        return;
+    }
+    app.code.scope = Some(klaub_app::CodeScope::File);
     app.rebuild_code();
 }
 
