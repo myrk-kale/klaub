@@ -30,7 +30,7 @@ brew tap myrk-kale/klaub && brew install klaub      # macOS e Linux com Homebrew
 # ou
 curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
 # ou
-cargo install klaub --locked                        # qualquer plataforma com Rust instalado
+cargo install --git https://github.com/myrk-kale/klaub klaub --locked   # qualquer plataforma com Rust instalado
 
 cd meu-projeto
 klaub review                                        # revisa o que mudou desde o HEAD

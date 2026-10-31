@@ -27,7 +27,7 @@ cargo run -p klaub -- doctor
 
 ### Installing from crates.io
 
-`cargo install klaub --locked` builds Klaub from the published crates. That build embeds no tmux, so Klaub uses the one you name with `--tmux-path` or `KLAUB_TMUX_PATH`, or else the first `tmux` (3.2 or newer) on `PATH`, and `klaub doctor` says which one and that it is not verified. `klaub review` does not need tmux at all; `klaub wrap` and `klaub session` do.
+`cargo install --git https://github.com/myrk-kale/klaub klaub --locked` builds Klaub from the repository (the crates are not on crates.io yet; once they are, `cargo install klaub --locked` does the same). That build embeds no tmux, so Klaub uses the one you name with `--tmux-path` or `KLAUB_TMUX_PATH`, or else the first `tmux` (3.2 or newer) on `PATH`, and `klaub doctor` says which one and that it is not verified. `klaub review` does not need tmux at all; `klaub wrap` and `klaub session` do.
 
 ### Embedded tmux
 
