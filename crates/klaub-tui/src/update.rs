@@ -618,15 +618,11 @@ fn coverage_key(app: &mut App, key: KeyEvent) -> bool {
 }
 
 fn flow_key(app: &mut App, key: KeyEvent) -> bool {
-    let steps = app
-        .session
-        .flow()
-        .flow
-        .as_ref()
-        .map_or(0, |f| f.document.steps.len());
-    if navigate(&mut app.flow_view, key, steps) {
+    let rows = app.flow_rows();
+    if navigate(&mut app.flow_view, key, rows.len()) {
         return true;
     }
+    let selected = rows.get(app.flow_view.selected);
     match key.code {
         KeyCode::Char('p') => {
             perform(app, Action::RequestFlow);
@@ -636,11 +632,31 @@ fn flow_key(app: &mut App, key: KeyEvent) -> bool {
             perform(app, Action::ReloadFlow);
             true
         }
+        // Folding hides the branches below a step; the step itself stays in the list.
+        KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') => {
+            if let Some(line) = selected.filter(|line| line.has_branches) {
+                let step = line.row.step;
+                let fold = match key.code {
+                    KeyCode::Left => true,
+                    KeyCode::Right => false,
+                    _ => !line.folded,
+                };
+                if fold {
+                    app.flow_folded.insert(step);
+                } else {
+                    app.flow_folded.remove(&step);
+                }
+                let len = app.flow_rows().len();
+                app.flow_view.clamp(len);
+            }
+            true
+        }
         KeyCode::Enter => {
-            let target = app.session.flow().flow.as_ref().and_then(|flow| {
-                let step = flow.steps.get(app.flow_view.selected)?;
-                let file = step.file.clone()?;
-                let symbol = step.symbol.clone()?;
+            let step = selected.map(|line| line.row.step);
+            let target = step.and_then(|step| {
+                let resolved = app.session.flow().flow.as_ref()?.steps.get(step)?;
+                let file = resolved.file.clone()?;
+                let symbol = resolved.symbol.clone()?;
                 Some(klaub_core::graph::SymbolKey::new(file, symbol))
             });
             match target {

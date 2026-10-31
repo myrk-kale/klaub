@@ -1133,6 +1133,7 @@ dependencies = [
  "klaub-parse",
  "klaub-storage",
  "ratatui",
+ "serde_json",
  "tempfile",
  "tracing",
  "unicode-width",

@@ -194,6 +194,98 @@ fn contract_overlay_shows_the_change() {
     assert!(app.overlay.is_none(), "any key should close the overlay");
 }
 
+/// Four functions in four files, a flow that branches at `start`, and the flow file on disk.
+fn flow_app() -> (TempRepo, App) {
+    let repo = TempRepo::new();
+    for (file, name, body) in [
+        ("a.py", "start", "mid()"),
+        ("b.py", "mid", "finish()"),
+        ("c.py", "finish", "1"),
+        ("d.py", "side", "2"),
+    ] {
+        repo.write(file, &format!("def {name}():\n    return {body}\n"));
+    }
+    repo.commit_all("initial");
+    for (file, name, body) in [
+        ("a.py", "start", "mid() + 1"),
+        ("b.py", "mid", "finish() + 1"),
+        ("c.py", "finish", "2"),
+        ("d.py", "side", "3"),
+    ] {
+        repo.write(file, &format!("def {name}():\n    return {body}\n"));
+    }
+    let mut session = open(&repo);
+    let snapshot = session.analysis().snapshot.clone();
+    let step = |id: &str, file: &str, symbol: &str| {
+        serde_json::json!({"id": id, "file_path": file, "symbol": symbol, "note": "n",
+            "changed": true, "confidence": "resolved"})
+    };
+    let edge = |from: &str, to: &str| serde_json::json!({"from": from, "to": to, "kind": "calls", "confidence": "resolved"});
+    let document = serde_json::json!({
+        "schema_version": 1, "snapshot_id": snapshot.id, "base_oid": snapshot.base_oid,
+        "worktree_id": snapshot.worktree.id, "title": "Branching flow", "summary": "s",
+        "steps": [step("start", "a.py", "start"), step("mid", "b.py", "mid"),
+                  step("finish", "c.py", "finish"), step("side", "d.py", "side")],
+        "edges": [edge("start", "mid"), edge("mid", "finish"), edge("start", "side")]
+    });
+    let path = repo.path().join(session.flow().expected_path.as_str());
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, document.to_string()).unwrap();
+    session.reload_flow().unwrap();
+    (repo, reader(session))
+}
+
+#[test]
+fn the_flow_is_an_indented_tree_with_a_breadcrumb_path() {
+    let (_repo, mut app) = flow_app();
+    press(&mut app, '0');
+    let rows = app.flow_rows();
+    assert_eq!(
+        rows.iter()
+            .map(|r| (r.row.step, r.row.depth))
+            .collect::<Vec<_>>(),
+        vec![(0, 0), (1, 1), (2, 2), (3, 1)],
+        "depth-first, branches in document order"
+    );
+
+    press(&mut app, 'j');
+    press(&mut app, 'j');
+    let shown = screen(&mut app, 110, 30);
+    assert!(
+        shown.contains("path: start › mid › finish"),
+        "the breadcrumb names every ancestor of the selected step:\n{shown}"
+    );
+}
+
+#[test]
+fn folding_hides_the_branches_and_keeps_the_step() {
+    let (_repo, mut app) = flow_app();
+    press(&mut app, '0');
+    handle_key(&mut app, key(KeyCode::Left));
+    assert_eq!(app.flow_rows().len(), 1, "start folded: only start remains");
+    assert!(screen(&mut app, 110, 30).contains('▸'));
+
+    handle_key(&mut app, key(KeyCode::Right));
+    assert_eq!(app.flow_rows().len(), 4);
+    handle_key(&mut app, key(KeyCode::Char(' ')));
+    assert_eq!(app.flow_rows().len(), 1, "space toggles");
+}
+
+#[test]
+fn enter_opens_the_step_that_is_selected_even_after_folding() {
+    let (_repo, mut app) = flow_app();
+    press(&mut app, '0');
+    press(&mut app, 'j');
+    handle_key(&mut app, key(KeyCode::Left)); // fold `mid`, hiding `finish`
+    assert_eq!(app.flow_rows().len(), 3);
+    press(&mut app, 'j'); // now on `side`
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert!(matches!(app.mode, klaub_tui::Mode::Code));
+    let unit = app.unit.clone().unwrap();
+    let label = &app.session.analysis().item(&unit).unwrap().unit.label;
+    assert!(label.contains("side"), "{label}");
+}
+
 /// Two changed functions in two files, so the queue has two units to walk between.
 fn two_units() -> (
     TempRepo,
