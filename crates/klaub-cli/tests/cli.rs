@@ -480,7 +480,7 @@ fn doctor_proves_every_grammar_parses() {
     let checks = doctor_checks(&sandbox, |_| {});
     let grammars = check_named(&checks, "grammars").expect("a grammars check");
     assert_eq!(grammars["status"], "ok", "{grammars}");
-    assert!(grammars["detail"].as_str().unwrap().contains("6 languages"));
+    assert!(grammars["detail"].as_str().unwrap().contains("7 languages"));
 }
 
 #[test]

@@ -75,7 +75,7 @@ Some keys are deliberately not rebindable, because a terminal cannot be assumed 
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `languages` | python, javascript, typescript, rust, go | Languages that get semantic analysis. Others are shown as plain files. |
+| `languages` | python, javascript, typescript, rust, go, java | Languages that get semantic analysis. Others are shown as plain files. |
 | `max_call_depth` | `8` | How far the reverse call graph is followed. |
 | `match_strong_threshold` | `0.85` | A symbol match at or above this is strong. |
 | `match_probable_threshold` | `0.65` | At or above this it is probable; below it the match is left unresolved. |
@@ -91,7 +91,7 @@ Some keys are deliberately not rebindable, because a terminal cannot be assumed 
 | `enabled` | `true` | Look for tests associated with changed symbols. |
 | `run_mode` | `"manual"` | The only mode. Nothing runs without you. |
 | `report_paths` | `[]` | JUnit XML and Coverage.py XML reports to read. |
-| `python_patterns`, `js_patterns`, `rust_patterns`, `go_patterns` | per language | Where test files live. |
+| `python_patterns`, `js_patterns`, `rust_patterns`, `go_patterns`, `java_patterns` | per language | Where test files live. Java's default is `**/src/test/**/*.java`, `**/*Test.java`, `**/*Tests.java` and `**/*IT.java`. |
 | `command` | unset | The test command, as an array (`["pytest", "-q"]`). Never inferred from the repository, never run through a shell. |
 | `timeout_secs` | `600` | Time limit for a run. |
 

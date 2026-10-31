@@ -39,10 +39,74 @@ pub(crate) fn split(
     let inside = text.get(open + 1..close)?;
     let parameters = split_top_level(inside);
     let rest = text.get(close + 1..)?.trim();
+    let returns = if language == Language::Java {
+        java_return(text.get(..open)?)
+    } else {
+        return_type(language, rest)
+    };
     Some(SignatureParts {
         parameters,
-        returns: return_type(language, rest),
+        returns,
     })
+}
+
+/// Words that may open a Java method declaration before its type.
+const JAVA_MODIFIERS: &[&str] = &[
+    "public",
+    "protected",
+    "private",
+    "static",
+    "final",
+    "abstract",
+    "synchronized",
+    "native",
+    "strictfp",
+    "default",
+];
+
+/// The return type of a Java method, read from what precedes its parameter list:
+/// `public static <T> List<T> find` gives `List<T>`. A constructor has nothing but modifiers
+/// before its name, so it has no return type.
+fn java_return(before_parameters: &str) -> Option<String> {
+    let head = before_parameters.trim();
+    let (before_name, _name) = head.rsplit_once(char::is_whitespace)?;
+    let mut rest = before_name.trim();
+    loop {
+        let (word, tail) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+        if JAVA_MODIFIERS.contains(&word) {
+            rest = tail.trim_start();
+        } else {
+            break;
+        }
+    }
+    // A generic method's own type parameters: `<T extends Comparable<T>>`.
+    if rest.starts_with('<') {
+        let mut depth = 0_i32;
+        let mut end = None;
+        for (index, c) in rest.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        rest = rest.get(end? + 1..)?.trim_start();
+    }
+    (!rest.is_empty()).then(|| rest.to_owned())
+}
+
+/// The exception types a Java declaration lists after `throws`, in order.
+pub(crate) fn java_throws(signature: &str) -> Vec<String> {
+    let Some((_, after)) = signature.rsplit_once(" throws ") else {
+        return Vec::new();
+    };
+    split_top_level(after)
 }
 
 /// The index of the first `(` at or after `from` that is not inside a generic list.
@@ -160,6 +224,8 @@ fn return_type(language: Language, rest: &str) -> Option<String> {
         Language::Python | Language::Rust => rest.strip_prefix("->")?,
         Language::JavaScript | Language::TypeScript | Language::Tsx => rest.strip_prefix(':')?,
         Language::Go => rest,
+        // Read from before the parameter list instead; see `java_return`.
+        Language::Java => return None,
     };
     let mut text = raw;
     for stop in [" where ", "{", "=>"] {
@@ -231,6 +297,36 @@ mod tests {
         );
         assert_eq!(p.parameters, vec!["ctx context.Context", "n int"]);
         assert_eq!(p.returns.as_deref(), Some("(int, error)"));
+    }
+
+    #[test]
+    fn java_return_type_comes_before_the_name() {
+        let p = parts(
+            Language::Java,
+            SymbolKind::Method,
+            "public static <T extends Comparable<T>> Map<String, List<T>> group(List<T> items, int size) throws IOException, ParseException",
+        );
+        assert_eq!(p.parameters, vec!["List<T> items", "int size"]);
+        assert_eq!(p.returns.as_deref(), Some("Map<String, List<T>>"));
+    }
+
+    #[test]
+    fn a_java_constructor_and_a_void_method() {
+        let ctor = parts(Language::Java, SymbolKind::Method, "public Cart(int id)");
+        assert_eq!(ctor.parameters, vec!["int id"]);
+        assert_eq!(ctor.returns, None);
+        let void = parts(Language::Java, SymbolKind::Method, "void run()");
+        assert!(void.parameters.is_empty());
+        assert_eq!(void.returns.as_deref(), Some("void"));
+    }
+
+    #[test]
+    fn java_throws_are_listed_in_order() {
+        assert_eq!(
+            java_throws("void run() throws IOException, java.sql.SQLException"),
+            vec!["IOException", "java.sql.SQLException"]
+        );
+        assert!(java_throws("void run()").is_empty());
     }
 
     #[test]

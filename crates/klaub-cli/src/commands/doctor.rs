@@ -249,6 +249,7 @@ fn grammars_check() -> Check {
             Language::Tsx => "const A = () => <div />;\nfunction f() {}\n",
             Language::Rust => "fn f() {}\n",
             Language::Go => "package p\n\nfunc f() {}\n",
+            Language::Java => "class P {\n    void f() {}\n}\n",
         };
         // The module symbol always exists; a working grammar also finds the function.
         let works = parser

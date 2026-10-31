@@ -1,6 +1,6 @@
 # Adding a language
 
-Klaub's analysis is deterministic and offline, so a language is supported by a tree-sitter grammar and a small description of how that grammar names things. Python, JavaScript, TypeScript (and TSX), Rust and Go are in. This is the list of places a new language touches, in the order a change goes through them. Every step has a test that already exists for another language to copy.
+Klaub's analysis is deterministic and offline, so a language is supported by a tree-sitter grammar and a small description of how that grammar names things. Python, JavaScript, TypeScript (and TSX), Rust, Go and Java are in. Java is the most recent one, so its change is the best example of the steps below: `crates/klaub-parse/src/java.rs`, `crates/klaub-parse/tests/java.rs`, the import resolution in `crates/klaub-graph/src/resolve.rs` and the end-to-end test at the end of `crates/klaub-app/tests/session.rs`. This is the list of places a new language touches, in the order a change goes through them. Every step has a test that already exists for another language to copy.
 
 A language you do not add is not a hole: files in it are listed with their metadata, shown whole in the reader and compared as text, and the review says there is no semantic analysis for them. Nothing pretends otherwise.
 
@@ -47,8 +47,12 @@ Bump `PARSER_VERSION` in `engine.rs`, because cached parses are keyed by it.
 
 ## 6. The tests of the profile
 
-Copy `crates/klaub-parse/tests/python.rs` or `rust_and_go.rs`: symbols and signatures, nested symbols not changing the fingerprint of their parent, calls with receivers, imports, entrypoints, markers, and a file with a syntax error (the parser is fault tolerant and must still return what it can).
+Copy `crates/klaub-parse/tests/python.rs`, `rust_and_go.rs` or `java.rs`: symbols and signatures, nested symbols not changing the fingerprint of their parent, calls with receivers, imports, entrypoints, markers, and a file with a syntax error (the parser is fault tolerant and must still return what it can).
 
-## 7. What to say in the changelog
+## 7. Where else the language shows up
+
+`cargo build` finds most of these for you, because the matches over `Language` are exhaustive: the signature splitter in `crates/klaub-app/src/signature.rs` (where the return type sits in a declaration), the contract's notion of a data type and of declared errors in `crates/klaub-app/src/contract.rs`, and the import resolver. The default `analysis.languages` list and `tests.<name>_patterns` are in `crates/klaub-core/src/config.rs`, and `is_test_path` in `crates/klaub-rules/src/lib.rs` reads the patterns. If test files are named after the class under test, as Java's `CartTest`, teach `subject_stem` in `crates/klaub-tests/src/lib.rs`.
+
+## 8. What to say in the changelog
 
 Which constructs are recognised and, as important, which are not (macros, reflection, dynamic dispatch), so nobody reads `resolved` as more than it is.

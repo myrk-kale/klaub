@@ -20,17 +20,20 @@ pub enum Language {
     Rust,
     /// Go (priority 1).
     Go,
+    /// Java (priority 1).
+    Java,
 }
 
 impl Language {
     /// Every supported language.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Python,
         Self::JavaScript,
         Self::TypeScript,
         Self::Tsx,
         Self::Rust,
         Self::Go,
+        Self::Java,
     ];
 
     /// Detects the language from a file extension.
@@ -42,6 +45,7 @@ impl Language {
             "tsx" => Some(Self::Tsx),
             "rs" => Some(Self::Rust),
             "go" => Some(Self::Go),
+            "java" => Some(Self::Java),
             _ => None,
         }
     }
@@ -60,6 +64,7 @@ impl Language {
             Self::Tsx => "tsx",
             Self::Rust => "rust",
             Self::Go => "go",
+            Self::Java => "java",
         }
     }
 
@@ -95,6 +100,7 @@ mod tests {
         assert_eq!(lang("web/app.mjs"), Some(Language::JavaScript));
         assert_eq!(lang("src/lib.rs"), Some(Language::Rust));
         assert_eq!(lang("main.go"), Some(Language::Go));
+        assert_eq!(lang("src/main/java/a/B.java"), Some(Language::Java));
         assert_eq!(lang("README.md"), None);
         assert_eq!(lang("Makefile"), None);
     }

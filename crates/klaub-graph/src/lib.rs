@@ -199,7 +199,9 @@ impl<'a> Builder<'a> {
                             }
                         }
                     }
-                    klaub_core::language::Language::Go | klaub_core::language::Language::Rust
+                    klaub_core::language::Language::Go
+                    | klaub_core::language::Language::Rust
+                    | klaub_core::language::Language::Java
                         if !module_files.is_empty() && !last_segment.is_empty() =>
                     {
                         out.by_local
@@ -856,6 +858,9 @@ impl ProjectGraph {
                     self.index.rust(path.as_str(), &import.module)
                 }
                 klaub_core::language::Language::Go => self.index.go(&import.module),
+                klaub_core::language::Language::Java => {
+                    self.index.java(&import.module, import.wildcard)
+                }
             };
             out.extend(
                 targets

@@ -96,6 +96,15 @@ fn subject_stem(path: &RepoPath) -> String {
         .or_else(|| stem.strip_suffix("_test"))
         .or_else(|| stem.strip_suffix("_spec"))
         .unwrap_or(stem);
+    // Java names the test after the class: `CartTest`, `CartTests`, `CartIT`.
+    let stem = if path.extension() == Some("java") {
+        ["Tests", "Test", "IT"]
+            .iter()
+            .find_map(|suffix| stem.strip_suffix(suffix).filter(|rest| !rest.is_empty()))
+            .unwrap_or(stem)
+    } else {
+        stem
+    };
     normalize(stem)
 }
 
