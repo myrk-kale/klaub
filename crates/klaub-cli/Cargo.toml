@@ -19,5 +19,8 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 
+[dev-dependencies]
+cargo_metadata.workspace = true
+
 [lints]
 workspace = true
