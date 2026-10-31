@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- A finding can be marked as a false positive from "Why this priority" (`w`): press its number, confirm, and the rule is silenced for that review. The queue is recomputed on the same snapshot (the worktree is not read again), the choice is saved in the review and carried into the next round, the panel lists what is silenced, and "Bring back silenced rules" in the palette undoes it. Only a rule that produced a finding in this review can be silenced.
-
 ## [0.1.0] - 2026-10-31
 
 ### Added
