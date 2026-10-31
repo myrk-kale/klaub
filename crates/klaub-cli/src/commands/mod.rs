@@ -1,6 +1,7 @@
 //! Command implementations and their dispatch.
 
 mod completions;
+mod crashes;
 mod doctor;
 mod feedback;
 mod flow;
@@ -27,6 +28,7 @@ pub(crate) fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Completions { shell } => Ok(completions::run(shell)),
         Command::Version(args) => version::run(args.format),
         Command::Doctor(args) => doctor::run(cli.tmux_path, args.format),
+        Command::Crashes(command) => crashes::run(command),
         Command::Wrap(args) => {
             logging::init_stderr();
             wrap::run(&Context::from_process(cli.tmux_path)?, &args)

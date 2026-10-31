@@ -51,6 +51,11 @@ impl AppDirs {
         self.state.join("sessions")
     }
 
+    /// Where local crash reports live.
+    pub fn crashes_dir(&self) -> PathBuf {
+        self.state.join("crashes")
+    }
+
     /// Where log files live.
     pub fn logs_dir(&self) -> PathBuf {
         self.state.join("logs")

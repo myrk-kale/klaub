@@ -316,6 +316,31 @@ fn the_cache_is_keyed_by_content_and_parser_version() {
 }
 
 #[test]
+fn checking_a_cache_looks_without_touching() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("analysis.sqlite3");
+    let cache = SqliteCache::open(&path).unwrap();
+    cache.put(&key("wt_a", "h1", 1), b"v1").unwrap();
+    drop(cache);
+
+    let health = SqliteCache::check(&path).unwrap();
+    assert_eq!(health.entries, 1);
+    assert!(health.is_healthy(), "{health:?}");
+
+    // A damaged file is reported, and left exactly as it was: only `open` replaces it.
+    let garbage = temp.path().join("damaged.sqlite3");
+    let bytes = b"this is definitely not a sqlite database, just text padding ".repeat(100);
+    fs::write(&garbage, &bytes).unwrap();
+    assert!(SqliteCache::check(&garbage).is_err());
+    assert_eq!(fs::read(&garbage).unwrap(), bytes, "check must not repair");
+
+    // A file that does not exist is not created by looking at it.
+    let missing = temp.path().join("absent.sqlite3");
+    assert!(SqliteCache::check(&missing).is_err());
+    assert!(!missing.exists());
+}
+
+#[test]
 fn a_corrupt_cache_is_replaced_not_reported() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("analysis.sqlite3");

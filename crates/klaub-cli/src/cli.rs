@@ -52,8 +52,11 @@ pub(crate) enum Command {
     /// Inspect and control wrapped sessions.
     #[command(subcommand)]
     Session(SessionCommand),
-    /// Check the environment: git, tmux, terminal and directories.
+    /// Check the environment: git, tmux, terminal, grammars, the cache and directories.
     Doctor(FormatArgs),
+    /// Read the crash reports Klaub saved on this machine. Nothing is ever sent.
+    #[command(subcommand)]
+    Crashes(CrashesCommand),
     /// Print version and build information.
     Version(FormatArgs),
     /// Print a shell completion script.
@@ -121,6 +124,17 @@ pub(crate) struct ReviewArgs {
     /// A local brief file to import into the review. Read once, never fetched.
     #[arg(long, value_name = "FILE")]
     pub(crate) brief: Option<PathBuf>,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CrashesCommand {
+    /// List the saved reports, oldest first.
+    List(FormatArgs),
+    /// Print one report. Read it before sharing it.
+    Show {
+        /// The report file name from `list`; the newest when omitted.
+        name: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
