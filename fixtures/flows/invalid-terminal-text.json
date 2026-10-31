@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "snap_abc123",
+  "base_oid": "oid_da_base",
+  "worktree_id": "wt_123",
+  "title": "Authentication flow",
+  "summary": "How a request reaches the credential check",
+  "generated_by": "codex",
+  "steps": [
+    {
+      "id": "request",
+      "file_path": "api/routes/auth.py",
+      "symbol": "login",
+      "note": "looks fine \u001b]0;pwned\u0007",
+      "changed": false,
+      "confidence": "resolved"
+    },
+    {
+      "id": "validation",
+      "file_path": "domain/auth.py",
+      "symbol": "validate_credentials",
+      "note": "Checks the credentials",
+      "changed": true,
+      "confidence": "heuristic"
+    }
+  ],
+  "edges": [
+    {
+      "from": "request",
+      "to": "validation",
+      "kind": "calls",
+      "confidence": "heuristic"
+    }
+  ]
+}

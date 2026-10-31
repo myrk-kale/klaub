@@ -115,7 +115,12 @@ Other commands:
 | [Architecture decisions](docs/adr/) | Why things are the way they are |
 | [Security model](docs/security.md) | Threats, controls, explicit limits |
 | [Development guide](docs/development.md) | Tooling, conventions, adding adapters |
+| [Configuration](docs/configuration.md) | Every `.klaub.toml` section, and how to move the reader's keys |
 | [Specification](docs/specification.pt-BR.md) | Product behaviour and acceptance criteria (Portuguese) |
+| [Acceptance](docs/acceptance.md) | Which acceptance checks CI runs and which need a person with a real agent |
+| [Benchmarks](docs/benchmarks.md) | Latency against the specification's targets, and what the numbers do not say |
+| [Using Klaub over SSH](docs/ssh.md) | What works, and what the clipboard cannot do |
+| [Adding a language](docs/adding-a-language.md) | Every place a new tree-sitter grammar touches |
 
 ## Roadmap
 
@@ -124,8 +129,10 @@ Other commands:
 | Foundation | Workspace, lints, CI, community files, ADRs | ✅ |
 | 0 | Embedded tmux, `wrap`, pane identity, safe bracketed paste, minimal TUI ([gate](docs/phase-0-gate.md)) | ✅ implemented; manual check with real harnesses pending |
 | 1 | Git snapshots, Python and JS/TS, semantic matching, queue, reverse call graph, comments, brief, tests evidence, incremental risk | ✅ implemented |
-| 2 | Architecture rules, contract inspector, follow-up, review coverage, `Flow` and the `klaub-flow` skill | ⏳ engines and the basic views exist (rules, follow-up, coverage, flow validation, the skill file). The phase is not closed. |
-| 3 | More languages, general feedback skill, export formats, harness adapter seam | ⏳ |
+| 2 | Architecture rules, contract inspector, follow-up, review coverage, `Flow` and the `klaub-flow` skill | ✅ implemented, including contracts for migrations, manifests and settings, silencing a false positive, a foldable flow tree with breadcrumbs, configurable keys and `review --wait` |
+| 3 | More languages, general feedback skill, export formats, harness adapter seam | ✅ Rust and Go beyond the specification's list, the `klaub-feedback` skill, JSON, Markdown and SARIF exports, and [a guide to adding a language](docs/adding-a-language.md). The `HarnessAdapter` seam stays a documented extension point, and Windows/WSL stays an [investigation](docs/windows.md): the specification keeps both out of these versions. |
+
+Done by tests is not the same as done on your machine. The checks the specification makes against real Codex CLI and Claude Code sessions, real terminals and SSH are listed in [docs/acceptance.md](docs/acceptance.md) as manual, and none of them has been run by an automated test.
 
 ## Contributing
 
