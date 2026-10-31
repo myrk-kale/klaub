@@ -249,6 +249,12 @@ pub struct Snapshot {
     pub scope: Scope,
     /// The revision requested as base (for display).
     pub base_label: String,
+    /// Object id of the "after" side when it is a commit (`Branch` and `Commits` scopes);
+    /// `None` when the after side is the index or the working files.
+    pub target_oid: Option<String>,
+    /// Opaque fingerprint of everything that can change the snapshot; compare it with a
+    /// fresh one to detect drift cheaply.
+    pub drift_signature: String,
     /// Changed files, sorted by path. Klaub's own `.klaub/` directory is never included.
     pub files: Vec<FileChange>,
     /// When the snapshot was captured.

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `klaub-git`: immutable, content-addressed snapshots through the Git CLI for the worktree, staged, unstaged, branch and commit-range scopes; rename detection, untracked and ignored-file handling, binary/oversized/symlink metadata, generated-file flags, a cheap drift probe, and project file listing and reading for call-graph building. Repositories are treated as untrusted: external diff drivers, textconv and fsmonitor never run, option-like revisions are rejected and symlinks cannot lead out of the worktree.
 - **Phase 0** (the gate): `klaub wrap <command>` runs any interactive program in a private tmux session with an `agent` and a `review` window; `klaub session list|attach|kill`, `klaub doctor`, `klaub version`, `klaub completions`.
 - `klaub-tmux`: verified embedded tmux (SHA-256 checked before every execution, private `0700` extraction), one private server per session, pane-identity checks, and a bracketed, single-line, never-`Enter` paste. Nine integration tests run against a real tmux server and assert the exact bytes the harness receives.
 - `klaub-tui`: the review window's first screen (Elm-style state/view, tested with Ratatui's `TestBackend`, hostile text sanitised).

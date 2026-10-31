@@ -946,6 +946,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "klaub-git"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "klaub-core",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "klaub-tmux"
 version = "0.1.0"
 dependencies = [
