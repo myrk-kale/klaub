@@ -208,6 +208,37 @@ fn a_vanished_agent_pane_is_refused_and_the_session_is_reaped() {
 }
 
 #[test]
+fn the_session_record_exists_before_the_review_window_starts() {
+    let Some(tmux) = tmux_or_skip() else { return };
+    // The reviewer reads its session record on start. This stand-in fails exactly like the
+    // real one does if the record has not been written yet (a regression found in CI).
+    let fx = Fixture::start_with_review(&tmux, HARNESS, false, |registry, id| {
+        let record = registry.join(format!("{id}.json"));
+        [
+            "sh",
+            "-c",
+            "test -f \"$1\" && exec sleep 600",
+            "reviewer",
+            record.to_str().unwrap(),
+        ]
+        .map(str::to_owned)
+        .to_vec()
+    });
+    fx.wait_ready();
+    std::thread::sleep(Duration::from_millis(500));
+    let review = fx.record.review.clone().unwrap();
+    let pane = fx
+        .client()
+        .pane(&review.pane_id)
+        .unwrap()
+        .expect("the review pane exists");
+    assert!(
+        !pane.dead,
+        "the review window must not start before its session record is on disk"
+    );
+}
+
+#[test]
 fn switching_windows_five_times_keeps_the_harness_and_its_history() {
     let Some(tmux) = tmux_or_skip() else { return };
     let fx = Fixture::start(&tmux, HARNESS, false);

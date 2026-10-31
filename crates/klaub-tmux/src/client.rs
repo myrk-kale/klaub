@@ -44,9 +44,13 @@ impl PaneState {
             })
         };
         let pane_id = next("pane id")?.to_owned();
-        let pid = next("pid")?
-            .parse()
-            .map_err(|_| Error::Tmux(format!("unexpected pane pid in {line:?}")))?;
+        // A pane whose process already exited can report an empty pid (seen on macOS).
+        let pid = match next("pid")? {
+            "" => 0,
+            digits => digits
+                .parse()
+                .map_err(|_| Error::Tmux(format!("unexpected pane pid in {line:?}")))?,
+        };
         let dead = next("dead flag")? == "1";
         let window_id = next("window id")?.to_owned();
         let session_name = next("session")?.to_owned();
@@ -366,6 +370,13 @@ mod tests {
         let pane = PaneState::parse("%1|7|1|@0|s|a|b").unwrap();
         assert!(pane.dead);
         assert_eq!(pane.command, "a|b");
+    }
+
+    #[test]
+    fn a_dead_pane_may_have_no_pid() {
+        let pane = PaneState::parse("%1||1|@1|klaub-abc|klaub").unwrap();
+        assert!(pane.dead);
+        assert_eq!(pane.pid, 0);
     }
 
     #[test]

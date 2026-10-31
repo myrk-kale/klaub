@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use anyhow::{Context as _, Result};
@@ -26,6 +27,12 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
         let cwd = std::env::current_dir()?;
         (None, None, env::find_worktree_root(&cwd).unwrap_or(cwd))
     };
+
+    if !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "the reviewer is interactive and needs a terminal; run it in your terminal or through `klaub wrap`"
+        );
+    }
 
     let home = ctx.home.as_deref();
     let shown = crate::output::tilde(&worktree, home);

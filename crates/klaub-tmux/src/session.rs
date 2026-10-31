@@ -132,21 +132,12 @@ fn launch_on(
             prefix: spec.prefix,
         })?)
         .map_err(|e| Error::Tmux(format!("{e} (did the agent exit immediately?)")))?;
-    let review = client.new_window(
-        &name,
-        &Spawn {
-            window_name: REVIEW_WINDOW,
-            cwd: spec.worktree,
-            env: &env,
-            command: spec.review_command,
-        },
-        false,
-    )?;
-
-    let record = SessionRecord {
+    // The reviewer reads this record as soon as it starts, so it must exist before the
+    // review window does. Otherwise the first `klaub review --session` races the registry.
+    let mut record = SessionRecord {
         schema_version: SESSION_SCHEMA_VERSION,
         session_id: spec.session_id.clone(),
-        tmux_session: name,
+        tmux_session: name.clone(),
         socket: client.socket().to_owned(),
         tmux_binary: spec.tmux_binary.to_path_buf(),
         worktree: spec.worktree.to_path_buf(),
@@ -157,12 +148,25 @@ fn launch_on(
             pane_id: agent.pane_id,
             pid: agent.pid,
         },
-        review: Some(PaneRecord {
-            window_id: review.window_id,
-            pane_id: review.pane_id,
-            pid: review.pid,
-        }),
+        review: None,
     };
+    registry.save(&record)?;
+
+    let review = client.new_window(
+        &name,
+        &Spawn {
+            window_name: REVIEW_WINDOW,
+            cwd: spec.worktree,
+            env: &env,
+            command: spec.review_command,
+        },
+        false,
+    )?;
+    record.review = Some(PaneRecord {
+        window_id: review.window_id,
+        pane_id: review.pane_id,
+        pid: review.pid,
+    });
     registry.save(&record)?;
     Ok(record)
 }

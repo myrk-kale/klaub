@@ -79,6 +79,19 @@ pub struct Fixture {
 impl Fixture {
     /// Starts a session whose agent runs `script` with the log path as `$1`.
     pub fn start(tmux: &Path, script: &str, env_no_bracketed: bool) -> Self {
+        Self::start_with_review(tmux, script, env_no_bracketed, |_, _| {
+            ["sleep", "600"].map(str::to_owned).to_vec()
+        })
+    }
+
+    /// Like [`Fixture::start`], with a custom review command built from the registry directory
+    /// and the session id.
+    pub fn start_with_review(
+        tmux: &Path,
+        script: &str,
+        env_no_bracketed: bool,
+        review: impl FnOnce(&Path, &SessionId) -> Vec<String>,
+    ) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let registry = SessionRegistry::new(temp.path().join("sessions"));
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -95,7 +108,7 @@ impl Fixture {
         let agent: Vec<String> = ["sh", "-c", &body, "harness", log.to_str().unwrap()]
             .map(str::to_owned)
             .to_vec();
-        let review_command: Vec<String> = ["sleep", "600"].map(str::to_owned).to_vec();
+        let review_command = review(&temp.path().join("sessions"), &id);
         let record = launch(
             &registry,
             &LaunchSpec {
