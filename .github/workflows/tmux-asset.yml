@@ -98,5 +98,22 @@ jobs:
             echo "extracted tmux is world-writable" >&2
             exit 1
           fi
+      - name: Diagnose a failed smoke test
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          uname -a
+          tmuxbin="$(find "${KLAUB_CACHE_DIR:-/nonexistent}" "$RUNNER_TEMP" "$HOME/Library/Caches" "$HOME/.cache" -name tmux -type f 2>/dev/null | head -n 1)"
+          echo "tmux: $tmuxbin"
+          dir="$(mktemp -d)"
+          gzip -dc assets/tmux/${{ matrix.target }}/tmux.gz > "$dir/tmux"; chmod +x "$dir/tmux"
+          file "$dir/tmux"; "$dir/tmux" -V
+          "$dir/tmux" -S "$dir/sock" -f /dev/null new-session -d -s probe 'sleep 60'; echo "new-session exit=$?"
+          "$dir/tmux" -S "$dir/sock" list-sessions; echo "list exit=$?"
+          sleep 1
+          "$dir/tmux" -S "$dir/sock" list-sessions; echo "list again exit=$?"
+          "$dir/tmux" -S "$dir/sock" kill-server
+          ls -la "$HOME/Library/Logs/DiagnosticReports" 2>/dev/null | tail -n 5
       - name: Dynamic dependencies of the embedded tmux
         run: cat assets/tmux/${{ matrix.target }}/dependencies.txt
