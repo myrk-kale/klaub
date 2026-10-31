@@ -238,6 +238,76 @@ fn mark_reviewed() {
     assert!(app.session.review().is_reviewed(&unit));
 }
 
+/// A reader whose configuration moves `toggle_reviewed` to `e`.
+fn reader_with_keys(repo: &TempRepo, keys: &[(&str, &str)]) -> App {
+    let mut config = Config::default();
+    for (action, key) in keys {
+        config.keys.insert((*action).to_owned(), (*key).to_owned());
+    }
+    let session = ReviewSession::open(
+        ports(repo, &config),
+        SnapshotRequest::worktree(repo.path()),
+        &config,
+        &OpenOptions::default(),
+    )
+    .unwrap();
+    reader(session)
+}
+
+#[test]
+fn a_configured_key_replaces_the_default_one() {
+    let repo = changed_repo();
+    let mut app = reader_with_keys(&repo, &[("toggle_reviewed", "e")]);
+    let unit = app.unit.clone().unwrap();
+
+    press(&mut app, 'r');
+    assert!(
+        !app.session.review().is_reviewed(&unit),
+        "the old key no longer marks the unit"
+    );
+    press(&mut app, 'e');
+    assert!(app.session.review().is_reviewed(&unit));
+}
+
+#[test]
+fn the_help_lists_the_configured_key() {
+    let repo = changed_repo();
+    let mut app = reader_with_keys(&repo, &[("toggle_reviewed", "e")]);
+    press(&mut app, '?');
+    let help = screen(&mut app, 100, 60);
+    let row = help
+        .lines()
+        .find(|line| line.contains("Mark reviewed"))
+        .expect("the help lists the reviewed action")
+        .replace('│', " ");
+    assert!(
+        row.trim_start().starts_with("e "),
+        "the help row for reviewed units shows the new key: {row:?}"
+    );
+}
+
+#[test]
+fn an_invalid_key_table_is_reported_before_the_reader_opens() {
+    let mut keys = std::collections::BTreeMap::new();
+    keys.insert("toggle_reviewd".to_owned(), "e".to_owned());
+    let error = klaub_tui::Keymap::from_overrides(&keys).unwrap_err();
+    assert!(error.to_string().contains("toggle_reviewd"));
+}
+
+#[test]
+fn the_storage_notice_explains_klaub_dir_and_closes_on_any_key() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo)).with_storage_notice();
+    let shown = screen(&mut app, 100, 30);
+    assert!(shown.contains("Where Klaub keeps its files"), "{shown}");
+    assert!(shown.contains(".gitignore"), "{shown}");
+
+    press(&mut app, 'z');
+    assert!(app.overlay.is_none(), "any key closes the notice");
+    let shown = screen(&mut app, 100, 30);
+    assert!(!shown.contains("Where Klaub keeps its files"));
+}
+
 /// A comment carrying the sequences a terminal must never act on.
 fn hostile_comment() -> String {
     let mut text = String::from("looks fine ");

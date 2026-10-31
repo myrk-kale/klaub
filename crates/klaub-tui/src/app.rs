@@ -19,6 +19,7 @@ use klaub_core::review::{FeedbackRecord, FollowupStatus, Version};
 
 use klaub_core::text::sanitize_single_line;
 
+use crate::keymap::Keymap;
 use crate::labels;
 use crate::theme::Theme;
 use crate::viewport::Viewport;
@@ -366,6 +367,13 @@ pub enum Overlay {
     Contract(UnitId),
     /// Finishing the review.
     Finish(FinishStage),
+    /// A one-time explanation. Any key closes it.
+    Notice {
+        /// The heading.
+        title: String,
+        /// The text, wrapped when drawn.
+        text: String,
+    },
 }
 
 /// How a status message is drawn.
@@ -391,6 +399,8 @@ pub struct App {
     pub clipboard: Option<Arc<dyn Clipboard>>,
     /// Colours.
     pub theme: Theme,
+    /// Which character triggers which action (the defaults plus `[keys]`).
+    pub keymap: Keymap,
     /// What the main area shows.
     pub mode: Mode,
     /// Modes visited before the current one (for `Esc`).
@@ -443,7 +453,23 @@ pub struct App {
     pub last_probe: Instant,
 }
 
+/// What the first review of a worktree explains about `.klaub/`.
+const STORAGE_NOTICE: &str = "Your comments, briefs and flow diagrams are saved in a .klaub/ folder inside this repository. It is local data.\n\nKlaub does not add it to .gitignore or .git/info/exclude, and it never commits it. If you do not want .klaub/ in git, add it to .gitignore yourself; if you want to share a flow diagram, commit .klaub/flows/ yourself.\n\nKlaub always leaves .klaub/ out of the changes it reviews, so saving a comment never starts a new snapshot.";
+
 impl App {
+    /// Opens with the explanation of where Klaub keeps its files, for a worktree that has none yet.
+    ///
+    /// The text says what the spec requires and no more: `.klaub/` is local data, Klaub does not
+    /// touch `.gitignore` or `.git/info/exclude` and never commits it, and it never reviews it.
+    #[must_use]
+    pub fn with_storage_notice(mut self) -> Self {
+        self.overlay = Some(Overlay::Notice {
+            title: "Where Klaub keeps its files".to_owned(),
+            text: STORAGE_NOTICE.to_owned(),
+        });
+        self
+    }
+
     /// Creates the reader over an open session.
     pub fn new(
         session: ReviewSession,
@@ -452,6 +478,13 @@ impl App {
         clipboard: Option<Arc<dyn Clipboard>>,
     ) -> Self {
         let theme = Theme::new(session.analysis().config.ui.theme);
+        let keymap = match Keymap::from_overrides(&session.analysis().config.keys) {
+            Ok(keymap) => keymap,
+            Err(error) => {
+                tracing::warn!(%error, "ignoring the [keys] table; using the default keys");
+                Keymap::default()
+            }
+        };
         let has_previous_round = session.review().previous_review_id.is_some();
         let mut app = Self {
             session,
@@ -459,6 +492,7 @@ impl App {
             agent,
             clipboard,
             theme,
+            keymap,
             mode: Mode::Queue,
             history: Vec::new(),
             unit: None,
