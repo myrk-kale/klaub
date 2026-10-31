@@ -21,3 +21,8 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      # The ref of this action is the Rust version the MSRV job installs (`@1.90.0`). Bumping it
+      # would make that job stop proving the minimum version. Raise the MSRV on purpose, in
+      # Cargo.toml and in ci.yml together.
+      - dependency-name: "dtolnay/rust-toolchain"
