@@ -26,6 +26,7 @@ use klaub_core::ports::{
 pub use analysis::{Analysis, FileEntry, UnitInfo, analyze};
 pub use contract::{ContractDelta, Delta, SymbolView, inspect};
 pub use file_contract::{FileContract, FileKind, inspect_file};
+pub use klaub_flow::{FlowRow, layout as flow_layout};
 pub use session::{FlowView, OpenOptions, Reports, ReviewSession, TestPanel};
 pub use signature::SignatureParts;
 pub use view::{CodeLine, CodeScope, CodeView, HighlightedSpan};

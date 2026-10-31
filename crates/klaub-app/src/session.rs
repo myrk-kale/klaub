@@ -115,6 +115,19 @@ pub struct ReviewSession {
     flow: FlowView,
     drift: Drift,
     reports: Reports,
+    /// `[rules] disabled` as configured, before the rules this review silenced were added.
+    base_disabled: Vec<String>,
+}
+
+/// `config` with the rules a review silenced added to the ones the configuration disables.
+fn with_muted(config: &Config, base_disabled: &[String], muted: &[String]) -> Config {
+    let mut effective = config.clone();
+    let mut disabled: Vec<String> = base_disabled.to_vec();
+    disabled.extend(muted.iter().cloned());
+    disabled.sort();
+    disabled.dedup();
+    effective.rules.disabled = disabled;
+    effective
 }
 
 fn target(
@@ -239,6 +252,19 @@ impl ReviewSession {
             review.brief = parse_brief(&text)?;
         }
 
+        let base_disabled = config.rules.disabled.clone();
+        let analysis = if review.muted_rules.is_empty() {
+            analysis
+        } else {
+            // The rules this review silenced apply from the first screen. The snapshot is the one
+            // already captured, so nothing is read from the worktree again.
+            let effective = with_muted(config, &base_disabled, &review.muted_rules);
+            Arc::new(analysis::analyze_snapshot(
+                &ports,
+                analysis.snapshot.clone(),
+                &effective,
+            )?)
+        };
         let flow = Self::read_flow(&ports, &analysis)?;
         let reports = Reports::from_analysis(&analysis);
         let mut session = Self {
@@ -249,10 +275,78 @@ impl ReviewSession {
             flow,
             drift: Drift::Unchanged,
             reports,
+            base_disabled,
         };
         session.sync_flow_ref();
         session.save()?;
         Ok(session)
+    }
+
+    /// The configuration in force: the configured one plus the rules this review silenced.
+    fn effective_config(&self) -> Config {
+        with_muted(
+            &self.analysis.config,
+            &self.base_disabled,
+            &self.review.muted_rules,
+        )
+    }
+
+    /// Rule ids this review silenced as false positives.
+    pub fn muted_rules(&self) -> &[String] {
+        &self.review.muted_rules
+    }
+
+    /// Silences a rule for this review and recomputes the queue on the same snapshot.
+    ///
+    /// The findings of that rule disappear and the scores that counted them drop. The change under
+    /// review does not move: no new snapshot is captured. The choice is saved with the review and
+    /// carried into the next round. Only a rule that produced a finding in this review can be
+    /// silenced, so a typo cannot hide a rule nobody has seen.
+    ///
+    /// # Errors
+    ///
+    /// Fails when no finding of the current queue has this rule id, or when saving fails.
+    pub fn mute_rule(&mut self, rule_id: &str) -> Result<()> {
+        if self.review.muted_rules.iter().any(|r| r == rule_id) {
+            return Ok(());
+        }
+        let known = self
+            .analysis
+            .queue
+            .iter()
+            .flat_map(|item| item.findings.iter())
+            .any(|finding| finding.rule_id == rule_id);
+        if !known {
+            return Err(Error::not_found("rule", rule_id));
+        }
+        self.review.muted_rules.push(rule_id.to_owned());
+        self.review.muted_rules.sort();
+        self.recompute_queue()
+    }
+
+    /// Brings back every rule this review silenced.
+    ///
+    /// # Errors
+    ///
+    /// Fails when saving fails.
+    pub fn unmute_all_rules(&mut self) -> Result<()> {
+        if self.review.muted_rules.is_empty() {
+            return Ok(());
+        }
+        self.review.muted_rules.clear();
+        self.recompute_queue()
+    }
+
+    fn recompute_queue(&mut self) -> Result<()> {
+        let effective = self.effective_config();
+        let fresh = Arc::new(analysis::analyze_snapshot(
+            &self.ports,
+            self.analysis.snapshot.clone(),
+            &effective,
+        )?);
+        self.review.updated_at = self.now();
+        self.analysis = fresh;
+        self.save()
     }
 
     /// The immutable analysis being reviewed.
@@ -596,11 +690,8 @@ impl ReviewSession {
     /// Takes a new snapshot, relocates the anchors of existing comments (uncertain ones become
     /// `stale`), and keeps "reviewed" marks only for units whose content did not change.
     pub fn refresh(&mut self) -> Result<()> {
-        let fresh = Arc::new(analysis::analyze(
-            &self.ports,
-            &self.request,
-            &self.analysis.config,
-        )?);
+        let effective = self.effective_config();
+        let fresh = Arc::new(analysis::analyze(&self.ports, &self.request, &effective)?);
         let unchanged = |unit: &UnitId| -> bool {
             let before = Self::fingerprint(&self.analysis, unit);
             before.is_some() && before == Self::fingerprint(&fresh, unit)
