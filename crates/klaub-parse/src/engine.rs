@@ -22,7 +22,7 @@ use klaub_core::{Error, Result};
 use tree_sitter::{Node, Parser};
 
 /// Version of the extraction logic. Bump it whenever output for the same input can change.
-pub const PARSER_VERSION: u32 = 2;
+pub const PARSER_VERSION: u32 = 3;
 
 /// Deepest syntax nesting that is analysed; deeper content is ignored (and reported as an error).
 const MAX_DEPTH: u32 = 250;

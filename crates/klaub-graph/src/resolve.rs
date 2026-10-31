@@ -18,8 +18,10 @@ pub(crate) struct ModuleIndex {
     by_path: HashMap<String, usize>,
     /// Dotted suffixes of Python module paths (`pkg.mod`) to files.
     dotted: HashMap<String, Vec<usize>>,
-    /// Directory to the files directly inside it (Go packages).
+    /// Directory to the files directly inside it (Go packages, Java packages).
     by_dir: HashMap<String, Vec<usize>>,
+    /// Dotted suffixes of Java source paths (`com.shop.Cart`) to files.
+    java_classes: HashMap<String, Vec<usize>>,
 }
 
 fn components(path: &str) -> Vec<&str> {
@@ -67,6 +69,7 @@ impl ModuleIndex {
             by_path: HashMap::new(),
             dotted: HashMap::new(),
             by_dir: HashMap::new(),
+            java_classes: HashMap::new(),
         };
         for (i, file) in files.iter().enumerate() {
             let path = file.path.as_str();
@@ -76,6 +79,19 @@ impl ModuleIndex {
                 .entry(dir_of(path).to_owned())
                 .or_default()
                 .push(i);
+            if file.parsed.language == Language::Java {
+                // `src/main/java/com/shop/Cart.java` answers to `Cart`, `shop.Cart`,
+                // `com.shop.Cart` and so on, whatever the source root is called.
+                let stem = path.strip_suffix(".java").unwrap_or(path);
+                let parts = components(stem);
+                for start in 0..parts.len() {
+                    index
+                        .java_classes
+                        .entry(parts[start..].join("."))
+                        .or_default()
+                        .push(i);
+                }
+            }
             if file.parsed.language == Language::Python {
                 let stem = path
                     .strip_suffix(".pyi")
@@ -114,6 +130,7 @@ impl ModuleIndex {
             }
             Language::Rust => self.rust(origin.path.as_str(), &import.module),
             Language::Go => self.go(&import.module),
+            Language::Java => self.java(&import.module, import.wildcard),
         }
     }
 
@@ -278,6 +295,30 @@ impl ModuleIndex {
         Vec::new()
     }
 
+    /// Files a Java import names. `a.b.C` is the file `a/b/C.java` under any source root, and
+    /// `a.b.C.Inner` or `a.b.C.method` (a nested class or a static member) falls back to `a.b.C`.
+    /// `a.b.*` is every file directly in a directory `a/b`.
+    pub(crate) fn java(&self, module: &str, wildcard: bool) -> Vec<usize> {
+        if wildcard {
+            let suffix = module.replace('.', "/");
+            return self
+                .by_dir
+                .iter()
+                .filter(|(dir, _)| **dir == suffix || dir.ends_with(&format!("/{suffix}")))
+                .flat_map(|(_, files)| files.iter().copied())
+                .filter(|i| self.java_classes.values().any(|v| v.contains(i)))
+                .collect();
+        }
+        let mut parts: Vec<&str> = module.split('.').filter(|p| !p.is_empty()).collect();
+        while !parts.is_empty() {
+            if let Some(found) = self.java_classes.get(&parts.join(".")) {
+                return found.clone();
+            }
+            parts.pop();
+        }
+        Vec::new()
+    }
+
     pub(crate) fn lookup_path(&self, path: &str) -> Option<usize> {
         self.by_path.get(path).copied()
     }
@@ -433,6 +474,37 @@ mod tests {
         let index = ModuleIndex::new(&files);
         assert_eq!(index.go("github.com/acme/app/pkg/auth").len(), 2);
         assert!(index.go("net/http").is_empty());
+    }
+
+    #[test]
+    fn java_classes_by_dotted_suffix_under_any_source_root() {
+        let files = vec![
+            file("src/main/java/com/shop/cart/Cart.java", Language::Java),
+            file("src/main/java/com/shop/cart/Item.java", Language::Java),
+            file(
+                "app/src/main/java/com/shop/db/Database.java",
+                Language::Java,
+            ),
+            file("src/test/java/com/shop/cart/CartTest.java", Language::Java),
+        ];
+        let index = ModuleIndex::new(&files);
+        assert_eq!(
+            paths(&files, &index.java("com.shop.cart.Cart", false)),
+            vec!["src/main/java/com/shop/cart/Cart.java"]
+        );
+        assert_eq!(
+            paths(&files, &index.java("com.shop.db.Database", false)),
+            vec!["app/src/main/java/com/shop/db/Database.java"]
+        );
+        // A nested class or a static member falls back to the class that holds it.
+        assert_eq!(
+            paths(&files, &index.java("com.shop.cart.Cart.Line", false)),
+            vec!["src/main/java/com/shop/cart/Cart.java"]
+        );
+        // `com.shop.cart.*` is every class directly in that package, tests included under their own root.
+        assert_eq!(index.java("com.shop.cart", true).len(), 3);
+        assert!(index.java("java.util.List", false).is_empty());
+        assert!(index.java("java.util", true).is_empty());
     }
 
     #[test]

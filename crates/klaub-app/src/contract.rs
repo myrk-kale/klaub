@@ -295,6 +295,15 @@ fn raises_of(view: Option<SymbolView<'_>>) -> Vec<String> {
         return Vec::new();
     };
     let mut raises: Vec<String> = symbol.features.raises.clone();
+    if view.file.language == Language::Java {
+        // `throws` is part of what a Java method promises its callers, written or not in the body.
+        for declared in signature::java_throws(&symbol.signature) {
+            let line = format!("declares throws {declared}");
+            if !raises.contains(&declared) && !raises.contains(&line) {
+                raises.push(line);
+            }
+        }
+    }
     if let Some(parts) = signature::split(view.file.language, symbol.kind, &symbol.signature)
         && let Some(returns) = parts.returns.as_deref()
         && let Some(declared) = declared_error(view.file.language, returns)
@@ -467,6 +476,12 @@ fn schema_of(view: SymbolView<'_>) -> Option<String> {
         Language::Rust if symbol.kind == SymbolKind::Trait => "trait",
         Language::Go if symbol.kind == SymbolKind::Struct => "struct",
         Language::Go if symbol.kind == SymbolKind::Interface => "interface",
+        Language::Java => match symbol.kind {
+            SymbolKind::Struct => "record",
+            SymbolKind::Interface => "interface",
+            SymbolKind::Enum => "enum",
+            _ => return None,
+        },
         _ => return None,
     };
     Some(label.to_owned())

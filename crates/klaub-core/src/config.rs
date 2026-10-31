@@ -150,7 +150,7 @@ pub struct AnalysisConfig {
 impl Default for AnalysisConfig {
     fn default() -> Self {
         Self {
-            languages: ["python", "javascript", "typescript", "rust", "go"]
+            languages: ["python", "javascript", "typescript", "rust", "go", "java"]
                 .map(str::to_owned)
                 .to_vec(),
             max_call_depth: 8,
@@ -204,6 +204,8 @@ pub struct TestsConfig {
     pub rust_patterns: Vec<String>,
     /// Glob patterns for Go test files.
     pub go_patterns: Vec<String>,
+    /// Glob patterns for Java test files.
+    pub java_patterns: Vec<String>,
     /// The command that runs tests. Optional; never inferred from the repository.
     pub command: Option<Vec<String>>,
     /// Timeout of a test run in seconds.
@@ -231,6 +233,14 @@ impl Default for TestsConfig {
             .to_vec(),
             rust_patterns: vec!["tests/**/*.rs".to_owned()],
             go_patterns: vec!["**/*_test.go".to_owned()],
+            java_patterns: [
+                "**/src/test/**/*.java",
+                "**/*Test.java",
+                "**/*Tests.java",
+                "**/*IT.java",
+            ]
+            .map(str::to_owned)
+            .to_vec(),
             command: None,
             timeout_secs: 600,
         }

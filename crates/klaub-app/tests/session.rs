@@ -975,3 +975,99 @@ fn the_old_code_of_a_moved_symbol_is_read_from_the_file_it_left() {
     assert_eq!(after.path.as_str(), "new.py");
     assert!(after.lines.iter().any(|l| l.text.contains("total = a + b")));
 }
+
+// ---- Java ------------------------------------------------------------------------------------
+
+fn java_project() -> TempRepo {
+    let repo = TempRepo::new();
+    repo.write(
+        "src/main/java/com/shop/Pricing.java",
+        "package com.shop;\n\npublic class Pricing {\n    public int total(int a, int b) {\n        return a + b;\n    }\n}\n",
+    );
+    repo.write(
+        "src/main/java/com/shop/CartController.java",
+        "package com.shop;\n\nimport com.shop.Pricing;\n\n@RestController\n@RequestMapping(\"/api\")\npublic class CartController {\n    private final Pricing pricing = new Pricing();\n\n    @GetMapping(\"/total\")\n    public int total() {\n        return pricing.total(1, 2);\n    }\n}\n",
+    );
+    repo.write(
+        "src/test/java/com/shop/PricingTest.java",
+        "package com.shop;\n\nimport com.shop.Pricing;\n\npublic class PricingTest {\n    @Test\n    void totals() {\n        new Pricing().total(1, 2);\n    }\n}\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "src/main/java/com/shop/Pricing.java",
+        "package com.shop;\n\npublic class Pricing {\n    public int total(int a, int b, int discount) throws PricingException {\n        if (discount > a) {\n            throw new PricingException(\"too much\");\n        }\n        return a + b - discount;\n    }\n}\n",
+    );
+    repo
+}
+
+#[test]
+fn a_changed_java_method_is_reviewed_with_its_contract_callers_and_tests() {
+    let repo = java_project();
+    let session = open(&repo, &Config::default(), &OpenOptions::default());
+    let total = session
+        .analysis()
+        .queue
+        .iter()
+        .find(|item| item.unit.label.contains("Pricing.total"))
+        .unwrap_or_else(|| {
+            panic!(
+                "{:?}",
+                session
+                    .analysis()
+                    .queue
+                    .iter()
+                    .map(|i| &i.unit.label)
+                    .collect::<Vec<_>>()
+            )
+        })
+        .unit
+        .id
+        .clone();
+
+    let contract = session.contract(&total).expect("a contract");
+    let before = contract.signature_before.as_ref().unwrap();
+    let after = contract.signature_after.as_ref().unwrap();
+    assert_eq!(before.parameters, vec!["int a", "int b"]);
+    assert_eq!(after.parameters, vec!["int a", "int b", "int discount"]);
+    assert_eq!(after.returns.as_deref(), Some("int"));
+    assert!(
+        contract
+            .raises
+            .added()
+            .iter()
+            .any(|r| r.contains("PricingException")),
+        "{:?}",
+        contract.raises
+    );
+
+    // The controller calls the method through a field, and the route reaches it.
+    let key = klaub_core::graph::SymbolKey::new(
+        klaub_core::path::RepoPath::new("src/main/java/com/shop/Pricing.java").unwrap(),
+        "Pricing.total",
+    );
+    let impact = session.impact(&key).expect("the graph knows the method");
+    assert!(
+        impact
+            .callers
+            .iter()
+            .flat_map(|level| &level.callers)
+            .any(|step| step.symbol.qualified_name.contains("CartController")),
+        "{impact:?}"
+    );
+    assert!(
+        impact.entrypoints.iter().any(|e| matches!(
+            &e.entrypoint.kind,
+            klaub_core::graph::EntrypointKind::Http { route, .. } if route == "/api/total"
+        )),
+        "{impact:?}"
+    );
+
+    // The test class is found by name and by the call.
+    let links = &session.analysis().tests.links;
+    assert!(
+        links
+            .iter()
+            .any(|l| l.target == key && l.test.name.contains("totals")),
+        "{links:?}"
+    );
+}

@@ -614,6 +614,7 @@ pub fn is_test_path(config: &Config, path: &RepoPath) -> bool {
         &tests.js_patterns,
         &tests.rust_patterns,
         &tests.go_patterns,
+        &tests.java_patterns,
     ]
     .into_iter()
     .flatten()

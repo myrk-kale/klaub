@@ -8,7 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **Contract inspector (`i`).** The declaration of a callable is split into parameters and return type for Python, JavaScript/TypeScript, Rust and Go. Decorators, the routes a symbol serves, the exceptions its body raises or throws (and the error a Rust `Result` or a Go `error` declares), observable effects (risk markers and I/O-looking calls) and, for a type, its public members and what kind of data type it looks like are shown as `+`/`-` lists before and after. The entrypoints that can reach the symbol are named with their certainty. A declaration it cannot read is reported as unknown.
+- **Java.** Classes, interfaces, enums, records, methods and constructors with their annotations (kept as decorators), signatures without the annotations, visibility (package-private is `Internal`), `throw new X` and `throws`, calls with receivers, imports (classes, packages and static members), `public static void main`, Spring (`@GetMapping`, `@RequestMapping` with the class prefix and verb) and JAX-RS (`@GET` with `@Path`) routes, JUnit `@Test` methods, and the same risk markers as the other languages (swallowed `catch`, SQL built by concatenation or `String.format`, a shell started by `ProcessBuilder` or `Runtime.exec`, a secret in a string literal, I/O in a loop). Imports resolve to files under any source root. Test files are `src/test/**/*.java`, `*Test.java`, `*Tests.java` and `*IT.java` (`tests.java_patterns`). Reflection, dependency injection and code generation are not followed, so calls through them stay unresolved. Parser version 3.
+- **Every mode-specific key is configurable.** `[keys]` also moves movement (`down`, `up`, `scroll_left`, `scroll_right`), `select_lines`, `open_file`, `inspect_contract`, `pivot_impact`, `request_flow`, the Context and Comments edit keys and the four follow-up decisions. A moved key works in the modes it belongs to and its old character stops acting there. The footer is built from the keymap, so it no longer names keys you moved.
+- **Optional mouse** (`[ui] mouse = true`): the wheel scrolls, a click on a tab switches to it, a click on a row selects it, a second click opens it, a click on a code line moves the cursor. It only does what a key already does.
+- **Hold to see the previous version** (`[ui] hold_to_peek = true`, `B`), where the terminal reports key releases (kitty keyboard protocol). Elsewhere, inside tmux included, the key says it cannot be held and `v` still toggles. The protocol is dropped while a text field is open so compose and `AltGr` characters still type.
+- **A `HarnessAdapter` seam** (`klaub_core::harness`, [ADR 0010](docs/adr/0010-harness-adapters-are-a-seam-not-a-dependency.md)) with `GenericHarness` as the only adapter. The paste confirmation names the adapter and shows a busy warning if an adapter reports one. The paste contract is unchanged, and no Codex or Claude Code adapter ships.
+- **Linux aarch64 and macOS Intel** in the tmux asset, release and CI test matrices, and in `scripts/install.sh`. The Homebrew formula and the install text change when a release carries those archives.
+- `klaub doctor` warns under WSL, and when the directory is on the Windows file system.
+- `KLAUB_BENCH_REPO` runs the latency harness on real repositories; `docs/benchmarks.md` has a run on flask, django, tokio and vue core.
+- **Contract inspector (`i`).** The declaration of a callable is split into parameters and return type for Python, JavaScript/TypeScript, Rust, Go and Java (where `throws` is listed with the exceptions). Decorators, the routes a symbol serves, the exceptions its body raises or throws (and the error a Rust `Result` or a Go `error` declares), observable effects (risk markers and I/O-looking calls) and, for a type, its public members and what kind of data type it looks like are shown as `+`/`-` lists before and after. The entrypoints that can reach the symbol are named with their certainty. A declaration it cannot read is reported as unknown.
 - **Contracts for files without symbols.** The same key opens a contract for migrations (SQL, Alembic, Django, Rails), dependency manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, `requirements*.txt`, `go.mod`) and settings files (JSON, TOML, YAML, `.env`): what was added, removed or changed. Secret values and every `.env` value are never shown. Anything it cannot read falls back to the textual diff and says so.
 - `klaub-parse` records the exceptions a body raises and the I/O-looking calls it makes (parser version 2, so cached parses are refreshed).
 - **Configurable keys.** `[keys]` moves any global reader action to another single character. The table is validated as a whole (unknown action, not one printable character, reserved key, two actions on one key) and the reader refuses to open with an invalid one. The help and the palette show the configured keys. See `docs/configuration.md`, which also documents every other configuration section.
@@ -25,9 +33,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `SnapshotProvider::read_project_files` reads many project files at once, and the Git adapter answers with one `git cat-file --batch`. Reviewing a branch or a commit range no longer starts a process per project file.
+- Test association checks a file's imports once per file instead of once per test case.
 - `o` now does what the specification says (§8.2): it opens the current unit in its whole file and stays there, where `S` still toggles between the symbol and the file. The contract inspector, which had taken `o`, is now `i`.
 - The confirmation before preparing text in the agent shows the process running in the pane and warns when it is a shell, so the text is not pasted onto a shell prompt by surprise.
 - The `Security` workflow runs on every pull request instead of only those that touch a manifest, so its checks can be required on `main`.
+
+### Fixed
+
+- A symbol that moved from one file to another made the analysis read the wrong file's symbol table. On a real project (tokio) it panicked with an out-of-bounds index; on a small one it quietly showed the contract and the old code of the wrong symbol. Each side of a symbol is now read from the file it names, and the old code of a moved symbol is shown from the file it left.
 
 ## [0.1.0] - 2026-10-31
 

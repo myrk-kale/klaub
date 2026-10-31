@@ -35,5 +35,8 @@ These are the checks the specification makes against the real harnesses (Codex C
 - [ ] Detach the tmux session (`Prefix d`) and `klaub session attach`: both windows are where they were.
 - [ ] In `Ghostty`, `WezTerm`, `iTerm2`, `Kitty` or `Tabby` (the specification names them as targets, not as guarantees): the reader draws, the function keys arrive, bracketed paste works.
 - [ ] Over a real SSH connection: `klaub doctor` says so, the reader works, and Show file is the way to read the feedback ([ssh.md](ssh.md)).
+- [ ] In a terminal that speaks the kitty keyboard protocol (kitty, Ghostty, WezTerm, recent iTerm2), with `[ui] hold_to_peek = true`: hold `B` in the code view and the old version shows until you let go; a comment with an accented or `AltGr` character still types. Inside tmux the key must say it cannot be held ([configuration.md](configuration.md)).
+- [ ] With `[ui] mouse = true` in your terminal: the wheel scrolls, a click on a tab, a row and a code line does what it says. Selecting text with the terminal's modifier still works.
+- [ ] On Linux aarch64 and macOS Intel, once a release carries those archives: `klaub doctor` reports the embedded tmux, and `klaub wrap` starts and ends a session. CI proves it on runners of both kinds, not on your machine.
 - [ ] With a real project of your own: the time to the first queue feels right. The numbers in [benchmarks.md](benchmarks.md) are for a synthetic corpus.
 - [ ] With a real agent and the `klaub-flow` skill installed (`klaub skills install flow --harness codex`): ask for a diagram, wait, press `L`, and navigate it.

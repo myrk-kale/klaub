@@ -5,12 +5,13 @@
 //! structural markers; calls; imports; entrypoint hints; highlight spans).
 //! fingerprints and structural markers; calls; imports; entrypoint hints; highlight spans).
 //!
-//! Supported languages: Python, JavaScript, TypeScript (and TSX), Rust and Go. Parsing is
+//! Supported languages: Python, JavaScript, TypeScript (and TSX), Rust, Go and Java. Parsing is
 //! fault tolerant: a file with syntax errors still yields every symbol the grammar could
 //! recover and sets `has_syntax_errors`.
 
 mod engine;
 mod go;
+mod java;
 mod javascript;
 mod markers;
 mod python;
@@ -48,6 +49,7 @@ fn profile(language: Language) -> &'static dyn engine::Profile {
         },
         Language::Rust => &rust_lang::RustLang,
         Language::Go => &go::Go,
+        Language::Java => &java::Java,
     }
 }
 
