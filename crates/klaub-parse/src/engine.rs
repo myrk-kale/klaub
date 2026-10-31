@@ -310,10 +310,8 @@ impl<'t> Scan<'_, '_, 't> {
             return;
         }
         if node.id() != self.own_id && self.def_nodes.contains_key(&node.id()) {
-            // A nested symbol is a unit of its own; here it is only a placeholder.
-            self.tokens.push(0x00de_f000);
-            self.shape_hash.write(b"<symbol>");
-            self.token_hash.write(b"<symbol>");
+            // A nested symbol is a unit of its own: its content, and even its presence,
+            // must not change the fingerprint of the symbol that contains it.
             return;
         }
         let kind = node.kind();
@@ -322,8 +320,11 @@ impl<'t> Scan<'_, '_, 't> {
         }
         if node.child_count() == 0 {
             let leaf = text(node, self.src).as_bytes();
-            self.tokens.push(fnv32(leaf));
-            self.token_hash.write(leaf);
+            // The root of an empty file is a childless node with no text: not a token.
+            if !leaf.is_empty() {
+                self.tokens.push(fnv32(leaf));
+                self.token_hash.write(leaf);
+            }
         }
         self.shape_hash.write(kind.as_bytes());
 

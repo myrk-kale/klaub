@@ -464,7 +464,11 @@ fn hostile_inputs_do_not_crash_or_overflow_the_stack() {
     assert_eq!(parse(&wide).symbols.len(), 2001);
 
     assert_eq!(parse("").symbols.len(), 1);
-    assert!(!parse("\u{0}\u{1}\x1b[31m garbage \u{feff}").symbols.is_empty());
+    assert!(
+        !parse("\u{0}\u{1}\x1b[31m garbage \u{feff}")
+            .symbols
+            .is_empty()
+    );
 }
 
 #[test]
