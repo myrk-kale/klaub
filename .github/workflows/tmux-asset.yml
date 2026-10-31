@@ -114,6 +114,7 @@ jobs:
           sleep 1
           "$dir/tmux" -S "$dir/sock" list-sessions; echo "list again exit=$?"
           "$dir/tmux" -S "$dir/sock" kill-server
+          sleep 8
           ls -la "$HOME/Library/Logs/DiagnosticReports" 2>/dev/null | tail -n 5
           for report in "$HOME"/Library/Logs/DiagnosticReports/.tmux-*.ips "$HOME"/Library/Logs/DiagnosticReports/tmux-*.ips; do
             [ -f "$report" ] || continue
