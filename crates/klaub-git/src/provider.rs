@@ -279,7 +279,11 @@ impl GitSnapshotProvider {
         args.extend(plan.diff_args.iter().cloned());
         args.push("--".to_owned());
         let output = self.runner.run(&repo.root, &args)?;
-        let (raw, skipped) = parse_raw_z(&output)?;
+        let (mut raw, skipped) = parse_raw_z(&output)?;
+        // Klaub's own data must influence neither the snapshot nor the drift signature.
+        raw.retain(|entry| {
+            RepoPath::new(&entry.path).is_ok_and(|p| !p.is_internal() && !p.is_within(".git"))
+        });
         if skipped > 0 {
             tracing::warn!(
                 skipped,
@@ -297,6 +301,7 @@ impl GitSnapshotProvider {
                 if let Some(path) = std::str::from_utf8(name)
                     .ok()
                     .and_then(|n| RepoPath::new(n).ok())
+                    .filter(|p| !p.is_internal() && !p.is_within(".git"))
                 {
                     untracked.push(path);
                 }
