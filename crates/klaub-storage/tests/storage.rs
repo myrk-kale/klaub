@@ -38,6 +38,7 @@ fn review(id: &str, worktree: &str, updated: i64) -> Review {
         comments: vec![],
         reviewed_units: vec![],
         last_unit: None,
+        muted_rules: Vec::new(),
         feedback: None,
         flow: None,
     }

@@ -201,6 +201,18 @@ struct Task<'a> {
 /// Builds the analysis of one snapshot.
 pub fn analyze(ports: &Ports, request: &SnapshotRequest, config: &Config) -> Result<Analysis> {
     let snapshot = ports.snapshots.capture(request)?;
+    analyze_snapshot(ports, snapshot, config)
+}
+
+/// Analyses a snapshot that was already captured.
+///
+/// This is how a review is recomputed under different settings (a silenced rule) without taking a
+/// new snapshot: the worktree is not read again, so the content under review cannot move.
+pub(crate) fn analyze_snapshot(
+    ports: &Ports,
+    snapshot: Snapshot,
+    config: &Config,
+) -> Result<Analysis> {
     let parsing = Parsing {
         ports,
         worktree: snapshot.worktree.id.clone(),

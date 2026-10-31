@@ -48,6 +48,8 @@ pub(crate) enum Action {
     Explain,
     /// Show what changed about the current symbol's contract.
     InspectContract,
+    /// Bring back the rules this review silenced.
+    RestoreRules,
     /// Run the associated tests (after confirmation).
     RunTests,
     /// Re-read test reports.
@@ -187,6 +189,11 @@ pub(crate) const ENTRIES: &[Entry] = &[
         action: Action::Explain,
         name: "Why this priority?",
         key: "w",
+    },
+    Entry {
+        action: Action::RestoreRules,
+        name: "Bring back silenced rules",
+        key: "",
     },
     Entry {
         action: Action::InspectContract,
@@ -350,6 +357,22 @@ pub(crate) fn perform(app: &mut App, action: Action) {
             Some(unit) => app.overlay = Some(Overlay::Contract(unit)),
             None => app.say(StatusKind::Info, "Select a unit first."),
         },
+        Action::RestoreRules => {
+            let muted = app.session.muted_rules().to_vec();
+            if muted.is_empty() {
+                app.say(StatusKind::Info, "No rule is silenced in this review.");
+            } else {
+                app.overlay = Some(Overlay::Confirm(Confirm {
+                    title: "Bring back the silenced rules?".to_owned(),
+                    lines: vec![
+                        format!("silenced here: {}", muted.join(", ")),
+                        "Their findings return and the queue is recomputed on this snapshot."
+                            .to_owned(),
+                    ],
+                    action: ConfirmAction::RestoreRules,
+                }));
+            }
+        }
         Action::RunTests => ask_run_tests(app),
         Action::ReloadReports => {
             app.session.reload_reports();

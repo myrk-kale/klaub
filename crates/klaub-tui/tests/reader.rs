@@ -195,6 +195,46 @@ fn contract_overlay_shows_the_change() {
 }
 
 #[test]
+fn a_finding_can_be_silenced_from_the_explanation_after_confirming() {
+    let repo = TempRepo::new();
+    repo.write("service.py", "def handle(value):\n    return int(value)\n");
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "def handle(value):\n    try:\n        return int(value)\n    except Exception:\n        pass\n",
+    );
+    let mut app = reader(open(&repo));
+
+    press(&mut app, 'w');
+    let shown = screen(&mut app, 110, 40);
+    assert!(shown.contains("risk.swallowed_error"), "{shown}");
+    assert!(shown.contains("silence its rule"), "{shown}");
+
+    press(&mut app, '1');
+    assert!(matches!(app.overlay, Some(Overlay::Confirm(_))));
+    assert!(
+        app.session.muted_rules().is_empty(),
+        "nothing is silenced before the answer"
+    );
+    let shown = screen(&mut app, 110, 40);
+    assert!(
+        shown.contains("Silence this rule for this review?"),
+        "{shown}"
+    );
+
+    press(&mut app, 'y');
+    assert_eq!(app.session.muted_rules(), ["risk.swallowed_error"]);
+
+    press(&mut app, 'w');
+    let shown = screen(&mut app, 110, 40);
+    assert!(!shown.contains("(risk.swallowed_error)"), "{shown}");
+    assert!(
+        shown.contains("Silenced here: risk.swallowed_error"),
+        "{shown}"
+    );
+}
+
+#[test]
 fn comment_empty_is_rejected() {
     let repo = changed_repo();
     let mut app = reader(open(&repo));

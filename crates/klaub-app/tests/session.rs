@@ -816,3 +816,60 @@ fn ids_and_paths_in_the_queue_are_stable_between_runs() {
     let provider = GitSnapshotProvider::new(Arc::new(FixedClock::default()));
     assert!(provider.discover(repo.path()).is_ok());
 }
+
+/// A repository whose one change adds an `except` block that only discards the error.
+fn swallowing_repo() -> TempRepo {
+    let repo = TempRepo::new();
+    repo.write("service.py", "def handle(value):\n    return int(value)\n");
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "def handle(value):\n    try:\n        return int(value)\n    except Exception:\n        pass\n",
+    );
+    repo
+}
+
+fn has_rule(session: &ReviewSession, rule: &str) -> bool {
+    session
+        .analysis()
+        .queue
+        .iter()
+        .flat_map(|item| item.findings.iter())
+        .any(|finding| finding.rule_id == rule)
+}
+
+#[test]
+fn a_silenced_rule_leaves_the_queue_but_not_the_snapshot_and_survives_reopening() {
+    let repo = swallowing_repo();
+    let config = Config::default();
+    let mut session = open(&repo, &config, &OpenOptions::default());
+    let snapshot = session.analysis().snapshot.id.clone();
+    let unit_id = unit(&session, "handle");
+    let score_with = session.analysis().item(&unit_id).unwrap().score.total();
+    assert!(has_rule(&session, "risk.swallowed_error"));
+
+    session.mute_rule("risk.swallowed_error").unwrap();
+
+    assert!(!has_rule(&session, "risk.swallowed_error"));
+    assert_eq!(
+        session.analysis().snapshot.id,
+        snapshot,
+        "silencing a rule must not take a new snapshot"
+    );
+    assert!(session.analysis().item(&unit_id).unwrap().score.total() < score_with);
+    assert_eq!(session.muted_rules(), ["risk.swallowed_error"]);
+
+    // A rule nobody has seen cannot be silenced by a typo.
+    assert!(session.mute_rule("risk.swalowed_error").is_err());
+    assert_eq!(session.muted_rules(), ["risk.swallowed_error"]);
+
+    // The choice is part of the saved review.
+    drop(session);
+    let mut reopened = open(&repo, &config, &OpenOptions::default());
+    assert_eq!(reopened.muted_rules(), ["risk.swallowed_error"]);
+    assert!(!has_rule(&reopened, "risk.swallowed_error"));
+
+    reopened.unmute_all_rules().unwrap();
+    assert!(has_rule(&reopened, "risk.swallowed_error"));
+    assert!(reopened.muted_rules().is_empty());
+}
