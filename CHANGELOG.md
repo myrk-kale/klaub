@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `klaub review --wait` stays until the reader is closed and reports how the review ended: exit 0 when it was finished, 3 when it was closed as a draft, with the review export on standard output under `--format json` (and nothing else there). An agent can run it and wait for the human; it needs a terminal like any review.
+- The confirmation before preparing text in the agent now shows the process running in the pane and warns when it is a shell, so the text is not pasted onto a shell prompt by surprise.
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

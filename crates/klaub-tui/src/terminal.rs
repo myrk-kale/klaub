@@ -25,8 +25,9 @@ fn terminal_error(error: io::Error) -> Error {
     Error::io("terminal", error)
 }
 
-/// Runs the reader until the user quits. The terminal is restored afterwards, whatever happens.
-pub fn run(mut app: App) -> Result<()> {
+/// Runs the reader until the user quits and hands the state back, so the caller can report what the
+/// review ended as. The terminal is restored afterwards, whatever happens.
+pub fn run(mut app: App) -> Result<App> {
     let mut terminal = ratatui::try_init().map_err(terminal_error)?;
     // Bracketed paste lets a paste arrive as one event, so it lands in the open field instead of
     // being read as a burst of key presses.
@@ -42,7 +43,7 @@ pub fn run(mut app: App) -> Result<()> {
     restore_terminal();
 
     match result {
-        Ok(outcome) => outcome,
+        Ok(outcome) => outcome.map(|()| app),
         Err(payload) => panic::resume_unwind(payload),
     }
 }

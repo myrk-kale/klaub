@@ -24,9 +24,9 @@ use klaub_tmux::channel::TmuxAgentChannel;
 use klaub_tui::App;
 
 use crate::adapters::{ClipboardCopy, ProcessTestRunner, RandomIds, SystemClock};
-use crate::cli::ReviewArgs;
+use crate::cli::{Format, ReviewArgs};
 use crate::context::Context;
-use crate::{env, logging};
+use crate::{env, logging, output};
 
 pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
     logging::init_file(&ctx.dirs.logs_dir().join("review.log"));
@@ -88,8 +88,40 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
         .with_context(|| format!("cannot open a review of {}", target.worktree.display()))?;
 
     let clipboard: Option<Arc<dyn Clipboard>> = Some(Arc::new(ClipboardCopy));
-    klaub_tui::run(App::new(session, parser, target.agent, clipboard))?;
+    let app = klaub_tui::run(App::new(session, parser, target.agent, clipboard))?;
+    if args.wait {
+        return report_wait(&app.session, args.format);
+    }
     Ok(ExitCode::SUCCESS)
+}
+
+/// What `--wait` prints once the human has closed the reader, and the exit code that says how.
+///
+/// A finished review exits 0 and a draft exits 3, so a caller can tell "the human gave feedback"
+/// from "the human closed the reader" without reading the output. With `--format json` standard
+/// output holds the review export and nothing else; the explanation goes to standard error.
+fn report_wait(session: &ReviewSession, format: Format) -> Result<ExitCode> {
+    let outcome = session.outcome();
+    let code = if outcome.finished() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(3)
+    };
+    match format {
+        Format::Json => output::json(&session.export_json())?,
+        Format::Text if outcome.finished() => output::line(&format!(
+            "review {} finished: {} comment(s). Feedback: {}",
+            outcome.review_id, outcome.comments, outcome.file
+        )),
+        Format::Text => {}
+    }
+    if !outcome.finished() {
+        output::error_line(&format!(
+            "the review was closed without being finished; the draft ({} comment(s)) is in {}",
+            outcome.comments, outcome.file
+        ));
+    }
+    Ok(code)
 }
 
 /// Where the review happens and, inside a wrapped session, the pane the feedback can be prepared in.

@@ -23,7 +23,7 @@ use klaub_core::ports::{
 
 pub use analysis::{Analysis, FileEntry, UnitInfo, analyze};
 pub use contract::{ContractDelta, inspect};
-pub use session::{FlowView, OpenOptions, Reports, ReviewSession, TestPanel};
+pub use session::{FlowView, OpenOptions, Reports, ReviewOutcome, ReviewSession, TestPanel};
 pub use view::{CodeLine, CodeScope, CodeView, HighlightedSpan};
 
 /// The collaborators the application needs. Production wiring is in `klaub-cli`; tests use real

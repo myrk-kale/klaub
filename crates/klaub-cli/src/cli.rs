@@ -121,6 +121,16 @@ pub(crate) struct ReviewArgs {
     /// A local brief file to import into the review. Read once, never fetched.
     #[arg(long, value_name = "FILE")]
     pub(crate) brief: Option<PathBuf>,
+
+    /// Stay until the review is closed and report how it ended: exit 0 when it was finished, 3
+    /// when it was closed as a draft. Meant for an agent that runs the reviewer and waits for the
+    /// human; it needs a terminal like any review.
+    #[arg(long)]
+    pub(crate) wait: bool,
+
+    /// With --wait: `json` prints the review export on standard output and nothing else.
+    #[arg(long, value_enum, default_value_t = Format::Text, requires = "wait")]
+    pub(crate) format: Format,
 }
 
 #[derive(Debug, Subcommand)]
@@ -310,6 +320,17 @@ mod tests {
         };
         assert!(args.detach);
         assert_eq!(args.command, vec!["codex", "--detach"]);
+    }
+
+    #[test]
+    fn wait_is_a_review_option_and_json_needs_it() {
+        let parsed =
+            Cli::try_parse_from(["klaub", "review", "--wait", "--format", "json"]).unwrap();
+        let Command::Review(args) = parsed.command else {
+            panic!("expected review")
+        };
+        assert!(args.wait);
+        assert!(Cli::try_parse_from(["klaub", "review", "--format", "json"]).is_err());
     }
 
     #[test]
