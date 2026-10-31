@@ -40,6 +40,7 @@ clap_complete = "4.6"
 
 # Workspace-internal crates.
 klaub-core = { path = "crates/klaub-core", version = "0.1.0" }
+klaub-git = { path = "crates/klaub-git", version = "0.1.0" }
 klaub-tmux = { path = "crates/klaub-tmux", version = "0.1.0" }
 klaub-tui = { path = "crates/klaub-tui", version = "0.1.0" }
 
@@ -67,6 +68,8 @@ must_use_candidate = "allow"
 too_many_lines = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
+# `assert!(x.is_empty())` reads better in tests than `assert_eq!(x, [])`.
+assert_is_empty = "allow"
 
 [profile.release]
 lto = "thin"
