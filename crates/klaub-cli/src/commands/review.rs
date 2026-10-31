@@ -14,7 +14,7 @@ use anyhow::{Context as _, Result};
 use klaub_app::{OpenOptions, Ports, ReviewSession};
 use klaub_core::ids::SessionId;
 use klaub_core::ports::{AgentChannel, Clipboard, ConfigSource};
-use klaub_core::snapshot::SnapshotRequest;
+use klaub_core::snapshot::{Scope, SnapshotRequest};
 use klaub_git::GitSnapshotProvider;
 use klaub_parse::TreeSitterParser;
 use klaub_storage::{
@@ -66,10 +66,23 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
     };
     let parser = Arc::clone(&ports.parser);
 
-    let request = SnapshotRequest::worktree(&target.worktree);
+    let mut request = SnapshotRequest::worktree(&target.worktree);
+    if let Some(base) = &args.base {
+        request.base.clone_from(base);
+    } else if !config.review.base.is_empty() {
+        request.base.clone_from(&config.review.base);
+    }
+    if let Some(scope) = args.scope {
+        request.scope = match scope {
+            crate::cli::ReviewScope::Worktree => Scope::Worktree,
+            crate::cli::ReviewScope::Staged => Scope::Staged,
+            crate::cli::ReviewScope::Unstaged => Scope::Unstaged,
+            crate::cli::ReviewScope::Branch => Scope::Branch,
+        };
+    }
     let options = OpenOptions {
         session_id: target.session_id,
-        brief_file: None,
+        brief_file: args.brief.clone(),
     };
     let session = ReviewSession::open(ports, request, &config, &options)
         .with_context(|| format!("cannot open a review of {}", target.worktree.display()))?;

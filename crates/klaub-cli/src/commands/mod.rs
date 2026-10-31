@@ -2,9 +2,15 @@
 
 mod completions;
 mod doctor;
+mod feedback;
+mod flow;
 mod review;
+mod reviews;
 mod session;
+mod skills;
+mod tests;
 mod version;
+mod worktree;
 mod wrap;
 
 use std::process::ExitCode;
@@ -30,5 +36,10 @@ pub(crate) fn dispatch(cli: Cli) -> Result<ExitCode> {
             session::run(&Context::from_process(cli.tmux_path)?, command)
         }
         Command::Review(args) => review::run(&Context::from_process(cli.tmux_path)?, &args),
+        Command::Reviews(command) => reviews::run(&Context::from_process(cli.tmux_path)?, command),
+        Command::Feedback(args) => feedback::run(&Context::from_process(cli.tmux_path)?, &args),
+        Command::Tests(command) => tests::run(&Context::from_process(cli.tmux_path)?, command),
+        Command::Flow(command) => flow::run(&Context::from_process(cli.tmux_path)?, command),
+        Command::Skills(command) => skills::run(&command),
     }
 }
