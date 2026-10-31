@@ -129,12 +129,14 @@ jobs:
           print("exception:", data.get("exception"))
           print("termination:", data.get("termination"))
           print("asi:", data.get("asi"))
-          for t in data.get("threads", []):
-              if t.get("triggered"):
-                  images = data.get("usedImages", [])
-                  for f in t.get("frames", [])[:14]:
-                      img = images[f["imageIndex"]].get("name") if "imageIndex" in f else "?"
-                      print("  ", img, f.get("symbol"), f.get("symbolLocation"))
+          images = data.get("usedImages", [])
+          threads = data.get("threads", [])
+          ft = data.get("faultingThread", 0)
+          for t in [threads[ft]] if threads and ft < len(threads) else []:
+              for f in t.get("frames", [])[:20]:
+                  img = images[f["imageIndex"]].get("name") if "imageIndex" in f else "?"
+                  print("  ", img, f.get("symbol"), f.get("symbolLocation"), f.get("imageOffset"))
+          print("crashing thread state keys:", [k for k in (threads[ft] if threads else {}).keys()])
           PY
           done
       - name: Dynamic dependencies of the embedded tmux
