@@ -215,11 +215,14 @@ fn hint_for(mode: Mode, filtered: bool) -> &'static str {
 
 fn draw_overlay(frame: &mut Frame<'_>, body: Rect, app: &App, overlay: &Overlay, theme: Theme) {
     match overlay {
-        Overlay::Help => draw_help(frame, body, theme),
-        Overlay::Palette { input, selected } => draw_palette(frame, body, input, *selected, theme),
+        Overlay::Help => draw_help(frame, body, app, theme),
+        Overlay::Palette { input, selected } => {
+            draw_palette(frame, body, app, input, *selected, theme);
+        }
         Overlay::Search { input } => draw_search(frame, body, input, theme),
         Overlay::Editor(editor) => draw_editor(frame, body, editor, theme),
         Overlay::Confirm(confirm) => draw_confirm(frame, body, confirm, theme),
+        Overlay::Notice { title, text } => draw_notice(frame, body, title, text, theme),
         Overlay::Explain(unit) => draw_explain(frame, body, app, unit, theme),
         Overlay::Contract(unit) => draw_contract(frame, body, app, unit, theme),
         Overlay::Finish(stage) => draw_finish(frame, body, stage, theme),
@@ -248,7 +251,7 @@ fn boxed<'a>(title: &str, lines: Vec<Line<'a>>, theme: Theme) -> Paragraph<'a> {
     )
 }
 
-fn draw_help(frame: &mut Frame<'_>, body: Rect, theme: Theme) {
+fn draw_help(frame: &mut Frame<'_>, body: Rect, app: &App, theme: Theme) {
     let area = panel(
         body,
         body.width.saturating_sub(4),
@@ -260,10 +263,11 @@ fn draw_help(frame: &mut Frame<'_>, body: Rect, theme: Theme) {
         theme.dim(),
     ))];
     for entry in ENTRIES {
-        let key = if entry.key.is_empty() {
+        let label = app.keymap.label(entry);
+        let key = if label.is_empty() {
             "palette"
         } else {
-            entry.key
+            label.as_str()
         };
         let row = format!("{key:<14} {}", entry.name);
         lines.push(Line::from(Span::raw(fit(&row, inner))));
@@ -272,7 +276,14 @@ fn draw_help(frame: &mut Frame<'_>, body: Rect, theme: Theme) {
     frame.render_widget(boxed("Help", lines, theme), area);
 }
 
-fn draw_palette(frame: &mut Frame<'_>, body: Rect, input: &str, selected: usize, theme: Theme) {
+fn draw_palette(
+    frame: &mut Frame<'_>,
+    body: Rect,
+    app: &App,
+    input: &str,
+    selected: usize,
+    theme: Theme,
+) {
     let matches = palette_matches(input);
     let shown = u16::try_from(matches.len())
         .unwrap_or(u16::MAX)
@@ -292,7 +303,7 @@ fn draw_palette(frame: &mut Frame<'_>, body: Rect, input: &str, selected: usize,
     }
     for (index, entry) in matches.iter().enumerate() {
         let mark = if index == selected { "▶" } else { " " };
-        let row = format!("{mark} {}   {}", entry.name, entry.key);
+        let row = format!("{mark} {}   {}", entry.name, app.keymap.label(entry));
         let style = if index == selected {
             theme.selected()
         } else {
@@ -418,6 +429,28 @@ fn draw_confirm(frame: &mut Frame<'_>, body: Rect, confirm: &Confirm, theme: The
     )));
     frame.render_widget(Clear, area);
     frame.render_widget(boxed(&clean(&confirm.title), lines, theme), area);
+}
+
+/// A one-time explanation in a box. The text is wrapped to the box and never cut mid-word.
+fn draw_notice(frame: &mut Frame<'_>, body: Rect, title: &str, text: &str, theme: Theme) {
+    let width = body.width.saturating_sub(4).min(72);
+    let inner = usize::from(width).saturating_sub(2);
+    let mut lines: Vec<Line<'_>> = crate::widgets::wrap(text, inner)
+        .into_iter()
+        .map(|row| Line::from(Span::raw(row)))
+        .collect();
+    lines.push(Line::from(Span::raw(String::new())));
+    lines.push(Line::from(Span::styled(
+        "Press any key to continue.",
+        theme.dim(),
+    )));
+    let height = u16::try_from(lines.len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(2)
+        .min(body.height);
+    let area = panel(body, width, height);
+    frame.render_widget(Clear, area);
+    frame.render_widget(boxed(title, lines, theme), area);
 }
 
 fn draw_explain(

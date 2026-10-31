@@ -48,6 +48,10 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
         )
     })?;
 
+    klaub_tui::Keymap::from_overrides(&config.keys)
+        .map_err(|error| anyhow::anyhow!("{error}"))
+        .context("the [keys] table in the configuration is not valid")?;
+
     let clock = Arc::new(SystemClock);
     let ports = Ports {
         snapshots: Arc::new(GitSnapshotProvider::new(clock.clone())),
@@ -84,11 +88,16 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
         session_id: target.session_id,
         brief_file: args.brief.clone(),
     };
+    let first_review_here = !target.worktree.join(".klaub").exists();
     let session = ReviewSession::open(ports, request, &config, &options)
         .with_context(|| format!("cannot open a review of {}", target.worktree.display()))?;
 
     let clipboard: Option<Arc<dyn Clipboard>> = Some(Arc::new(ClipboardCopy));
-    klaub_tui::run(App::new(session, parser, target.agent, clipboard))?;
+    let mut app = App::new(session, parser, target.agent, clipboard);
+    if first_review_here {
+        app = app.with_storage_notice();
+    }
+    klaub_tui::run(app)?;
     Ok(ExitCode::SUCCESS)
 }
 
