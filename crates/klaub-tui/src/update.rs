@@ -353,6 +353,10 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
             return true;
         }
         KeyCode::Char('o') => {
+            perform(app, Action::OpenWholeFile);
+            return true;
+        }
+        KeyCode::Char('i') => {
             perform(app, Action::InspectContract);
             return true;
         }

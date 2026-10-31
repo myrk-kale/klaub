@@ -175,10 +175,10 @@ fn contract_overlay_shows_the_change() {
         "Enter should open the unit in Code"
     );
 
-    press(&mut app, 'o');
+    press(&mut app, 'i');
     assert!(
         matches!(app.overlay, Some(Overlay::Contract(_))),
-        "o in Code should open the contract overlay"
+        "i in Code should open the contract overlay"
     );
     let shown = screen(&mut app, 100, 30);
     assert!(
@@ -192,6 +192,89 @@ fn contract_overlay_shows_the_change() {
 
     press(&mut app, 'x');
     assert!(app.overlay.is_none(), "any key should close the overlay");
+}
+
+/// Two changed functions in two files, so the queue has two units to walk between.
+fn two_units() -> (
+    TempRepo,
+    App,
+    klaub_core::ids::UnitId,
+    klaub_core::ids::UnitId,
+) {
+    let repo = TempRepo::new();
+    repo.write("a.py", "def first():\n    return 1\n");
+    repo.write("b.py", "def second():\n    return 1\n");
+    repo.commit_all("initial");
+    repo.write("a.py", "def first():\n    return 2\n");
+    repo.write("b.py", "def second():\n    return 2\n");
+    let app = reader(open(&repo));
+    let ids: Vec<_> = app
+        .session
+        .analysis()
+        .queue
+        .iter()
+        .map(|item| item.unit.id.clone())
+        .collect();
+    assert_eq!(ids.len(), 2, "{ids:?}");
+    let (one, two) = (ids[0].clone(), ids[1].clone());
+    (repo, app, one, two)
+}
+
+#[test]
+fn back_and_forward_walk_the_units_visited() {
+    let (_repo, mut app, one, two) = two_units();
+    app.open_unit(&one, None);
+    app.open_unit(&two, None);
+    assert_eq!(app.unit.as_ref(), Some(&two));
+
+    press(&mut app, '<');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&one),
+        "back returns to the unit before"
+    );
+    press(&mut app, '>');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&two),
+        "forward returns to where back left"
+    );
+
+    press(&mut app, '<');
+    press(&mut app, '<');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&one),
+        "with nothing earlier, back stays where it is"
+    );
+    handle_key(&mut app, key(KeyCode::Esc)); // a stray key does not disturb the history
+    app.open_unit(&two, None);
+    press(&mut app, '>');
+    assert_eq!(
+        app.unit.as_ref(),
+        Some(&two),
+        "a new move forgets what was ahead"
+    );
+}
+
+#[test]
+fn o_reads_the_unit_inside_its_whole_file_and_stays_there() {
+    let (_repo, mut app, one, _two) = two_units();
+    app.open_unit(&one, None);
+    let symbol_lines = app.code.view.as_ref().unwrap().lines.len();
+
+    press(&mut app, 'o');
+    assert_eq!(app.code.scope, Some(klaub_app::CodeScope::File));
+    press(&mut app, 'o');
+    assert_eq!(
+        app.code.scope,
+        Some(klaub_app::CodeScope::File),
+        "o opens the file; unlike S it does not toggle back"
+    );
+    assert!(app.code.view.as_ref().unwrap().lines.len() >= symbol_lines);
+
+    press(&mut app, 'S');
+    assert_eq!(app.code.scope, Some(klaub_app::CodeScope::Symbol));
 }
 
 #[test]

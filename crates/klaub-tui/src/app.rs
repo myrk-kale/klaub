@@ -162,6 +162,9 @@ pub enum Depth {
     Symbol,
 }
 
+/// How many visited units `<` can walk back through.
+const HISTORY_LIMIT: usize = 64;
+
 /// A row of the structure tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeKind {
@@ -407,6 +410,10 @@ pub struct App {
     pub history: Vec<Mode>,
     /// The unit that Code, Impact and Tests refer to.
     pub unit: Option<UnitId>,
+    /// Units visited before the current one, oldest first. `<` walks back through them.
+    pub(crate) unit_back: Vec<UnitId>,
+    /// Units left by walking back, nearest last. `>` walks forward; any other move clears them.
+    pub(crate) unit_forward: Vec<UnitId>,
     /// Units marked for a quick return. Held only while the reader is open.
     pub(crate) bookmarks: Vec<UnitId>,
     /// Queue filters.
@@ -497,6 +504,8 @@ impl App {
             history: Vec::new(),
             unit: None,
             bookmarks: Vec::new(),
+            unit_back: Vec::new(),
+            unit_forward: Vec::new(),
             filters: Filters::default(),
             queue_view: Viewport::default(),
             structure_view: Viewport::default(),
@@ -630,12 +639,67 @@ impl App {
     /// Makes `unit` the current one and remembers it for the next time the review is opened.
     pub(crate) fn adopt(&mut self, unit: UnitId) {
         let changed = self.unit.as_ref() != Some(&unit);
+        if changed {
+            // A new move starts a new branch of history, as in a browser.
+            if let Some(previous) = self.unit.take() {
+                self.unit_back.push(previous);
+                if self.unit_back.len() > HISTORY_LIMIT {
+                    self.unit_back.remove(0);
+                }
+            }
+            self.unit_forward.clear();
+        }
         self.unit = Some(unit);
         if changed && let Some(unit) = self.unit.clone() {
             // A failed save leaves the cursor where the reader put it; the status says why.
             if let Err(error) = self.session.remember_position(&unit) {
                 self.say(StatusKind::Error, error.to_string());
             }
+        }
+    }
+
+    /// Walks to the unit visited before this one. `false` when there is none.
+    pub(crate) fn history_back(&mut self) -> bool {
+        let Some(target) = self.unit_back.pop() else {
+            return false;
+        };
+        if let Some(current) = self.unit.take() {
+            self.unit_forward.push(current);
+        }
+        self.show_history_unit(&target);
+        true
+    }
+
+    /// Walks to the unit that `<` left. `false` when there is none.
+    pub(crate) fn history_forward(&mut self) -> bool {
+        let Some(target) = self.unit_forward.pop() else {
+            return false;
+        };
+        if let Some(current) = self.unit.take() {
+            self.unit_back.push(current);
+        }
+        self.show_history_unit(&target);
+        true
+    }
+
+    /// Puts the reader on a unit taken from the history, without touching the other direction.
+    fn show_history_unit(&mut self, unit: &UnitId) {
+        self.unit = Some(unit.clone());
+        if let Err(error) = self.session.remember_position(unit) {
+            self.say(StatusKind::Error, error.to_string());
+        }
+        self.select_in_queue(unit);
+        if matches!(self.mode, Mode::Code) {
+            let version = self.code.version;
+            self.code = CodeState {
+                version: version.or_else(|| Some(self.default_version(unit))),
+                scope: Some(CodeScope::Symbol),
+                ..CodeState::default()
+            };
+            self.rebuild_code();
+        }
+        if matches!(self.mode, Mode::Impact) {
+            self.rebuild_impact();
         }
     }
 

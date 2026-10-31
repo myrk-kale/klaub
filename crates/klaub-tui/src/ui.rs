@@ -197,7 +197,7 @@ fn hint_for(mode: Mode, filtered: bool) -> &'static str {
         }
         Mode::Structure => " j/k move · Enter open · +/- depth · c comment · r reviewed · ? help",
         Mode::Code => {
-            " j/k move · o contract · v old/new · [ ] change · c comment · V select · S symbol/file"
+            " j/k move · i contract · o file · v old/new · [ ] change · c comment · V select · < > back/forward"
         }
         Mode::Impact => " j/k move · Enter open the symbol · g back to the queue · ? help",
         Mode::Comments => " j/k move · Enter open the code · e edit · d delete a draft · ? help",
