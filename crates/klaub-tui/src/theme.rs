@@ -114,6 +114,15 @@ impl Theme {
         }
     }
 
+    /// The style of code that has no syntax span of its own. Unchanged text stays plain; changed
+    /// text takes the line's colour, so the gutter marker is never the only cue.
+    pub fn mark_text(self, mark: LineMark) -> Style {
+        match mark {
+            LineMark::Same => Style::default(),
+            other => self.mark(other),
+        }
+    }
+
     /// The background hint for a changed line (the line also has a marker character).
     pub fn mark(self, mark: LineMark) -> Style {
         match (self.high_contrast(), mark) {
@@ -153,7 +162,7 @@ impl Theme {
 }
 
 /// The marker character shown in the gutter for a changed line.
-pub fn mark_symbol(mark: LineMark) -> char {
+pub(crate) fn mark_symbol(mark: LineMark) -> char {
     match mark {
         LineMark::Same => ' ',
         LineMark::Added => '+',

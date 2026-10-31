@@ -80,6 +80,7 @@ impl Mode {
     }
 
     /// The mode after (or before) this one in `Tab` order.
+    #[must_use]
     pub fn cycle(self, forward: bool) -> Self {
         let position = Self::ALL.iter().position(|m| *m == self).unwrap_or(0);
         let next = if forward {
@@ -699,10 +700,10 @@ impl App {
     // ---- code ----------------------------------------------------------------------------------
 
     /// Opens `unit` in the Code mode.
-    pub fn open_unit(&mut self, unit: UnitId, version: Option<Version>) {
+    pub fn open_unit(&mut self, unit: &UnitId, version: Option<Version>) {
         self.unit = Some(unit.clone());
-        self.select_in_queue(&unit);
-        let fallback = self.default_version(&unit);
+        self.select_in_queue(unit);
+        let fallback = self.default_version(unit);
         self.code = CodeState {
             version: Some(version.unwrap_or(fallback)),
             scope: Some(CodeScope::Symbol),
@@ -905,7 +906,7 @@ impl App {
     /// Opens the code of a symbol: the changed unit when it is one, otherwise a read-only view.
     pub fn open_symbol(&mut self, key: &SymbolKey) {
         if let Some(unit) = self.session.unit_of_symbol(key) {
-            self.open_unit(unit, None);
+            self.open_unit(&unit, None);
             return;
         }
         let view = self.session.code_view_of_symbol(self.parser.as_ref(), key);

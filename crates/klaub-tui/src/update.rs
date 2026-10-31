@@ -10,8 +10,7 @@ use klaub_core::text::{sanitize_single_line, sanitize_terminal_text};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::actions::{
-    self, Action, ENTRIES, ensure_code_visible, focus_unit, followup_decision, perform,
-    prepare_confirm,
+    self, Action, ENTRIES, ensure_code_visible, followup_decision, perform, prepare_confirm,
 };
 use crate::app::{
     App, Confirm, ConfirmAction, DELIVERY_OPTIONS, Editor, EditorPurpose, FinishStage, Mode,
@@ -40,7 +39,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 }
 
 /// Applies pasted text (terminal bracketed paste) to whichever field is open.
-pub fn handle_paste(app: &mut App, text: &str) {
+pub(crate) fn handle_paste(app: &mut App, text: &str) {
     match &mut app.overlay {
         Some(Overlay::Editor(editor)) => {
             let clean = if editor.multiline {
@@ -58,7 +57,7 @@ pub fn handle_paste(app: &mut App, text: &str) {
 }
 
 /// Called when no input arrived for a while: probes the worktree for changes.
-pub fn tick(app: &mut App) {
+pub(crate) fn tick(app: &mut App) {
     if app.last_probe.elapsed() < PROBE_EVERY {
         return;
     }
@@ -75,8 +74,10 @@ pub fn tick(app: &mut App) {
 }
 
 /// Runs an action that blocks, after the frame that announced it was drawn.
-pub fn run_deferred(app: &mut App) {
-    let Some(action) = app.deferred.take() else { return };
+pub(crate) fn run_deferred(app: &mut App) {
+    let Some(action) = app.deferred.take() else {
+        return;
+    };
     match action {
         ConfirmAction::RunTests(request) => {
             match app.session.run_tests(&request, &CancelToken::default()) {
@@ -93,8 +94,18 @@ pub fn run_deferred(app: &mut App) {
                         }
                     };
                     app.test_output = Some(sanitize_terminal_text(&outcome.output_tail));
-                    let kind = if outcome.exit_code == Some(0) { StatusKind::Info } else { StatusKind::Warn };
-                    app.say(kind, format!("Tests {what} in {:.1}s. Reports were re-read.", outcome.duration.as_secs_f32()));
+                    let kind = if outcome.exit_code == Some(0) {
+                        StatusKind::Info
+                    } else {
+                        StatusKind::Warn
+                    };
+                    app.say(
+                        kind,
+                        format!(
+                            "Tests {what} in {:.1}s. Reports were re-read.",
+                            outcome.duration.as_secs_f32()
+                        ),
+                    );
                 }
                 Err(error) => app.say(StatusKind::Error, error.to_string()),
             }
@@ -102,7 +113,10 @@ pub fn run_deferred(app: &mut App) {
         ConfirmAction::Refresh => match app.session.refresh() {
             Ok(()) => {
                 after_refresh(app);
-                app.say(StatusKind::Info, "New snapshot taken; comments were relocated.");
+                app.say(
+                    StatusKind::Info,
+                    "New snapshot taken; comments were relocated.",
+                );
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
@@ -197,10 +211,16 @@ fn global_key(app: &mut App, key: KeyEvent, quit_was_armed: bool) {
     match key.code {
         KeyCode::Char('c') if control => app.should_quit = true,
         KeyCode::Char('p') if control => {
-            app.overlay = Some(Overlay::Palette { input: String::new(), selected: 0 });
+            app.overlay = Some(Overlay::Palette {
+                input: String::new(),
+                selected: 0,
+            });
         }
         KeyCode::Char(':') => {
-            app.overlay = Some(Overlay::Palette { input: String::new(), selected: 0 });
+            app.overlay = Some(Overlay::Palette {
+                input: String::new(),
+                selected: 0,
+            });
         }
         KeyCode::F(n) => {
             if let Some(action) = function_key(n) {
@@ -296,7 +316,7 @@ fn queue_key(app: &mut App, key: KeyEvent) -> bool {
     if is_enter(key)
         && let Some(unit) = app.queue_selection()
     {
-        app.open_unit(unit, None);
+        app.open_unit(&unit, None);
         return true;
     }
     false
@@ -315,8 +335,11 @@ fn structure_key(app: &mut App, key: KeyEvent) -> bool {
     if !is_enter(key) {
         return false;
     }
-    match rows.get(app.structure_view.selected).map(|r| r.kind.clone()) {
-        Some(TreeKind::Unit(unit)) => app.open_unit(unit, None),
+    match rows
+        .get(app.structure_view.selected)
+        .map(|r| r.kind.clone())
+    {
+        Some(TreeKind::Unit(unit)) => app.open_unit(&unit, None),
         Some(TreeKind::File(path)) => {
             if !app.collapsed.remove(&path) {
                 app.collapsed.insert(path);
@@ -326,7 +349,13 @@ fn structure_key(app: &mut App, key: KeyEvent) -> bool {
             app.filters.module = Some(module.clone());
             app.queue_view = Viewport::default();
             app.go(Mode::Queue);
-            app.say(StatusKind::Info, format!("Showing module {} only. x clears the filter.", sanitize_single_line(&module)));
+            app.say(
+                StatusKind::Info,
+                format!(
+                    "Showing module {} only. x clears the filter.",
+                    sanitize_single_line(&module)
+                ),
+            );
         }
         None => {}
     }
@@ -351,7 +380,11 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Right | KeyCode::Char('l') => app.code.hscroll += 8,
         KeyCode::Left | KeyCode::Char('h') => app.code.hscroll = app.code.hscroll.saturating_sub(8),
         KeyCode::Char('V') => {
-            app.code.selection = if selecting { None } else { Some(app.code.cursor) };
+            app.code.selection = if selecting {
+                None
+            } else {
+                Some(app.code.cursor)
+            };
             return true;
         }
         KeyCode::Esc if selecting => {
@@ -390,9 +423,15 @@ fn impact_key(app: &mut App, key: KeyEvent) -> bool {
                 Some(target) => {
                     app.impact.focus = Some(target);
                     app.rebuild_impact();
-                    app.say(StatusKind::Info, "Showing the impact of that symbol. Esc goes back.");
+                    app.say(
+                        StatusKind::Info,
+                        "Showing the impact of that symbol. Esc goes back.",
+                    );
                 }
-                None => app.say(StatusKind::Info, "Select a caller, callee or entrypoint to pivot on."),
+                None => app.say(
+                    StatusKind::Info,
+                    "Select a caller, callee or entrypoint to pivot on.",
+                ),
             }
             true
         }
@@ -410,7 +449,13 @@ fn comments_key(app: &mut App, key: KeyEvent) -> bool {
     if navigate(&mut app.comments_view, key, len) {
         return true;
     }
-    let Some(comment) = app.session.review().comments.get(app.comments_view.selected).cloned() else {
+    let Some(comment) = app
+        .session
+        .review()
+        .comments
+        .get(app.comments_view.selected)
+        .cloned()
+    else {
         return false;
     };
     match key.code {
@@ -429,8 +474,11 @@ fn comments_key(app: &mut App, key: KeyEvent) -> bool {
                         .map(|i| i.unit.id.clone())
                 });
             match unit {
-                Some(unit) => app.open_unit(unit, Some(comment.anchor.version)),
-                None => app.say(StatusKind::Warn, "The code this comment was about is not in this snapshot."),
+                Some(unit) => app.open_unit(&unit, Some(comment.anchor.version)),
+                None => app.say(
+                    StatusKind::Warn,
+                    "The code this comment was about is not in this snapshot.",
+                ),
             }
             true
         }
@@ -445,7 +493,10 @@ fn comments_key(app: &mut App, key: KeyEvent) -> bool {
                     error: None,
                 }));
             } else {
-                app.say(StatusKind::Info, "Only drafts can be edited; this one was already handed over.");
+                app.say(
+                    StatusKind::Info,
+                    "Only drafts can be edited; this one was already handed over.",
+                );
             }
             true
         }
@@ -457,7 +508,10 @@ fn comments_key(app: &mut App, key: KeyEvent) -> bool {
                     action: ConfirmAction::DeleteComment(comment.comment_id.clone()),
                 }));
             } else {
-                app.say(StatusKind::Info, "Only drafts can be deleted; this one was already handed over.");
+                app.say(
+                    StatusKind::Info,
+                    "Only drafts can be deleted; this one was already handed over.",
+                );
             }
             true
         }
@@ -481,7 +535,12 @@ fn context_key(app: &mut App, key: KeyEvent) -> bool {
         return true;
     }
     let edit_intent = |app: &mut App| {
-        let text = app.session.brief().intent_summary.clone().unwrap_or_default();
+        let text = app
+            .session
+            .brief()
+            .intent_summary
+            .clone()
+            .unwrap_or_default();
         app.overlay = Some(Overlay::Editor(Editor {
             title: "Intent of the change (what the author wanted)".to_owned(),
             purpose: EditorPurpose::Intent,
@@ -511,7 +570,13 @@ fn context_key(app: &mut App, key: KeyEvent) -> bool {
             let selected = app.context_view.selected;
             if selected == 0 {
                 edit_intent(app);
-            } else if let Some(criterion) = app.session.brief().acceptance_criteria.get(selected - 1).cloned() {
+            } else if let Some(criterion) = app
+                .session
+                .brief()
+                .acceptance_criteria
+                .get(selected - 1)
+                .cloned()
+            {
                 let next = next_criterion_status(criterion.status);
                 if let Err(error) = app.session.set_criterion(&criterion.id, next, None) {
                     app.say(StatusKind::Error, error.to_string());
@@ -536,7 +601,10 @@ fn followup_key(app: &mut App, key: KeyEvent) -> bool {
     {
         app.overlay = Some(Overlay::Editor(Editor {
             title: format!("Your decision: {} — optional note", status.label()),
-            purpose: EditorPurpose::FollowupNote { comment: comment.comment_id.clone(), status },
+            purpose: EditorPurpose::FollowupNote {
+                comment: comment.comment_id.clone(),
+                status,
+            },
             text: String::new(),
             severity: None,
             multiline: false,
@@ -551,8 +619,11 @@ fn followup_key(app: &mut App, key: KeyEvent) -> bool {
             .clone()
             .filter(|u| app.session.analysis().units.contains_key(u));
         match unit {
-            Some(unit) => app.open_unit(unit, Some(Version::After)),
-            None => app.say(StatusKind::Warn, "That code is not in this snapshot; the comment is stale."),
+            Some(unit) => app.open_unit(&unit, Some(Version::After)),
+            None => app.say(
+                StatusKind::Warn,
+                "That code is not in this snapshot; the comment is stale.",
+            ),
         }
         return true;
     }
@@ -572,14 +643,22 @@ fn coverage_key(app: &mut App, key: KeyEvent) -> bool {
         app.filters.unreviewed_only = true;
         app.queue_view = Viewport::default();
         app.go(Mode::Queue);
-        app.say(StatusKind::Info, "Showing what is left to review in that module. x clears the filters.");
+        app.say(
+            StatusKind::Info,
+            "Showing what is left to review in that module. x clears the filters.",
+        );
         return true;
     }
     false
 }
 
 fn flow_key(app: &mut App, key: KeyEvent) -> bool {
-    let steps = app.session.flow().flow.as_ref().map_or(0, |f| f.document.steps.len());
+    let steps = app
+        .session
+        .flow()
+        .flow
+        .as_ref()
+        .map_or(0, |f| f.document.steps.len());
     if navigate(&mut app.flow_view, key, steps) {
         return true;
     }
@@ -601,7 +680,10 @@ fn flow_key(app: &mut App, key: KeyEvent) -> bool {
             });
             match target {
                 Some(key) => app.open_symbol(&key),
-                None => app.say(StatusKind::Info, "This step does not point to a symbol in the project."),
+                None => app.say(
+                    StatusKind::Info,
+                    "This step does not point to a symbol in the project.",
+                ),
             }
             true
         }
@@ -612,7 +694,7 @@ fn flow_key(app: &mut App, key: KeyEvent) -> bool {
 // ---- overlays ----------------------------------------------------------------------------------------------
 
 /// The palette entries that match what was typed.
-pub fn palette_matches(input: &str) -> Vec<&'static actions::Entry> {
+pub(crate) fn palette_matches(input: &str) -> Vec<&'static actions::Entry> {
     let needle = input.trim().to_lowercase();
     ENTRIES
         .iter()
@@ -621,12 +703,17 @@ pub fn palette_matches(input: &str) -> Vec<&'static actions::Entry> {
 }
 
 fn overlay_key(app: &mut App, key: KeyEvent) {
-    let Some(overlay) = app.overlay.take() else { return };
+    let Some(overlay) = app.overlay.take() else {
+        return;
+    };
     match overlay {
         Overlay::Help | Overlay::Explain(_) => {
             // Any key closes; the overlay stays taken.
         }
-        Overlay::Palette { mut input, mut selected } => {
+        Overlay::Palette {
+            mut input,
+            mut selected,
+        } => {
             let matches = palette_matches(&input).len();
             match key.code {
                 KeyCode::Esc => return,
@@ -654,7 +741,7 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
         Overlay::Search { mut input } => match key.code {
             KeyCode::Esc => {}
             KeyCode::Enter => {
-                app.filters.search = input.trim().to_owned();
+                input.trim().clone_into(&mut app.filters.search);
                 app.queue_view = Viewport::default();
                 app.structure_view = Viewport::default();
                 let len = app.visible_queue().len();
@@ -664,7 +751,10 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
                 if app.mode != Mode::Structure {
                     app.mode = Mode::Queue;
                 }
-                app.say(StatusKind::Info, format!("{len} unit(s) match. x clears the search."));
+                app.say(
+                    StatusKind::Info,
+                    format!("{len} unit(s) match. x clears the search."),
+                );
             }
             KeyCode::Backspace => {
                 input.pop();
@@ -692,15 +782,16 @@ fn editor_key(app: &mut App, mut editor: Editor, key: KeyEvent) {
     let control = key.modifiers.contains(KeyModifiers::CONTROL);
     match key.code {
         KeyCode::Esc => return,
-        KeyCode::Enter => {
-            match save_editor(app, &editor) {
-                Ok(()) => return,
-                Err(message) => editor.error = Some(message),
-            }
-        }
+        KeyCode::Enter => match save_editor(app, &editor) {
+            Ok(()) => return,
+            Err(message) => editor.error = Some(message),
+        },
         KeyCode::Char('j') if control && editor.multiline => editor.text.push('\n'),
         KeyCode::Tab => {
-            if matches!(editor.purpose, EditorPurpose::NewComment { .. } | EditorPurpose::EditComment(_)) {
+            if matches!(
+                editor.purpose,
+                EditorPurpose::NewComment { .. } | EditorPurpose::EditComment(_)
+            ) {
                 editor.severity = match editor.severity {
                     None => Some(Priority::P0),
                     Some(Priority::P0) => Some(Priority::P1),
@@ -726,7 +817,11 @@ fn editor_key(app: &mut App, mut editor: Editor, key: KeyEvent) {
 fn save_editor(app: &mut App, editor: &Editor) -> Result<(), String> {
     let text = editor.text.trim();
     let outcome = match &editor.purpose {
-        EditorPurpose::NewComment { unit, version, lines } => app
+        EditorPurpose::NewComment {
+            unit,
+            version,
+            lines,
+        } => app
             .session
             .add_comment(unit, *version, *lines, text, editor.severity)
             .map(|_| "Comment saved.".to_owned()),
@@ -762,7 +857,10 @@ fn save_editor(app: &mut App, editor: &Editor) -> Result<(), String> {
 fn confirmed(app: &mut App, action: ConfirmAction) {
     match action {
         ConfirmAction::RunTests(_) => {
-            app.say(StatusKind::Info, "Running tests… the screen is busy until they finish or time out.");
+            app.say(
+                StatusKind::Info,
+                "Running tests… the screen is busy until they finish or time out.",
+            );
             app.deferred = Some(action);
         }
         ConfirmAction::Refresh => {
@@ -777,7 +875,10 @@ fn run_confirmed(app: &mut App, action: ConfirmAction) {
     match action {
         ConfirmAction::PrepareInAgent => {
             let Some(channel) = app.agent.clone() else {
-                app.say(StatusKind::Warn, "No agent pane is managed here. Use Copy feedback or Show file.");
+                app.say(
+                    StatusKind::Warn,
+                    "No agent pane is managed here. Use Copy feedback or Show file.",
+                );
                 return;
             };
             match app.session.prepare_in_agent(channel.as_ref()) {
@@ -794,7 +895,10 @@ fn run_confirmed(app: &mut App, action: ConfirmAction) {
         }
         ConfirmAction::PrepareFlowRequest => {
             let Some(channel) = app.agent.clone() else {
-                app.say(StatusKind::Warn, "No agent pane is managed here. Copy the request from the Flow screen instead.");
+                app.say(
+                    StatusKind::Warn,
+                    "No agent pane is managed here. Copy the request from the Flow screen instead.",
+                );
                 return;
             };
             match app.session.prepare_flow_request(channel.as_ref()) {
@@ -826,14 +930,20 @@ fn finish_key(app: &mut App, stage: FinishStage, key: KeyEvent) {
         FinishStage::Confirm { warnings } => match key.code {
             KeyCode::Char('y' | 'Y') | KeyCode::Enter => match app.session.finish() {
                 Ok(record) => {
-                    app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected: 0 }));
+                    app.overlay = Some(Overlay::Finish(FinishStage::Deliver {
+                        record,
+                        selected: 0,
+                    }));
                 }
                 Err(error) => app.say(StatusKind::Warn, error.to_string()),
             },
             KeyCode::Esc | KeyCode::Char('n' | 'N') => {}
             _ => app.overlay = Some(Overlay::Finish(FinishStage::Confirm { warnings })),
         },
-        FinishStage::Deliver { record, mut selected } => match key.code {
+        FinishStage::Deliver {
+            record,
+            mut selected,
+        } => match key.code {
             KeyCode::Down | KeyCode::Char('j') => {
                 selected = (selected + 1).min(DELIVERY_OPTIONS.len() - 1);
                 app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected }));
@@ -843,7 +953,10 @@ fn finish_key(app: &mut App, stage: FinishStage, key: KeyEvent) {
                 app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected }));
             }
             KeyCode::Esc => {
-                app.say(StatusKind::Info, "Review finished and saved. F offers the delivery options again.");
+                app.say(
+                    StatusKind::Info,
+                    "Review finished and saved. F offers the delivery options again.",
+                );
             }
             KeyCode::Enter => deliver(app, &record, selected),
             _ => app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected })),
@@ -865,28 +978,16 @@ fn deliver(app: &mut App, record: &klaub_core::review::FeedbackRecord, selected:
         2 => match app.session.mark_shown() {
             Ok(()) => {
                 let file = app.session.review_file();
-                app.say(StatusKind::Info, format!("Feedback file: {file} — tell the agent: {}", sanitize_single_line(&record.prompt)));
+                app.say(
+                    StatusKind::Info,
+                    format!(
+                        "Feedback file: {file} — tell the agent: {}",
+                        sanitize_single_line(&record.prompt)
+                    ),
+                );
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
         _ => app.say(StatusKind::Info, "Review finished and saved."),
     }
-}
-
-/// Moves the code cursor to the line holding `number`, if shown.
-pub fn goto_line(app: &mut App, number: u32) {
-    if let Some(index) = app
-        .code
-        .view
-        .as_ref()
-        .and_then(|v| v.lines.iter().position(|l| l.number == number))
-    {
-        app.code.cursor = index;
-        ensure_code_visible(app);
-    }
-}
-
-/// Selects `unit` as if it had been chosen in the queue (used by tests and the command palette).
-pub fn select_unit(app: &mut App, unit: klaub_core::ids::UnitId) {
-    focus_unit(app, unit);
 }

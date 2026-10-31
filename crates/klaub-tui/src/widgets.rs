@@ -3,9 +3,8 @@
 use klaub_core::text::sanitize_single_line;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, Paragraph};
+use ratatui::widgets::Paragraph;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::theme::Theme;
@@ -50,26 +49,23 @@ pub(crate) fn bar(done: usize, total: usize, width: usize) -> String {
     if width == 0 {
         return String::new();
     }
-    let filled = if total == 0 { 0 } else { (done * width).div_ceil(total).min(width) };
-    let filled = if done == 0 { 0 } else { filled.max(1) };
+    let filled = match total {
+        0 => 0,
+        _ if done == 0 => 0,
+        _ => (done * width).div_ceil(total).clamp(1, width),
+    };
     format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
 }
 
 /// A percentage that never rounds a partial result up to "done".
 pub(crate) fn percent(done: usize, total: usize) -> usize {
-    if total == 0 { 0 } else { (done * 100 / total).min(if done < total { 99 } else { 100 }) }
-}
-
-/// A rectangle of the given size centred in `area` (clamped to it).
-pub(crate) fn centered(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
-    Rect {
-        x: area.x + (area.width - width) / 2,
-        y: area.y + (area.height - height) / 2,
-        width,
-        height,
+    if total == 0 {
+        return 0;
     }
+    let Some(raw) = done.checked_mul(100).and_then(|n| n.checked_div(total)) else {
+        return 99;
+    };
+    raw.min(if done < total { 99 } else { 100 })
 }
 
 /// Splits `text` into lines no wider than `width` columns, breaking at spaces where possible.
@@ -106,36 +102,43 @@ pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
 }
 
 /// Draws the visible window of a list, highlighting the selected row, and records the height.
-pub(crate) fn draw_list(frame: &mut Frame, area: Rect, view: &mut Viewport, rows: Vec<Line<'static>>, theme: Theme) {
+pub(crate) fn draw_list(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &mut Viewport,
+    rows: Vec<Line<'static>>,
+    theme: Theme,
+) {
     view.height = usize::from(area.height);
     view.clamp(rows.len());
     let window = view.window(rows.len());
     let selected = view.selected;
-    let lines: Vec<Line> = rows
-        .into_iter()
-        .enumerate()
-        .skip(window.start)
-        .take(window.len())
-        .map(|(i, line)| {
-            if i == selected {
-                let marked = Line::from(
-                    std::iter::once(Span::raw("▶"))
-                        .chain(line.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(theme.selected()))))
-                        .collect::<Vec<_>>(),
-                );
-                marked.style(theme.selected())
-            } else {
-                Line::from(std::iter::once(Span::raw(" ")).chain(line.spans).collect::<Vec<_>>())
-            }
-        })
-        .collect();
+    let lines: Vec<Line<'static>> =
+        rows.into_iter()
+            .enumerate()
+            .skip(window.start)
+            .take(window.len())
+            .map(|(i, line)| {
+                if i == selected {
+                    let marked =
+                        Line::from(
+                            std::iter::once(Span::raw("▶"))
+                                .chain(line.spans.into_iter().map(|s| {
+                                    Span::styled(s.content, s.style.patch(theme.selected()))
+                                }))
+                                .collect::<Vec<_>>(),
+                        );
+                    marked.style(theme.selected())
+                } else {
+                    Line::from(
+                        std::iter::once(Span::raw(" "))
+                            .chain(line.spans)
+                            .collect::<Vec<_>>(),
+                    )
+                }
+            })
+            .collect();
     frame.render_widget(Paragraph::new(lines), area);
-}
-
-/// Clears `area` and draws `lines` in it, for overlays.
-pub(crate) fn draw_lines(frame: &mut Frame, area: Rect, lines: Vec<Line<'static>>, style: Style) {
-    frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(lines).style(style), area);
 }
 
 #[cfg(test)]
@@ -169,13 +172,6 @@ mod tests {
         assert_eq!(wrap("one two three", 7), vec!["one two", "three"]);
         assert_eq!(wrap("abcdefghij", 4), vec!["abcd", "efgh", "ij"]);
         assert_eq!(wrap("a\nb", 10), vec!["a", "b"]);
-        assert!(wrap("", 5).len() == 1);
-    }
-
-    #[test]
-    fn centering_clamps_to_the_area() {
-        let area = Rect::new(0, 0, 20, 10);
-        assert_eq!(centered(area, 10, 4), Rect::new(5, 3, 10, 4));
-        assert_eq!(centered(area, 99, 99), area);
+        assert_eq!(wrap("", 5).len(), 1);
     }
 }

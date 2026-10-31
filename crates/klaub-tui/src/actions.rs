@@ -13,7 +13,7 @@ use crate::app::{
 
 /// A user-level operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
+pub(crate) enum Action {
     /// Switch to a mode.
     Mode(Mode),
     /// Jump to the next unit not marked reviewed.
@@ -81,7 +81,7 @@ pub enum Action {
 }
 
 /// One line of the palette and the help.
-pub struct Entry {
+pub(crate) struct Entry {
     /// The action.
     pub action: Action,
     /// What the palette shows.
@@ -91,52 +91,216 @@ pub struct Entry {
 }
 
 /// Every action with its key. The palette and the help screen are built from this table.
-pub const ENTRIES: &[Entry] = &[
-    Entry { action: Action::Mode(Mode::Queue), name: "Go to Queue", key: "1  F2" },
-    Entry { action: Action::Mode(Mode::Structure), name: "Go to Structure", key: "2  F3" },
-    Entry { action: Action::Mode(Mode::Code), name: "Go to Code", key: "3  F4" },
-    Entry { action: Action::Mode(Mode::Impact), name: "Go to Impact (callers, entrypoints)", key: "4  g  F5" },
-    Entry { action: Action::Mode(Mode::Comments), name: "Go to Comments", key: "5  F6" },
-    Entry { action: Action::Mode(Mode::Context), name: "Go to Context (brief, criteria)", key: "6  b  F8" },
-    Entry { action: Action::Mode(Mode::Tests), name: "Go to Tests", key: "7  t  F7" },
-    Entry { action: Action::Mode(Mode::Followup), name: "Go to Follow-up", key: "8  F10" },
-    Entry { action: Action::Mode(Mode::Coverage), name: "Go to Coverage", key: "9" },
-    Entry { action: Action::Mode(Mode::Flow), name: "Go to Flow", key: "0  f  F9" },
-    Entry { action: Action::NextUnreviewed, name: "Next unreviewed", key: "n" },
-    Entry { action: Action::PrevUnreviewed, name: "Previous unreviewed", key: "P" },
-    Entry { action: Action::NextCritical, name: "Next unreviewed P0/P1", key: "N" },
-    Entry { action: Action::ToggleReviewed, name: "Mark reviewed / unmark", key: "r" },
-    Entry { action: Action::Comment, name: "Comment on selection", key: "c" },
-    Entry { action: Action::Explain, name: "Why this priority?", key: "w" },
-    Entry { action: Action::ToggleVersion, name: "Toggle before / after", key: "v" },
-    Entry { action: Action::NextChange, name: "Next change", key: "]" },
-    Entry { action: Action::PrevChange, name: "Previous change", key: "[" },
-    Entry { action: Action::ToggleCodeScope, name: "Code: symbol / whole file", key: "S" },
-    Entry { action: Action::Search, name: "Search", key: "/" },
-    Entry { action: Action::FilterHigh, name: "Filter: P0/P1 only", key: "H" },
-    Entry { action: Action::FilterUnreviewed, name: "Filter: unreviewed only", key: "u" },
-    Entry { action: Action::FilterIntroduced, name: "Filter: introduced by this change", key: "I" },
-    Entry { action: Action::FilterNoTests, name: "Filter: no associated tests", key: "T" },
-    Entry { action: Action::FilterNew, name: "Filter: new files", key: "W" },
-    Entry { action: Action::CycleScope, name: "Filter: minimum reach (local/module/global)", key: "s" },
-    Entry { action: Action::CycleModule, name: "Filter: next module", key: "M" },
-    Entry { action: Action::ClearFilters, name: "Clear filters", key: "x" },
-    Entry { action: Action::DeeperTree, name: "Structure: show more", key: "+" },
-    Entry { action: Action::ShallowerTree, name: "Structure: show less", key: "-" },
-    Entry { action: Action::RunTests, name: "Run associated tests (asks first)", key: "X" },
-    Entry { action: Action::ReloadReports, name: "Reload test reports", key: "U" },
-    Entry { action: Action::ReloadFlow, name: "Reload flow", key: "L" },
-    Entry { action: Action::RequestFlow, name: "Prepare flow request in agent", key: "Flow: p" },
-    Entry { action: Action::Refresh, name: "Refresh snapshot", key: "R" },
-    Entry { action: Action::Finish, name: "Finish review…", key: "F" },
-    Entry { action: Action::CopyFeedback, name: "Copy feedback instruction", key: "" },
-    Entry { action: Action::ConfirmSubmitted, name: "I submitted the feedback in the agent", key: "" },
-    Entry { action: Action::Help, name: "Help", key: "?  F1" },
-    Entry { action: Action::Quit, name: "Close the reader", key: "q q" },
+pub(crate) const ENTRIES: &[Entry] = &[
+    Entry {
+        action: Action::Mode(Mode::Queue),
+        name: "Go to Queue",
+        key: "1  F2",
+    },
+    Entry {
+        action: Action::Mode(Mode::Structure),
+        name: "Go to Structure",
+        key: "2  F3",
+    },
+    Entry {
+        action: Action::Mode(Mode::Code),
+        name: "Go to Code",
+        key: "3  F4",
+    },
+    Entry {
+        action: Action::Mode(Mode::Impact),
+        name: "Go to Impact (callers, entrypoints)",
+        key: "4  g  F5",
+    },
+    Entry {
+        action: Action::Mode(Mode::Comments),
+        name: "Go to Comments",
+        key: "5  F6",
+    },
+    Entry {
+        action: Action::Mode(Mode::Context),
+        name: "Go to Context (brief, criteria)",
+        key: "6  b  F8",
+    },
+    Entry {
+        action: Action::Mode(Mode::Tests),
+        name: "Go to Tests",
+        key: "7  t  F7",
+    },
+    Entry {
+        action: Action::Mode(Mode::Followup),
+        name: "Go to Follow-up",
+        key: "8  F10",
+    },
+    Entry {
+        action: Action::Mode(Mode::Coverage),
+        name: "Go to Coverage",
+        key: "9",
+    },
+    Entry {
+        action: Action::Mode(Mode::Flow),
+        name: "Go to Flow",
+        key: "0  f  F9",
+    },
+    Entry {
+        action: Action::NextUnreviewed,
+        name: "Next unreviewed",
+        key: "n",
+    },
+    Entry {
+        action: Action::PrevUnreviewed,
+        name: "Previous unreviewed",
+        key: "P",
+    },
+    Entry {
+        action: Action::NextCritical,
+        name: "Next unreviewed P0/P1",
+        key: "N",
+    },
+    Entry {
+        action: Action::ToggleReviewed,
+        name: "Mark reviewed / unmark",
+        key: "r",
+    },
+    Entry {
+        action: Action::Comment,
+        name: "Comment on selection",
+        key: "c",
+    },
+    Entry {
+        action: Action::Explain,
+        name: "Why this priority?",
+        key: "w",
+    },
+    Entry {
+        action: Action::ToggleVersion,
+        name: "Toggle before / after",
+        key: "v",
+    },
+    Entry {
+        action: Action::NextChange,
+        name: "Next change",
+        key: "]",
+    },
+    Entry {
+        action: Action::PrevChange,
+        name: "Previous change",
+        key: "[",
+    },
+    Entry {
+        action: Action::ToggleCodeScope,
+        name: "Code: symbol / whole file",
+        key: "S",
+    },
+    Entry {
+        action: Action::Search,
+        name: "Search",
+        key: "/",
+    },
+    Entry {
+        action: Action::FilterHigh,
+        name: "Filter: P0/P1 only",
+        key: "H",
+    },
+    Entry {
+        action: Action::FilterUnreviewed,
+        name: "Filter: unreviewed only",
+        key: "u",
+    },
+    Entry {
+        action: Action::FilterIntroduced,
+        name: "Filter: introduced by this change",
+        key: "I",
+    },
+    Entry {
+        action: Action::FilterNoTests,
+        name: "Filter: no associated tests",
+        key: "T",
+    },
+    Entry {
+        action: Action::FilterNew,
+        name: "Filter: new files",
+        key: "W",
+    },
+    Entry {
+        action: Action::CycleScope,
+        name: "Filter: minimum reach (local/module/global)",
+        key: "s",
+    },
+    Entry {
+        action: Action::CycleModule,
+        name: "Filter: next module",
+        key: "M",
+    },
+    Entry {
+        action: Action::ClearFilters,
+        name: "Clear filters",
+        key: "x",
+    },
+    Entry {
+        action: Action::DeeperTree,
+        name: "Structure: show more",
+        key: "+",
+    },
+    Entry {
+        action: Action::ShallowerTree,
+        name: "Structure: show less",
+        key: "-",
+    },
+    Entry {
+        action: Action::RunTests,
+        name: "Run associated tests (asks first)",
+        key: "X",
+    },
+    Entry {
+        action: Action::ReloadReports,
+        name: "Reload test reports",
+        key: "U",
+    },
+    Entry {
+        action: Action::ReloadFlow,
+        name: "Reload flow",
+        key: "L",
+    },
+    Entry {
+        action: Action::RequestFlow,
+        name: "Prepare flow request in agent",
+        key: "Flow: p",
+    },
+    Entry {
+        action: Action::Refresh,
+        name: "Refresh snapshot",
+        key: "R",
+    },
+    Entry {
+        action: Action::Finish,
+        name: "Finish review…",
+        key: "F",
+    },
+    Entry {
+        action: Action::CopyFeedback,
+        name: "Copy feedback instruction",
+        key: "",
+    },
+    Entry {
+        action: Action::ConfirmSubmitted,
+        name: "I submitted the feedback in the agent",
+        key: "",
+    },
+    Entry {
+        action: Action::Help,
+        name: "Help",
+        key: "?  F1",
+    },
+    Entry {
+        action: Action::Quit,
+        name: "Close the reader",
+        key: "q q",
+    },
 ];
 
 /// Applies an action to the reader.
-pub fn perform(app: &mut App, action: Action) {
+pub(crate) fn perform(app: &mut App, action: Action) {
     match action {
         Action::Mode(mode) => switch_mode(app, mode),
         Action::NextUnreviewed => jump_unreviewed(app, true, false),
@@ -147,7 +311,9 @@ pub fn perform(app: &mut App, action: Action) {
         Action::Finish => start_finish(app),
         Action::Refresh => ask_refresh(app),
         Action::Search => {
-            app.overlay = Some(Overlay::Search { input: app.filters.search.clone() });
+            app.overlay = Some(Overlay::Search {
+                input: app.filters.search.clone(),
+            });
         }
         Action::Help => app.overlay = Some(Overlay::Help),
         Action::ToggleVersion => toggle_version(app),
@@ -161,7 +327,10 @@ pub fn perform(app: &mut App, action: Action) {
         Action::ReloadReports => {
             app.session.reload_reports();
             let n = app.session.reports().sources.len();
-            app.say(StatusKind::Info, format!("Test reports reloaded ({n} source(s))."));
+            app.say(
+                StatusKind::Info,
+                format!("Test reports reloaded ({n} source(s))."),
+            );
         }
         Action::ReloadFlow => reload_flow(app),
         Action::RequestFlow => ask_flow_request(app),
@@ -171,8 +340,11 @@ pub fn perform(app: &mut App, action: Action) {
             app.say(StatusKind::Info, "Filters cleared.");
         }
         Action::FilterHigh => {
-            app.filters.min_priority =
-                if app.filters.min_priority.is_some() { None } else { Some(Priority::P1) };
+            app.filters.min_priority = if app.filters.min_priority.is_some() {
+                None
+            } else {
+                Some(Priority::P1)
+            };
             refresh_queue_selection(app);
         }
         Action::FilterIntroduced => {
@@ -229,7 +401,10 @@ fn refresh_queue_selection(app: &mut App) {
     app.queue_view.clamp(len);
     app.structure_view.clamp(app.tree_rows().len());
     if app.filters.any() {
-        app.say(StatusKind::Info, format!("Filter: {} — {len} unit(s).", app.filters.summary()));
+        app.say(
+            StatusKind::Info,
+            format!("Filter: {} — {len} unit(s).", app.filters.summary()),
+        );
     }
     if let Some(unit) = app.queue_selection() {
         app.unit = Some(unit);
@@ -252,7 +427,7 @@ fn cycle_module(app: &mut App) {
 fn switch_mode(app: &mut App, mode: Mode) {
     if matches!(mode, Mode::Code) && app.code.view.is_none() {
         match app.unit.clone().or_else(|| app.queue_selection()) {
-            Some(unit) => app.open_unit(unit, None),
+            Some(unit) => app.open_unit(&unit, None),
             None => app.say(StatusKind::Info, "Nothing to show: the queue is empty."),
         }
         return;
@@ -264,9 +439,9 @@ fn switch_mode(app: &mut App, mode: Mode) {
 }
 
 /// Makes `unit` the current one; the code view follows when it is on screen.
-pub fn focus_unit(app: &mut App, unit: klaub_core::ids::UnitId) {
+pub(crate) fn focus_unit(app: &mut App, unit: &klaub_core::ids::UnitId) {
     app.unit = Some(unit.clone());
-    app.select_in_queue(&unit);
+    app.select_in_queue(unit);
     match app.mode {
         Mode::Code => app.open_unit(unit, None),
         Mode::Impact | Mode::Tests => {
@@ -283,11 +458,14 @@ fn jump_unreviewed(app: &mut App, forward: bool, critical: bool) {
     let from = app.unit.clone().or_else(|| app.queue_selection());
     match app.next_unreviewed(from.as_ref(), forward, critical) {
         Some(unit) if Some(&unit) != from.as_ref() || !app.session.review().is_reviewed(&unit) => {
-            focus_unit(app, unit);
+            focus_unit(app, &unit);
         }
         _ => {
             let what = if critical { "P0/P1 unit" } else { "unit" };
-            app.say(StatusKind::Info, format!("No unreviewed {what} left in view."));
+            app.say(
+                StatusKind::Info,
+                format!("No unreviewed {what} left in view."),
+            );
         }
     }
 }
@@ -302,7 +480,10 @@ fn toggle_reviewed(app: &mut App) {
             let c = app.session.coverage();
             app.say(
                 StatusKind::Info,
-                format!("Marked reviewed ({}/{}). Press r again to undo, n for the next.", c.reviewed, c.total),
+                format!(
+                    "Marked reviewed ({}/{}). Press r again to undo, n for the next.",
+                    c.reviewed, c.total
+                ),
             );
         }
         Ok(false) => app.say(StatusKind::Info, "Mark removed."),
@@ -325,16 +506,34 @@ fn start_comment(app: &mut App) {
         return;
     }
     let version = app.code.version.unwrap_or(Version::After);
-    let lines = (app.mode == Mode::Code).then(|| selected_lines(app)).flatten();
-    let label = app.current_item().map_or_else(String::new, |i| sanitize_single_line(&i.unit.label));
+    let lines = (app.mode == Mode::Code)
+        .then(|| selected_lines(app))
+        .flatten();
+    let label = app
+        .current_item()
+        .map_or_else(String::new, |i| sanitize_single_line(&i.unit.label));
     let place = lines.map_or_else(
         || "whole unit".to_owned(),
-        |(a, b)| if a == b { format!("line {a}") } else { format!("lines {a}–{b}") },
+        |(a, b)| {
+            if a == b {
+                format!("line {a}")
+            } else {
+                format!("lines {a}–{b}")
+            }
+        },
     );
-    let side = if version == Version::Before { "old" } else { "new" };
+    let side = if version == Version::Before {
+        "old"
+    } else {
+        "new"
+    };
     app.overlay = Some(Overlay::Editor(Editor {
         title: format!("Comment on {label} ({side} code, {place})"),
-        purpose: EditorPurpose::NewComment { unit, version, lines },
+        purpose: EditorPurpose::NewComment {
+            unit,
+            version,
+            lines,
+        },
         text: String::new(),
         severity: None,
         multiline: true,
@@ -343,7 +542,7 @@ fn start_comment(app: &mut App) {
 }
 
 /// The line numbers (in the version shown) covered by the selection or the cursor.
-pub fn selected_lines(app: &App) -> Option<(u32, u32)> {
+pub(crate) fn selected_lines(app: &App) -> Option<(u32, u32)> {
     let view = app.code.view.as_ref()?;
     let at = |i: usize| view.lines.get(i).map(|l| l.number);
     let cursor = at(app.code.cursor)?;
@@ -374,7 +573,10 @@ fn toggle_version(app: &mut App) {
         return;
     };
     if app.code.detached.is_some() {
-        app.say(StatusKind::Info, "This code is not part of the change; there is no other version.");
+        app.say(
+            StatusKind::Info,
+            "This code is not part of the change; there is no other version.",
+        );
         return;
     }
     if !view.other_version_exists {
@@ -405,7 +607,9 @@ fn toggle_code_scope(app: &mut App) {
 
 fn jump_change(app: &mut App, forward: bool) {
     let Some(view) = &app.code.view else { return };
-    let Some(current) = view.lines.get(app.code.cursor).map(|l| l.number) else { return };
+    let Some(current) = view.lines.get(app.code.cursor).map(|l| l.number) else {
+        return;
+    };
     let target = if forward {
         view.changes.iter().copied().find(|n| *n > current)
     } else {
@@ -429,8 +633,12 @@ fn jump_change(app: &mut App, forward: bool) {
 }
 
 /// Scrolls the code so that the cursor is on screen.
-pub fn ensure_code_visible(app: &mut App) {
-    let height = if app.code.height == 0 { 20 } else { app.code.height };
+pub(crate) fn ensure_code_visible(app: &mut App) {
+    let height = if app.code.height == 0 {
+        20
+    } else {
+        app.code.height
+    };
     if app.code.cursor < app.code.offset {
         app.code.offset = app.code.cursor;
     } else if app.code.cursor >= app.code.offset + height {
@@ -483,7 +691,12 @@ fn ask_flow_request(app: &mut App) {
 }
 
 /// The confirmation shown before anything is pasted into the agent.
-pub fn prepare_confirm(app: &App, title: &str, text: &str, action: ConfirmAction) -> Confirm {
+pub(crate) fn prepare_confirm(
+    app: &App,
+    title: &str,
+    text: &str,
+    action: ConfirmAction,
+) -> Confirm {
     let destination = match &app.agent {
         None => "none — Klaub is not managing an agent here; use Copy instead".to_owned(),
         Some(channel) => match channel.target() {
@@ -506,17 +719,23 @@ pub fn prepare_confirm(app: &App, title: &str, text: &str, action: ConfirmAction
 
 fn copy_feedback(app: &mut App) {
     let Some(clipboard) = app.clipboard.clone() else {
-        app.say(StatusKind::Warn, "No clipboard is available here. Use Show file instead.");
+        app.say(
+            StatusKind::Warn,
+            "No clipboard is available here. Use Show file instead.",
+        );
         return;
     };
     match app.session.copy_feedback(clipboard.as_ref()) {
-        Ok(()) => app.say(StatusKind::Info, "Feedback instruction copied. Paste it into the agent yourself."),
+        Ok(()) => app.say(
+            StatusKind::Info,
+            "Feedback instruction copied. Paste it into the agent yourself.",
+        ),
         Err(error) => app.say(StatusKind::Error, error.to_string()),
     }
 }
 
 /// The follow-up decision a key stands for.
-pub fn followup_decision(key: char) -> Option<FollowupStatus> {
+pub(crate) fn followup_decision(key: char) -> Option<FollowupStatus> {
     match key {
         'y' => Some(FollowupStatus::Resolved),
         'p' => Some(FollowupStatus::Partial),
