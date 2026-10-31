@@ -29,6 +29,16 @@ LIBEVENT_VERSION="2.1.13-stable"
 LIBEVENT_URL="https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VERSION}/libevent-${LIBEVENT_VERSION}.tar.gz"
 LIBEVENT_SHA256="f7e9383b8c0baa81b687e5b5eecc01beefaf1b19b64151d95ed61647fe7a315c"
 
+# macOS only: tmux insists on utf8proc (the system wcwidth is poor for emoji) and jemalloc
+# (macOS calloc has been seen not to zero memory) and refuses to configure without a choice.
+UTF8PROC_VERSION="2.12.0"
+UTF8PROC_URL="https://github.com/JuliaStrings/utf8proc/releases/download/v${UTF8PROC_VERSION}/utf8proc-${UTF8PROC_VERSION}.tar.gz"
+UTF8PROC_SHA256="a393fbef160835fb315bc3e91ba8d86f7a73a7cec9e6198b6c60b848b498bfeb"
+
+JEMALLOC_VERSION="5.4.0"
+JEMALLOC_URL="https://github.com/jemalloc/jemalloc/releases/download/${JEMALLOC_VERSION}/jemalloc-${JEMALLOC_VERSION}.tar.bz2"
+JEMALLOC_SHA256="200776fac271093e7c2f21edd6d62657ecd2be578d9328633f2a86bfa6ef4f1d"
+
 NCURSES_VERSION="6.6"
 NCURSES_URL="https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VERSION}.tar.gz"
 NCURSES_SHA256="355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11"
@@ -107,6 +117,33 @@ log "building ncurses ${NCURSES_VERSION}"
   make install.libs install.includes >/dev/null
 )
 
+tmux_flags=(--disable-utf8proc)
+if [ "$(uname -s)" = Darwin ]; then
+  fetch "${UTF8PROC_URL}" "${UTF8PROC_SHA256}" "${work}/utf8proc.tar.gz"
+  fetch "${JEMALLOC_URL}" "${JEMALLOC_SHA256}" "${work}/jemalloc.tar.bz2"
+  mkdir -p "${work}/src/utf8proc" "${work}/src/jemalloc"
+  tar -xzf "${work}/utf8proc.tar.gz" -C "${work}/src/utf8proc" --strip-components=1
+  tar -xjf "${work}/jemalloc.tar.bz2" -C "${work}/src/jemalloc" --strip-components=1
+
+  log "building utf8proc ${UTF8PROC_VERSION}"
+  (
+    cd "${work}/src/utf8proc"
+    make -j"${jobs}" >/dev/null
+    make install prefix="${prefix}" >/dev/null
+    # Only the static library may be linked.
+    rm -f "${prefix}"/lib/libutf8proc*.dylib
+  )
+
+  log "building jemalloc ${JEMALLOC_VERSION}"
+  (
+    cd "${work}/src/jemalloc"
+    ./configure --prefix="${prefix}" --disable-shared --enable-static >/dev/null
+    make -j"${jobs}" build_lib_static >/dev/null
+    make install_lib_static install_include >/dev/null
+  )
+  tmux_flags=(--enable-utf8proc --enable-jemalloc)
+fi
+
 log "building tmux ${TMUX_VERSION}"
 (
   cd "${work}/src/tmux"
@@ -115,8 +152,11 @@ log "building tmux ${TMUX_VERSION}"
   export LIBEVENT_LIBS="-L${prefix}/lib -levent_core"
   export LIBNCURSES_CFLAGS="-I${prefix}/include -I${prefix}/include/ncursesw"
   export LIBNCURSES_LIBS="-L${prefix}/lib -lncursesw"
-  # utf8proc is optional; without it tmux uses the C library for character widths.
-  ./configure --prefix="${prefix}" --disable-utf8proc >/dev/null
+  export LIBUTF8PROC_CFLAGS="-I${prefix}/include"
+  export LIBUTF8PROC_LIBS="-L${prefix}/lib -lutf8proc"
+  export JEMALLOC_CFLAGS="-I${prefix}/include"
+  export JEMALLOC_LIBS="-L${prefix}/lib -ljemalloc"
+  ./configure --prefix="${prefix}" "${tmux_flags[@]}" >/dev/null
   make -j"${jobs}" >/dev/null
 )
 
@@ -155,6 +195,10 @@ JSON
 cp "${work}/src/tmux/COPYING"     "${out}/licenses/tmux-COPYING"
 cp "${work}/src/libevent/LICENSE" "${out}/licenses/libevent-LICENSE"
 cp "${work}/src/ncurses/COPYING"  "${out}/licenses/ncurses-COPYING"
+if [ "$(uname -s)" = Darwin ]; then
+  cp "${work}/src/utf8proc/LICENSE.md" "${out}/licenses/utf8proc-LICENSE.md"
+  cp "${work}/src/jemalloc/COPYING"    "${out}/licenses/jemalloc-COPYING"
+fi
 
 echo
 echo "tmux ${TMUX_VERSION} for ${target}"
