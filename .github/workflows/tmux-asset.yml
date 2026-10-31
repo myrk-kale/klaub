@@ -115,5 +115,27 @@ jobs:
           "$dir/tmux" -S "$dir/sock" list-sessions; echo "list again exit=$?"
           "$dir/tmux" -S "$dir/sock" kill-server
           ls -la "$HOME/Library/Logs/DiagnosticReports" 2>/dev/null | tail -n 5
+          for report in "$HOME"/Library/Logs/DiagnosticReports/.tmux-*.ips "$HOME"/Library/Logs/DiagnosticReports/tmux-*.ips; do
+            [ -f "$report" ] || continue
+            echo "=== $report"
+            python3 - "$report" <<'PY'
+          import json, sys
+          text = open(sys.argv[1]).read()
+          body = text.split("\n", 1)[1] if text.startswith("{") and "\n" in text else text
+          try:
+              data = json.loads(body)
+          except Exception:
+              print(text[:3000]); raise SystemExit
+          print("exception:", data.get("exception"))
+          print("termination:", data.get("termination"))
+          print("asi:", data.get("asi"))
+          for t in data.get("threads", []):
+              if t.get("triggered"):
+                  images = data.get("usedImages", [])
+                  for f in t.get("frames", [])[:14]:
+                      img = images[f["imageIndex"]].get("name") if "imageIndex" in f else "?"
+                      print("  ", img, f.get("symbol"), f.get("symbolLocation"))
+          PY
+          done
       - name: Dynamic dependencies of the embedded tmux
         run: cat assets/tmux/${{ matrix.target }}/dependencies.txt
