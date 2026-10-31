@@ -6,12 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- The contract inspector (`o`) now splits a callable's declaration into parameters and return type for Python, JavaScript/TypeScript, Rust and Go, and shows what the symbol had before and after as `+`/`-` lists: decorators, the routes it serves, the exceptions its body raises or throws (and the error a Rust `Result` or a Go `error` declares), observable effects (risk markers and I/O-looking calls), and, for a type, its public members and what kind of data type it looks like. It also names the entrypoints that can reach the symbol. A declaration it cannot read is reported as unknown.
-- The same key opens a contract for migrations (SQL, Alembic, Django, Rails), dependency manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, `requirements*.txt`, `go.mod`) and settings files (JSON, TOML, YAML, `.env`): what was added, removed or changed, with secret values and every `.env` value hidden. Anything it cannot read falls back to the textual diff and says so.
-- `klaub-parse` records the exceptions a body raises and the I/O-looking calls it makes (parser version 2, so cached parses are refreshed).
-
 ## [0.1.0] - 2026-10-31
 
 ### Added
