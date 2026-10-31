@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **`cargo install klaub`.** Every crate of the workspace is published to crates.io when a release is tagged, through Trusted Publishing, and the binary package is now called `klaub`. A build without the bundled tmux uses the one on `PATH` and says so in `klaub doctor`. CI packages the whole workspace on every pull request.
+- **Install with cargo.** The binary package is now called `klaub`, so `cargo install --git https://github.com/myrk-kale/klaub klaub --locked` works. A build without the bundled tmux uses the one on `PATH` and says so in `klaub doctor`. CI packages the whole workspace on every pull request, and a Trusted Publishing workflow for crates.io is in place; the crates are not published yet.
 - The two skills install with the Vercel skills CLI: `npx skills add myrk-kale/klaub`. CI checks that the CLI finds both.
 
 ### Changed

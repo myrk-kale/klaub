@@ -27,6 +27,8 @@ Linux x86_64 and aarch64 (glibc baseline of the runner image) and macOS arm64 an
 
 ## Publishing to crates.io
 
+**Pending.** Nothing is published to crates.io yet, and the release workflow does not dispatch the publish until the repository variable `CRATES_IO_PUBLISH` is `true`. To turn it on: configure the Trusted Publishers below, set the variable (`gh variable set CRATES_IO_PUBLISH --body true`), then run the workflow once for the latest tag (`gh workflow run crates.yml -f tag=vX.Y.Z`). After the first publish, change the README install line from `cargo install --git ...` to `cargo install klaub --locked`.
+
 `.github/workflows/crates.yml` publishes the 16 crates of the workspace with `cargo publish --workspace`, using crates.io Trusted Publishing: GitHub's OIDC token is exchanged for a short-lived token, so no secret is stored. It runs on its own, dispatched by the release workflow for the tag, and it can be run by hand for an existing tag (`gh workflow run crates.yml -f tag=vX.Y.Z`). A version that is already on crates.io is skipped.
 
 One-time setup, done by a crate owner in the crates.io web interface, for each crate (`klaub`, `klaub-app`, `klaub-context`, `klaub-core`, `klaub-flow`, `klaub-git`, `klaub-graph`, `klaub-match`, `klaub-parse`, `klaub-review`, `klaub-rules`, `klaub-storage`, `klaub-tests`, `klaub-tmux`, `klaub-tui`): Settings, Trusted Publishing, add a GitHub publisher with owner `myrk-kale`, repository `klaub`, workflow `crates.yml` and no environment. A crate that was never published can be given a pending publisher before its first release.

@@ -131,7 +131,9 @@ jobs:
 
   crates:
     name: Dispatch the crates.io publish
-    if: github.event_name == 'push'
+    # Off until every crate has a Trusted Publisher on crates.io (see RELEASING.md). Set the
+    # repository variable CRATES_IO_PUBLISH to true to turn it on.
+    if: github.event_name == 'push' && vars.CRATES_IO_PUBLISH == 'true'
     needs: publish
     runs-on: ubuntu-latest
     permissions:
