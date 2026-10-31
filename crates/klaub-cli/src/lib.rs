@@ -10,6 +10,7 @@ mod adapters;
 mod cli;
 mod commands;
 mod context;
+mod crash;
 mod env;
 mod logging;
 mod output;
@@ -20,12 +21,27 @@ use clap::Parser;
 
 use crate::cli::Cli;
 
+/// Saves a local report when Klaub panics. Skipped silently when the directories cannot be found.
+fn install_crash_reports() {
+    let get = |key: &str| std::env::var_os(key);
+    let Ok(dirs) = env::resolve_dirs(&get) else {
+        return;
+    };
+    // The subcommand name only: its arguments can be paths.
+    let command = std::env::args()
+        .skip(1)
+        .find(|arg| !arg.starts_with('-'))
+        .unwrap_or_else(|| "-".to_owned());
+    crash::install(dirs.crashes_dir(), env::home(&get), command);
+}
+
 /// Parses the process arguments, runs the command and returns the exit code.
 ///
 /// Errors are printed to standard error as `error: <message>`; usage errors use clap's
 /// exit code 2.
 pub fn run() -> ExitCode {
     let cli = Cli::parse();
+    install_crash_reports();
     match commands::dispatch(cli) {
         Ok(code) => code,
         Err(error) => {

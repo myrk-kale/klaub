@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `klaub doctor` also proves that every grammar parses a sample, looks at the parse cache read-only (a damaged one is reported and left alone, never repaired by asking), says which clipboard program Copy would use, notes an SSH session and what it means for the clipboard, and counts saved crash reports. See `docs/ssh.md`.
+- Local crash reports. If Klaub panics it saves a short report (version, platform, subcommand name, a bounded panic message and the place in Klaub's source, with the home directory as `~`) under its state directory. `klaub crashes list` and `klaub crashes show` read them. Nothing is sent anywhere.
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

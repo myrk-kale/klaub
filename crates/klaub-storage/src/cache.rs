@@ -16,6 +16,24 @@ const SCHEMA_VERSION: i64 = 1;
 /// When the table holds more rows than this, the least recently used ones are dropped.
 const MAX_ROWS: i64 = 200_000;
 
+/// What [`SqliteCache::check`] found in a cache file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CacheHealth {
+    /// Stored entries.
+    pub entries: u64,
+    /// SQLite's own integrity verdict: `ok`, or the first problem it reported.
+    pub integrity: String,
+    /// The file's schema version, which `SqliteCache::open` replaces when it is not the current one.
+    pub schema_version: i64,
+}
+
+impl CacheHealth {
+    /// The file is intact and of the current schema.
+    pub fn is_healthy(&self) -> bool {
+        self.integrity == "ok" && self.schema_version == SCHEMA_VERSION
+    }
+}
+
 /// A SQLite-backed [`AnalysisCache`].
 pub struct SqliteCache {
     connection: Mutex<Connection>,
@@ -89,6 +107,34 @@ impl SqliteCache {
         self.connection
             .lock()
             .map_err(|_| Error::Storage("the cache lock was poisoned".to_owned()))
+    }
+
+    /// Looks at a cache file without changing it: no table is created, no row is written and a
+    /// damaged file is not replaced. `klaub doctor` uses this so that asking is never a repair.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the file cannot be opened as a SQLite database at all.
+    pub fn check(path: &Path) -> Result<CacheHealth> {
+        let connection = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| sql_error(&e))?;
+        let integrity: String = connection
+            .query_row("PRAGMA integrity_check(1)", [], |row| row.get(0))
+            .map_err(|e| sql_error(&e))?;
+        let schema_version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|e| sql_error(&e))?;
+        let entries: i64 = connection
+            .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+            .unwrap_or(0);
+        Ok(CacheHealth {
+            entries: u64::try_from(entries).unwrap_or(0),
+            integrity,
+            schema_version,
+        })
     }
 
     /// Number of stored entries.

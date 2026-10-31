@@ -35,6 +35,12 @@ Klaub runs on a developer's machine, next to a coding agent, over repositories t
 - A paste cannot prove that the harness's composer is empty or ready. The confirmation dialog says so.
 - Priorities and findings are heuristics for ordering human attention, not vulnerability reports.
 
+## Diagnostics and crash reports
+
+Klaub sends nothing anywhere, including when it fails. If it panics it writes a short text report under its state directory (`klaub crashes list` shows them, `klaub crashes show` prints one) and then lets the normal panic message through. A report holds the version, the platform, the subcommand name (not its arguments, which can be paths), the panic message cut to 400 characters with control characters removed, and where in Klaub's own source it happened. It never holds file contents, comments or the repository path, and the home directory is written as `~`. The message can still quote the data that made Klaub fail, so `show` asks you to read it before you share it. At most twenty reports are kept.
+
+`klaub doctor` looks at things and changes none of them: it opens the parse cache read-only, so a damaged cache is reported and left as it is (the next review replaces it), and it creates nothing.
+
 ## Reporting
 
 See [SECURITY.md](../SECURITY.md).

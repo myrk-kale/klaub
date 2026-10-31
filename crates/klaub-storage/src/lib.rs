@@ -20,7 +20,7 @@ mod flows;
 mod fsutil;
 mod reviews;
 
-pub use cache::{NoCache, SqliteCache};
+pub use cache::{CacheHealth, NoCache, SqliteCache};
 pub use config::{FsConfigSource, PROJECT_CONFIG};
 pub use files::FsFileReader;
 pub use flows::FsFlowRepository;
