@@ -197,7 +197,7 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
     }
     if !item.findings.is_empty() {
         lines.push(Line::from(Span::styled("Findings", theme.strong())));
-        for finding in &item.findings {
+        for (number, finding) in item.findings.iter().enumerate() {
             let temporal = match finding.temporal {
                 Temporal::Introduced => "introduced",
                 Temporal::Preexisting => "preexisting",
@@ -205,7 +205,12 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
                 Temporal::Unknown => "unknown origin",
             };
             let text = format!(
-                "[{temporal}] {} ({})",
+                "{} [{temporal}] {} ({})",
+                if number < 9 {
+                    format!("{}", number + 1)
+                } else {
+                    "-".to_owned()
+                },
                 clean(&finding.title),
                 clean(&finding.rule_id)
             );
@@ -226,6 +231,24 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
                 )));
             }
         }
+    }
+    if !item.findings.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "A false positive? Press the finding's number to silence its rule for this review.",
+            theme.dim(),
+        )));
+    }
+    if !app.session.muted_rules().is_empty() {
+        lines.push(Line::from(Span::styled(
+            fit(
+                &format!(
+                    "Silenced here: {}",
+                    clean(&app.session.muted_rules().join(", "))
+                ),
+                width,
+            ),
+            theme.dim(),
+        )));
     }
     if let Some(scope) = item.scope {
         lines.push(Line::from(Span::styled(

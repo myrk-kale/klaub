@@ -13,6 +13,7 @@
 
 mod actions;
 mod app;
+mod keymap;
 mod labels;
 mod terminal;
 mod theme;
@@ -27,6 +28,7 @@ pub use app::{
     Filters, FinishStage, FlowLine, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay,
     StatusKind, TreeKind, TreeRow,
 };
+pub use keymap::{Keymap, KeymapError};
 pub use terminal::run;
 pub use theme::Theme;
 pub use ui::draw;

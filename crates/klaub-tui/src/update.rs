@@ -147,51 +147,6 @@ fn after_refresh(app: &mut App) {
 
 // ---- global keys ---------------------------------------------------------------------------------
 
-fn key_action(c: char) -> Option<Action> {
-    Some(match c {
-        '1' => Action::Mode(Mode::Queue),
-        '2' => Action::Mode(Mode::Structure),
-        '3' => Action::Mode(Mode::Code),
-        '4' | 'g' => Action::Mode(Mode::Impact),
-        '5' => Action::Mode(Mode::Comments),
-        '6' | 'b' => Action::Mode(Mode::Context),
-        '7' | 't' => Action::Mode(Mode::Tests),
-        '8' => Action::Mode(Mode::Followup),
-        '9' => Action::Mode(Mode::Coverage),
-        '0' | 'f' => Action::Mode(Mode::Flow),
-        'n' => Action::NextUnreviewed,
-        'P' => Action::PrevUnreviewed,
-        'N' => Action::NextCritical,
-        'r' => Action::ToggleReviewed,
-        'm' => Action::ToggleBookmark,
-        ',' => Action::NextBookmark,
-        'c' => Action::Comment,
-        'w' => Action::Explain,
-        'v' => Action::ToggleVersion,
-        ']' => Action::NextChange,
-        '[' => Action::PrevChange,
-        'S' => Action::ToggleCodeScope,
-        '/' => Action::Search,
-        'H' => Action::FilterHigh,
-        'u' => Action::FilterUnreviewed,
-        'I' => Action::FilterIntroduced,
-        'T' => Action::FilterNoTests,
-        'W' => Action::FilterNew,
-        's' => Action::CycleScope,
-        'M' => Action::CycleModule,
-        'x' => Action::ClearFilters,
-        '+' | '=' => Action::DeeperTree,
-        '-' => Action::ShallowerTree,
-        'X' => Action::RunTests,
-        'U' => Action::ReloadReports,
-        'L' => Action::ReloadFlow,
-        'R' => Action::Refresh,
-        'F' => Action::Finish,
-        '?' => Action::Help,
-        _ => return None,
-    })
-}
-
 fn function_key(n: u8) -> Option<Action> {
     Some(match n {
         1 => Action::Help,
@@ -244,7 +199,7 @@ fn global_key(app: &mut App, key: KeyEvent, quit_was_armed: bool) {
             }
         }
         KeyCode::Char(c) if !control => {
-            if let Some(action) = key_action(c) {
+            if let Some(action) = app.keymap.action(c) {
                 perform(app, action);
             }
         }
@@ -398,6 +353,10 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
             return true;
         }
         KeyCode::Char('o') => {
+            perform(app, Action::OpenWholeFile);
+            return true;
+        }
+        KeyCode::Char('i') => {
             perform(app, Action::InspectContract);
             return true;
         }
@@ -729,7 +688,8 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
         return;
     };
     match overlay {
-        Overlay::Help | Overlay::Explain(_) | Overlay::Contract(_) => {
+        Overlay::Explain(unit) => explain_key(app, unit, key),
+        Overlay::Help | Overlay::Contract(_) | Overlay::Notice { .. } => {
             // Any key closes; the overlay stays taken.
         }
         Overlay::Palette {
@@ -798,6 +758,39 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
         },
         Overlay::Finish(stage) => finish_key(app, stage, key),
     }
+}
+
+/// In "Why this priority", a digit picks a finding and asks to silence its rule for this review.
+/// Any other key closes the panel.
+fn explain_key(app: &mut App, unit: klaub_core::ids::UnitId, key: KeyEvent) {
+    let KeyCode::Char(c @ '1'..='9') = key.code else {
+        return;
+    };
+    let index = usize::from(c as u8 - b'1');
+    let Some(finding) = app
+        .session
+        .analysis()
+        .item(&unit)
+        .and_then(|item| item.findings.get(index))
+    else {
+        app.overlay = Some(Overlay::Explain(unit));
+        return;
+    };
+    let rule = finding.rule_id.clone();
+    let title = sanitize_single_line(&finding.title);
+    app.overlay = Some(Overlay::Confirm(Confirm {
+        title: "Silence this rule for this review?".to_owned(),
+        lines: vec![
+            format!("rule:     {}", sanitize_single_line(&rule)),
+            format!("finding:  {title}"),
+            "Use it for a false positive. Every finding of this rule disappears from this review"
+                .to_owned(),
+            "and the scores that counted it drop. The code under review does not change."
+                .to_owned(),
+            "Bring it back from the palette: \"Bring back silenced rules\".".to_owned(),
+        ],
+        action: ConfirmAction::MuteRule(rule),
+    }));
 }
 
 fn editor_key(app: &mut App, mut editor: Editor, key: KeyEvent) {
@@ -895,6 +888,26 @@ fn confirmed(app: &mut App, action: ConfirmAction) {
 
 fn run_confirmed(app: &mut App, action: ConfirmAction) {
     match action {
+        ConfirmAction::MuteRule(rule) => match app.session.mute_rule(&rule) {
+            Ok(()) => {
+                after_refresh(app);
+                app.say(
+                    StatusKind::Info,
+                    format!(
+                        "Rule {} is silenced for this review.",
+                        sanitize_single_line(&rule)
+                    ),
+                );
+            }
+            Err(error) => app.say(StatusKind::Error, error.to_string()),
+        },
+        ConfirmAction::RestoreRules => match app.session.unmute_all_rules() {
+            Ok(()) => {
+                after_refresh(app);
+                app.say(StatusKind::Info, "Silenced rules are back.");
+            }
+            Err(error) => app.say(StatusKind::Error, error.to_string()),
+        },
         ConfirmAction::PrepareInAgent => {
             let Some(channel) = app.agent.clone() else {
                 app.say(
