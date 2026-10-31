@@ -40,6 +40,8 @@ pub(crate) enum Action {
     Help,
     /// Switch between the new and the old code.
     ToggleVersion,
+    /// Look at the old code for as long as the key is held.
+    PeekPrevious,
     /// Go to the next change region.
     NextChange,
     /// Go to the previous change region.
@@ -227,6 +229,11 @@ pub(crate) const ENTRIES: &[Entry] = &[
         key: "v",
     },
     Entry {
+        action: Action::PeekPrevious,
+        name: "Hold to see the previous version",
+        key: "B",
+    },
+    Entry {
         action: Action::NextChange,
         name: "Next change",
         key: "]",
@@ -368,6 +375,16 @@ pub(crate) fn perform(app: &mut App, action: Action) {
         }
         Action::Help => app.overlay = Some(Overlay::Help),
         Action::ToggleVersion => toggle_version(app),
+        // Holding needs the key itself, which a palette entry does not have, so the palette only
+        // says how it works.
+        Action::PeekPrevious => app.say(
+            StatusKind::Info,
+            format!(
+                "Hold {} while reading code to see the previous version; {} toggles it.",
+                app.keymap.key_for("peek_previous"),
+                app.keymap.key_for("toggle_version"),
+            ),
+        ),
         Action::NextChange => jump_change(app, true),
         Action::PrevChange => jump_change(app, false),
         Action::Explain => match app.unit.clone() {
@@ -693,7 +710,7 @@ fn ask_refresh(app: &mut App) {
     }));
 }
 
-fn toggle_version(app: &mut App) {
+pub(crate) fn toggle_version(app: &mut App) {
     let Some(view) = &app.code.view else {
         app.say(StatusKind::Info, "Open some code first.");
         return;

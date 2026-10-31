@@ -40,6 +40,7 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
     }
 
     let theme = app.theme;
+    app.tab_hits.clear();
     let drift = app.session.drift() == Drift::Changed;
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -54,7 +55,7 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
     let (title, tabs, banner, body, status) = (rows[0], rows[1], rows[2], rows[3], rows[4]);
 
     draw_title(frame, title, app, theme);
-    draw_tabs(frame, tabs, app.mode, theme);
+    app.tab_hits = draw_tabs(frame, tabs, app.mode, theme);
     if drift {
         draw_banner(frame, banner, theme);
     }
@@ -111,7 +112,8 @@ fn short_id(id: &str) -> &str {
 
 // ---- mode tabs --------------------------------------------------------------------------------------------------
 
-fn draw_tabs(frame: &mut Frame<'_>, area: Rect, current: Mode, theme: Theme) {
+/// Draws the row of mode tabs and returns where each one is, for the mouse.
+fn draw_tabs(frame: &mut Frame<'_>, area: Rect, current: Mode, theme: Theme) -> Vec<(Rect, Mode)> {
     let width = usize::from(area.width);
     let labels: Vec<String> = Mode::ALL
         .iter()
@@ -130,9 +132,11 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, current: Mode, theme: Theme) {
             ))),
             area,
         );
-        return;
+        return Vec::new();
     }
 
+    let mut hits = Vec::with_capacity(labels.len());
+    let mut x = area.x;
     let spans: Vec<Span<'static>> = Mode::ALL
         .iter()
         .zip(labels)
@@ -142,10 +146,14 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, current: Mode, theme: Theme) {
             } else {
                 theme.dim()
             };
+            let cells = u16::try_from(label.len()).unwrap_or(u16::MAX);
+            hits.push((Rect::new(x, area.y, cells, 1), *mode));
+            x = x.saturating_add(cells);
             Span::styled(label, style)
         })
         .collect();
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    hits
 }
 
 fn draw_banner(frame: &mut Frame<'_>, area: Rect, theme: Theme) {

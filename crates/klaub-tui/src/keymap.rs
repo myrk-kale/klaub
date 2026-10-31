@@ -128,6 +128,11 @@ const BINDABLE: &[Bindable] = &[
         defaults: &['v'],
     },
     Bindable {
+        id: "peek_previous",
+        action: Action::PeekPrevious,
+        defaults: &['B'],
+    },
+    Bindable {
         id: "next_change",
         action: Action::NextChange,
         defaults: &[']'],

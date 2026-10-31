@@ -25,6 +25,8 @@ Every key has a default, so an empty file (or none) is valid. The schema lives i
 | --- | --- | --- |
 | `ui.theme` | `"dark"` | `dark`, `light` or `high_contrast`. |
 | `ui.show_hints` | `true` | The key hints in the status line. |
+| `ui.mouse` | `false` | The wheel scrolls, a click on a tab switches to it, a click on a row selects it and a second click opens it. Off by default because capturing the mouse stops the terminal's own text selection until you hold the modifier it offers (usually `Shift`, or `Option` in iTerm2). The mouse only does what a key already does. |
+| `ui.hold_to_peek` | `false` | Hold `B` (the `peek_previous` key) while reading code to see the previous version, and let go to come back. It needs a terminal that reports key releases (the kitty keyboard protocol: kitty, Ghostty, WezTerm, recent iTerm2 and foot). Where that is missing, which includes tmux, the key says so and `v` still toggles. While it is on, the terminal sends keys as escape codes except inside text fields, which keep ordinary input so compose and `AltGr` characters still type. |
 | `integration.submit_mode` | `"manual"` | The only mode. Klaub never presses `Enter` in the agent. |
 | `integration.paste_requires_confirmation` | `true` | Putting text in the agent's input always asks first. |
 | `integration.tmux_prefix` | `"C-b"` | The prefix of the session chords (`Prefix+R`, `Prefix+A`, `Prefix+I`, `Prefix+C`, `Prefix+T`, `Prefix+B`, `Prefix+L`, `Prefix+?`). |
@@ -41,7 +43,7 @@ comment = "C"
 
 The ids are:
 
-`queue`, `structure`, `code`, `impact`, `comments`, `context`, `tests`, `followup`, `coverage`, `flow`, `next_unreviewed`, `previous_unreviewed`, `next_critical`, `toggle_reviewed`, `toggle_bookmark`, `next_bookmark`, `comment`, `explain`, `toggle_version`, `next_change`, `previous_change`, `toggle_code_scope`, `search`, `filter_high`, `filter_unreviewed`, `filter_introduced`, `filter_no_tests`, `filter_new`, `cycle_scope`, `cycle_module`, `clear_filters`, `history_back`, `history_forward`, `deeper_tree`, `shallower_tree`, `run_tests`, `reload_reports`, `reload_flow`, `refresh`, `finish`, `help`.
+`queue`, `structure`, `code`, `impact`, `comments`, `context`, `tests`, `followup`, `coverage`, `flow`, `next_unreviewed`, `previous_unreviewed`, `next_critical`, `toggle_reviewed`, `toggle_bookmark`, `next_bookmark`, `comment`, `explain`, `toggle_version`, `peek_previous`, `next_change`, `previous_change`, `toggle_code_scope`, `search`, `filter_high`, `filter_unreviewed`, `filter_introduced`, `filter_no_tests`, `filter_new`, `cycle_scope`, `cycle_module`, `clear_filters`, `history_back`, `history_forward`, `deeper_tree`, `shallower_tree`, `run_tests`, `reload_reports`, `reload_flow`, `refresh`, `finish`, `help`.
 
 The keys that only mean something inside some modes move the same way. A moved key answers to its new character in the modes it works in, and its old character stops acting there:
 

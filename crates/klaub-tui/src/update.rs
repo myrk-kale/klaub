@@ -7,14 +7,16 @@ use klaub_core::ports::{CancelToken, PrepareOutcome};
 use klaub_core::review::{CriterionStatus, Version};
 use klaub_core::snapshot::Drift;
 use klaub_core::text::{sanitize_single_line, sanitize_terminal_text};
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 use crate::actions::{
     self, Action, ENTRIES, ensure_code_visible, followup_decision, perform, prepare_confirm,
 };
 use crate::app::{
     App, Confirm, ConfirmAction, DELIVERY_OPTIONS, Editor, EditorPurpose, FinishStage, Mode,
-    Overlay, StatusKind, TreeKind,
+    Overlay, Peek, StatusKind, TreeKind,
 };
 use crate::viewport::Viewport;
 
@@ -24,6 +26,7 @@ const PROBE_EVERY: Duration = Duration::from_secs(3);
 /// Applies one key press.
 pub fn handle_key(app: &mut App, key: KeyEvent) {
     if key.kind == KeyEventKind::Release {
+        release(app, key);
         return;
     }
     let key = translated(app, key);
@@ -33,10 +36,176 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
     app.status = None;
+    if let KeyCode::Char(c) = key.code
+        && !key.modifiers.contains(KeyModifiers::CONTROL)
+        && app.keymap.action(c) == Some(Action::PeekPrevious)
+    {
+        begin_peek(app, c);
+        return;
+    }
     if mode_key(app, key) {
         return;
     }
     global_key(app, key, quit_was_armed);
+}
+
+// ---- holding a key to see the previous version ---------------------------------------------------
+
+/// Starts looking at the previous version for as long as `key` stays down.
+///
+/// Holding only works when the terminal reports key releases. Without that the reader could never
+/// tell the key was let go, so it says so and leaves `v` as the way to compare.
+fn begin_peek(app: &mut App, key: char) {
+    if app.peek.is_some() {
+        // A held key repeats; the first press already did the work.
+        return;
+    }
+    let toggle = app.keymap.key_for("toggle_version");
+    if !app.hold_supported {
+        app.say(
+            StatusKind::Info,
+            format!(
+                "This terminal does not report key releases, so {key} cannot be held. {toggle} toggles old and new."
+            ),
+        );
+        return;
+    }
+    if app.mode != Mode::Code || app.code.view.is_none() {
+        app.say(StatusKind::Info, "Open some code first.");
+        return;
+    }
+    if app.code.version == Some(Version::Before) {
+        app.say(StatusKind::Info, "Already showing the previous version.");
+        return;
+    }
+    actions::toggle_version(app);
+    if app.code.version == Some(Version::Before) {
+        app.peek = Some(Peek {
+            key,
+            restore: Version::After,
+        });
+    }
+}
+
+/// Puts the version back when the held key is let go.
+fn release(app: &mut App, key: KeyEvent) {
+    if let (Some(peek), KeyCode::Char(c)) = (app.peek, key.code)
+        && peek.key == c
+    {
+        end_peek(app);
+    }
+}
+
+/// Stops looking at the previous version, whatever ended it: the key going up, the terminal losing
+/// focus (the release would never arrive) or the reader being left.
+pub fn end_peek(app: &mut App) {
+    let Some(peek) = app.peek.take() else {
+        return;
+    };
+    if app.code.view.is_some() && app.code.version != Some(peek.restore) {
+        app.code.version = Some(peek.restore);
+        app.rebuild_code();
+    }
+}
+
+// ---- the mouse ----------------------------------------------------------------------------------
+
+/// Lines the wheel moves per notch.
+const WHEEL_STEP: usize = 3;
+
+/// Applies one mouse event. The mouse only does what a key already does: the wheel presses
+/// `Up`/`Down`, a click on a tab switches to it, and a click on a row selects it (and opens it when
+/// it was already selected). Nothing here is reachable by the mouse alone.
+pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
+    match mouse.kind {
+        MouseEventKind::ScrollDown => wheel(app, KeyCode::Down),
+        MouseEventKind::ScrollUp => wheel(app, KeyCode::Up),
+        MouseEventKind::Down(MouseButton::Left) => click(app, mouse.column, mouse.row),
+        _ => {}
+    }
+}
+
+fn plain(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::empty())
+}
+
+fn wheel(app: &mut App, code: KeyCode) {
+    if app.overlay.is_some() {
+        return;
+    }
+    for _ in 0..WHEEL_STEP {
+        handle_key(app, plain(code));
+    }
+}
+
+fn inside(area: ratatui::layout::Rect, x: u16, y: u16) -> bool {
+    x >= area.x
+        && x < area.x.saturating_add(area.width)
+        && y >= area.y
+        && y < area.y.saturating_add(area.height)
+}
+
+fn click(app: &mut App, x: u16, y: u16) {
+    if let Some(overlay) = &app.overlay {
+        // The panels that close on any key close on a click too; the rest wait for their keys.
+        if matches!(
+            overlay,
+            Overlay::Help | Overlay::Notice { .. } | Overlay::Contract(_) | Overlay::Explain(_)
+        ) {
+            app.overlay = None;
+        }
+        return;
+    }
+    app.quit_armed = false;
+    if let Some(&(_, mode)) = app.tab_hits.iter().find(|(area, _)| inside(*area, x, y)) {
+        perform(app, Action::Mode(mode));
+        return;
+    }
+    if app.mode == Mode::Code {
+        if inside(app.code.area, x, y)
+            && let Some(len) = app.code.view.as_ref().map(|v| v.lines.len())
+        {
+            let line = app.code.offset + usize::from(y - app.code.area.y);
+            app.code.cursor = line.min(len.saturating_sub(1));
+            ensure_code_visible(app);
+        }
+        return;
+    }
+    let Some(view) = list_of(app) else {
+        return;
+    };
+    let (Some(row), selected) = (view.row_at(x, y), view.selected) else {
+        return;
+    };
+    if row == selected {
+        handle_key(app, plain(KeyCode::Enter));
+        return;
+    }
+    // Walk the selection with the same key the keyboard uses, so every side effect of moving
+    // (adopting the unit, clamping, scrolling) is the one the keyboard has.
+    let code = if row > selected {
+        KeyCode::Down
+    } else {
+        KeyCode::Up
+    };
+    for _ in 0..row.abs_diff(selected) {
+        handle_key(app, plain(code));
+    }
+}
+
+/// The list the current mode scrolls, if it has one the mouse can pick from.
+fn list_of(app: &App) -> Option<&Viewport> {
+    Some(match app.mode {
+        Mode::Queue => &app.queue_view,
+        Mode::Structure => &app.structure_view,
+        Mode::Impact => &app.impact_view,
+        Mode::Comments => &app.comments_view,
+        Mode::Context => &app.context_view,
+        Mode::Followup => &app.followup_view,
+        Mode::Coverage => &app.coverage_view,
+        Mode::Flow => &app.flow_view,
+        Mode::Code | Mode::Tests => return None,
+    })
 }
 
 /// Turns a moved mode-specific key (`[keys] down = "n"`) into the character the mode matches.

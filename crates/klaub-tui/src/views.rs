@@ -409,6 +409,7 @@ fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .split(body);
     let (text_area, footer_area) = (split[0], split[1]);
     app.code.height = usize::from(text_area.height);
+    app.code.area = text_area;
     crate::actions::ensure_code_visible(app);
 
     let number_w = view
