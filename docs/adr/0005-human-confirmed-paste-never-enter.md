@@ -1,6 +1,6 @@
 # 5. Human-confirmed paste, never `Enter`
 
-- Status: accepted
+- Status: accepted (the shape of the pasted text is refined by [ADR 0009](0009-pasted-text-is-always-one-line.md))
 - Date: 2026-10-31
 
 ## Context

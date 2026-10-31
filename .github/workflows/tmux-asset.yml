@@ -1,0 +1,94 @@
+name: tmux asset
+
+# Builds the pinned tmux for each release target and proves that a klaub binary with
+# that tmux embedded can start, list and end a real session. Runs on pull requests
+# that touch the pipeline, and is reused by the release workflow.
+
+on:
+  pull_request:
+    paths:
+      - scripts/build-tmux.sh
+      - .github/workflows/tmux-asset.yml
+      - crates/klaub-tmux/**
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build tmux (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install build tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
+      - name: Build tmux from pinned, hash-verified sources
+        run: scripts/build-tmux.sh "${{ matrix.target }}"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: tmux-${{ matrix.target }}
+          path: assets/tmux/${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 30
+
+  verify:
+    name: Embedded tmux works (${{ matrix.target }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: tmux-${{ matrix.target }}
+          path: assets/tmux/${{ matrix.target }}
+      - run: cargo build --release --locked -p klaub-cli
+      - name: Smoke test with the embedded tmux
+        shell: bash
+        run: |
+          set -euo pipefail
+          KLAUB_STATE_DIR="$(mktemp -d)"
+          KLAUB_CACHE_DIR="$(mktemp -d)"
+          KLAUB_CONFIG_DIR="$(mktemp -d)"
+          export KLAUB_STATE_DIR KLAUB_CACHE_DIR KLAUB_CONFIG_DIR
+          unset KLAUB_TMUX_PATH
+          klaub=./target/release/klaub
+
+          "$klaub" version
+          "$klaub" doctor --format json | jq -e '.checks[] | select(.name == "tmux" and .status == "ok") | .detail | startswith("embedded")'
+
+          out="$("$klaub" wrap --detach -- sh -c 'sleep 60')"
+          id="$(printf '%s' "$out" | grep -o 'ses_[0-9a-f]*' | head -n 1)"
+          "$klaub" session list --format json | jq -e --arg id "$id" '.[] | select(.id == $id and .state == "running")'
+          "$klaub" session kill --yes "$id"
+
+          # The extracted executable must not be writable by other users.
+          if find "$KLAUB_CACHE_DIR/bin" -name tmux -perm -o+w | grep -q .; then
+            echo "extracted tmux is world-writable" >&2
+            exit 1
+          fi
+      - name: Dynamic dependencies of the embedded tmux
+        run: cat assets/tmux/${{ matrix.target }}/dependencies.txt

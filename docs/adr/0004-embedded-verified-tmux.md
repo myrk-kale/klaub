@@ -1,6 +1,6 @@
 # 4. Embedded, verified tmux in a private server
 
-- Status: accepted
+- Status: accepted (the socket naming is refined by [ADR 0008](0008-one-private-tmux-server-per-session.md))
 - Date: 2026-10-31
 
 ## Context

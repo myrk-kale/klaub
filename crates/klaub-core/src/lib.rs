@@ -16,6 +16,7 @@
 //! fails if file system, process, network or environment APIs creep in.
 
 pub mod config;
+pub mod dirs;
 pub mod error;
 pub mod finding;
 pub mod flow;
