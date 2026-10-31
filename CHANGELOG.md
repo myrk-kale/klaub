@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The Flow view is now a tree of the steps instead of a flat list: branches are indented under the step they leave, a step reached twice is marked `↺ shown above` instead of being expanded again, and each row shows how it was reached (`calls ◐`). `←`, `→` and `Space` fold and unfold the branches below a step, and a `path:` line above the list shows the breadcrumbs from the first step to the selected one (cut at the start when the terminal is narrow). `Enter` opens the selected step's real symbol in the reader, whatever is folded.
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

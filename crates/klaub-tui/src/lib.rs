@@ -24,8 +24,8 @@ mod widgets;
 
 pub use app::{
     App, CodeState, Confirm, ConfirmAction, DELIVERY_OPTIONS, Depth, Editor, EditorPurpose,
-    Filters, FinishStage, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay, StatusKind,
-    TreeKind, TreeRow,
+    Filters, FinishStage, FlowLine, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay,
+    StatusKind, TreeKind, TreeRow,
 };
 pub use terminal::run;
 pub use theme::Theme;

@@ -19,7 +19,7 @@ use unicode_width::UnicodeWidthChar;
 use crate::app::{App, ImpactRowKind, Mode, TreeKind};
 use crate::labels;
 use crate::theme::{Theme, mark_symbol};
-use crate::widgets::{bar, clean, draw_list, fit, pad, percent, wrap};
+use crate::widgets::{bar, clean, draw_list, fit, fit_tail, pad, percent, wrap};
 
 /// Draws the main area for the current mode.
 pub(crate) fn draw_mode(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
@@ -1016,7 +1016,7 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         frame,
         head,
         &format!(
-            "Flow · {state_label}  (p asks the agent for a diagram · u reloads · Enter opens a step)"
+            "Flow · {state_label}  (Enter opens a step · ←/→/Space fold · p asks the agent · u reloads)"
         ),
         theme,
     );
@@ -1097,13 +1097,45 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .constraints([Constraint::Length(intro_h), Constraint::Min(2)])
         .split(body);
     frame.render_widget(Paragraph::new(lines), parts[0]);
-    let rows: Vec<Line<'static>> = validated
-        .document
-        .steps
+    let lines = app.flow_rows();
+    let list_width = usize::from(parts[1].width);
+    let [crumbs_area, list_area] = {
+        let split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .split(parts[1]);
+        [split[0], split[1]]
+    };
+    let step_name = |index: usize| -> String {
+        validated.document.steps.get(index).map_or_else(
+            || "?".to_owned(),
+            |step| {
+                step.symbol
+                    .as_deref()
+                    .or(step.file_path.as_deref())
+                    .unwrap_or(&step.id)
+                    .to_owned()
+            },
+        )
+    };
+    let crumbs = app
+        .flow_breadcrumbs()
+        .into_iter()
+        .map(|i| clean(&step_name(i)))
+        .collect::<Vec<_>>()
+        .join(" › ");
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            fit_tail(&format!("path: {crumbs}"), list_width),
+            theme.dim(),
+        ))),
+        crumbs_area,
+    );
+    let rows: Vec<Line<'static>> = lines
         .iter()
-        .enumerate()
-        .map(|(i, step)| {
-            let resolved = validated.steps.get(i);
+        .map(|line| {
+            let step = &validated.document.steps[line.row.step];
+            let resolved = validated.steps.get(line.row.step);
             let place = match (&step.file_path, &step.symbol) {
                 (Some(f), Some(s)) => format!("{}::{}", clean(f), clean(s)),
                 (Some(f), None) => clean(f),
@@ -1120,43 +1152,41 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                 ""
             };
             let changed = if step.changed { " [changed]" } else { "" };
-            let outgoing: Vec<String> = validated
-                .document
-                .edges
-                .iter()
-                .filter(|e| e.from == step.id)
-                .map(|e| {
-                    format!(
-                        "{} {}{}",
-                        labels::edge_kind(e.kind),
-                        clean(&e.to),
-                        labels::origin_mark(e.confidence)
-                    )
-                })
-                .collect();
-            let arrow = if outgoing.is_empty() {
-                String::new()
+            let fold = if line.folded {
+                "▸"
+            } else if line.has_branches {
+                "▾"
             } else {
-                format!("  → {}", outgoing.join(", "))
+                " "
             };
+            let via = line.row.via.map_or_else(String::new, |(kind, origin)| {
+                format!(
+                    "{}{} ",
+                    labels::edge_kind(kind),
+                    labels::origin_mark(origin)
+                )
+            });
+            let again = if line.row.revisit {
+                " ↺ shown above"
+            } else {
+                ""
+            };
+            let indent = "  ".repeat(line.row.depth.min(8));
             Line::from(vec![
                 Span::raw(format!(
-                    "{:>2} {} ",
-                    i + 1,
+                    "{:>2} {} {fold} {indent}",
+                    line.row.step + 1,
                     labels::origin_mark(step.confidence)
                 )),
+                Span::styled(via, theme.dim()),
                 Span::raw(fit(
-                    &format!("{place}{changed}{missing}"),
-                    usize::from(parts[1].width) * 6 / 10,
+                    &format!("{place}{changed}{missing}{again}"),
+                    list_width.saturating_sub(12 + indent.len()),
                 )),
-                Span::styled(
-                    fit(&arrow, usize::from(parts[1].width) * 4 / 10),
-                    theme.dim(),
-                ),
             ])
         })
         .collect();
-    draw_list(frame, parts[1], &mut app.flow_view, rows, theme);
+    draw_list(frame, list_area, &mut app.flow_view, rows, theme);
 }
 
 /// Whether a line mark carries a text colour of its own (used by the code view).

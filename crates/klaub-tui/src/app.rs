@@ -161,6 +161,17 @@ pub enum Depth {
     Symbol,
 }
 
+/// A row of the flow list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowLine {
+    /// The step, its depth and how it was reached.
+    pub row: klaub_app::FlowRow,
+    /// Other steps hang below this one.
+    pub has_branches: bool,
+    /// Those steps are folded away.
+    pub folded: bool,
+}
+
 /// A row of the structure tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeKind {
@@ -427,6 +438,8 @@ pub struct App {
     pub coverage_view: Viewport,
     /// Scrolling of the flow view.
     pub flow_view: Viewport,
+    /// Steps of the flow whose branches are folded away.
+    pub flow_folded: HashSet<usize>,
     /// A layer over the screen.
     pub overlay: Option<Overlay>,
     /// The last message.
@@ -477,6 +490,7 @@ impl App {
             followup_view: Viewport::default(),
             coverage_view: Viewport::default(),
             flow_view: Viewport::default(),
+            flow_folded: HashSet::new(),
             overlay: None,
             status: None,
             deferred: None,
@@ -663,6 +677,72 @@ impl App {
         modules.sort();
         modules.dedup();
         modules
+    }
+
+    // ---- flow ---------------------------------------------------------------------------------
+
+    /// The rows of the flow the reviewer can see: the layout minus the branches they folded.
+    ///
+    /// Each row says whether it has branches below it, so the view can draw the fold mark. A step
+    /// that was already shown higher up (a cycle or a join) never has branches of its own.
+    pub fn flow_rows(&self) -> Vec<FlowLine> {
+        let Some(flow) = &self.session.flow().flow else {
+            return Vec::new();
+        };
+        let all = klaub_app::flow_layout(&flow.document);
+        let mut visible = Vec::with_capacity(all.len());
+        let mut hidden_below: Option<usize> = None;
+        for (index, row) in all.iter().enumerate() {
+            if let Some(depth) = hidden_below {
+                if row.depth > depth {
+                    continue;
+                }
+                hidden_below = None;
+            }
+            let has_branches = all
+                .get(index + 1)
+                .is_some_and(|next| next.depth > row.depth);
+            let folded = has_branches && self.flow_folded.contains(&row.step);
+            visible.push(FlowLine {
+                row: row.clone(),
+                has_branches,
+                folded,
+            });
+            if folded {
+                hidden_below = Some(row.depth);
+            }
+        }
+        visible
+    }
+
+    /// The steps from the start of the flow down to the selected row, selected one last.
+    ///
+    /// Computed on the whole layout, so folding never removes an ancestor from the path.
+    pub fn flow_breadcrumbs(&self) -> Vec<usize> {
+        let Some(flow) = &self.session.flow().flow else {
+            return Vec::new();
+        };
+        let Some(selected) = self
+            .flow_rows()
+            .get(self.flow_view.selected)
+            .map(|line| line.row.clone())
+        else {
+            return Vec::new();
+        };
+        let all = klaub_app::flow_layout(&flow.document);
+        let Some(position) = all.iter().position(|row| *row == selected) else {
+            return vec![selected.step];
+        };
+        let mut path = vec![selected.step];
+        let mut depth = selected.depth;
+        for row in all[..position].iter().rev() {
+            if row.depth < depth {
+                path.push(row.step);
+                depth = row.depth;
+            }
+        }
+        path.reverse();
+        path
     }
 
     // ---- structure ---------------------------------------------------------------------------
