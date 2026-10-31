@@ -42,6 +42,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config
       - name: Build tmux from pinned, hash-verified sources
         run: scripts/build-tmux.sh "${{ matrix.target }}"
+      - name: Probe allocator variants (x86_64 macOS experiment)
+        if: matrix.target == 'x86_64-apple-darwin'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          for variant in system jemalloc-nozone; do
+            echo "=== variant $variant"
+            KLAUB_TMUX_MALLOC=$variant scripts/build-tmux.sh x86_64-apple-darwin >/dev/null 2>&1 || { echo "build failed"; continue; }
+            dir="$(mktemp -d)"
+            gzip -dc assets/tmux/x86_64-apple-darwin/tmux.gz > "$dir/tmux"; chmod +x "$dir/tmux"
+            "$dir/tmux" -S "$dir/sock" -f /dev/null new-session -d -s probe 'sleep 30'
+            sleep 1
+            "$dir/tmux" -S "$dir/sock" list-sessions && echo "variant $variant: WORKS" || echo "variant $variant: CRASHES"
+            "$dir/tmux" -S "$dir/sock" kill-server 2>/dev/null
+          done
+          # Put the default build back as the asset.
+          scripts/build-tmux.sh x86_64-apple-darwin >/dev/null 2>&1
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: tmux-${{ matrix.target }}

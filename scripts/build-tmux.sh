@@ -117,6 +117,9 @@ log "building ncurses ${NCURSES_VERSION}"
   make install.libs install.includes >/dev/null
 )
 
+# macOS allocator: jemalloc (what tmux asks for there), or the system one. Only an experiment
+# switches it; the default is unchanged.
+malloc_choice="${KLAUB_TMUX_MALLOC:-jemalloc}"
 tmux_flags=(--disable-utf8proc)
 if [ "$(uname -s)" = Darwin ]; then
   fetch "${UTF8PROC_URL}" "${UTF8PROC_SHA256}" "${work}/utf8proc.tar.gz"
@@ -134,14 +137,22 @@ if [ "$(uname -s)" = Darwin ]; then
     rm -f "${prefix}"/lib/libutf8proc*.dylib
   )
 
-  log "building jemalloc ${JEMALLOC_VERSION}"
-  (
-    cd "${work}/src/jemalloc"
-    ./configure --prefix="${prefix}" --disable-shared --enable-static >/dev/null
-    make -j"${jobs}" build_lib_static >/dev/null
-    make install_lib_static install_include >/dev/null
-  )
-  tmux_flags=(--enable-utf8proc --enable-jemalloc)
+  if [ "${malloc_choice}" = system ]; then
+    tmux_flags=(--enable-utf8proc --disable-jemalloc)
+  else
+    jemalloc_flags=(--disable-shared --enable-static)
+    if [ "${malloc_choice}" = jemalloc-nozone ]; then
+      jemalloc_flags+=(--disable-zone-allocator)
+    fi
+    log "building jemalloc ${JEMALLOC_VERSION} (${malloc_choice})"
+    (
+      cd "${work}/src/jemalloc"
+      ./configure --prefix="${prefix}" "${jemalloc_flags[@]}" >/dev/null
+      make -j"${jobs}" build_lib_static >/dev/null
+      make install_lib_static install_include >/dev/null
+    )
+    tmux_flags=(--enable-utf8proc --enable-jemalloc)
+  fi
 fi
 
 log "building tmux ${TMUX_VERSION}"
