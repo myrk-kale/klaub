@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-31
+
+### Fixed
+
+- **Running tests could stall and be reported as a failure.** The test runner waited for the command to exit before reading its output, so a command that wrote more than a pipe holds (about 64 KiB) blocked on its next write until the time limit. Both streams are now read while the command runs, only the last 64 KiB is kept, and a timeout or a cancel ends the whole process group instead of only the command, so a background process it started no longer outlives the run.
+- **`klaub tests list|run --review ID` ignored the id.** The id was only checked for its shape, and the command answered for whatever the worktree looked like now. It now loads that review, refuses an id that does not exist, and refuses a review whose files have changed since, before any session is opened. `--select` is also applied before the check for several test commands, so the hint to use it works.
+- **A worktree that changed while it was being analysed went unnoticed for a few seconds.** Files that did not change are read from disk after the snapshot is taken, so an agent that keeps editing could leave an impact graph that mixes two moments. The check for changes now runs as soon as the analysis finishes. The banner says that impact may mix versions, and finishing the review warns about it.
+
 ## [0.3.0] - 2026-10-31
 
 ### Added

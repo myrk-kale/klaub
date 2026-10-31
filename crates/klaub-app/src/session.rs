@@ -298,8 +298,21 @@ impl ReviewSession {
             base_disabled,
         };
         session.sync_flow_ref();
+        session.note_changes_during_analysis();
         session.save()?;
         Ok(session)
+    }
+
+    /// Checks right away whether the worktree already differs from the snapshot.
+    ///
+    /// The snapshot freezes the files that changed, but the files that did not are read from disk
+    /// while the call graph is built, so an agent that keeps editing can leave an analysis that
+    /// mixes two moments. A difference found now is reported as drift at once (the banner and the
+    /// warning before finishing) instead of at the next poll. A failed check says nothing.
+    fn note_changes_during_analysis(&mut self) {
+        if let Err(error) = self.check_drift() {
+            tracing::debug!(%error, "the check after the analysis failed");
+        }
     }
 
     /// The configuration in force: the configured one plus the rules this review silenced.
@@ -630,12 +643,20 @@ impl ReviewSession {
             .iter()
             .filter(|i| i.tags.contains(&klaub_core::finding::QueueTag::NoTests))
             .count();
-        finish_warnings(
+        let mut warnings = finish_warnings(
             &self.coverage(),
             &self.review.brief,
             untested,
             self.analysis.config.coverage.warn_on_unreviewed_p0_p1,
-        )
+        );
+        if self.drift == Drift::Changed {
+            warnings.push(
+                "The worktree changed after this snapshot was taken, so the comments and the impact \
+                 refer to code that has moved on. R takes a new snapshot."
+                    .to_owned(),
+            );
+        }
+        warnings
     }
 
     /// Finishes the review: freezes the open comments into a feedback payload and saves.
@@ -733,6 +754,7 @@ impl ReviewSession {
         self.drift = Drift::Unchanged;
         self.flow = Self::read_flow(&self.ports, &self.analysis)?;
         self.sync_flow_ref();
+        self.note_changes_during_analysis();
         self.save()
     }
 

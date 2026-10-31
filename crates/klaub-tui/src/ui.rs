@@ -157,7 +157,7 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, current: Mode, theme: Theme) -> 
 }
 
 fn draw_banner(frame: &mut Frame<'_>, area: Rect, theme: Theme) {
-    let text = " ! worktree changed since this snapshot — R takes a new one (asks first)";
+    let text = " ! worktree changed since this snapshot, so impact may mix versions. R takes a new one (asks first)";
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             fit(text, usize::from(area.width)),

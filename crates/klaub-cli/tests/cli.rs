@@ -598,3 +598,129 @@ fn crash_reports_are_listed_and_shown_but_only_from_the_listing() {
             .contains("Nothing was sent")
     );
 }
+
+// ---- klaub tests --review ----------------------------------------------------------------------
+
+fn git_in(dir: &Path, args: &[&str]) {
+    let status = Process::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?} failed");
+}
+
+/// A repository with a function, its test and a configured test command, then one edit so that
+/// there is something to review. It lives in a folder of its own, because the sandbox keeps
+/// Klaub's cache and state beside it and they must not count as changes. Returns the folder and
+/// the id of the review of that state.
+fn reviewed_project(sandbox: &Sandbox) -> (PathBuf, String) {
+    let dir = sandbox.worktree().join("project");
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    init_repo(&dir);
+    std::fs::write(dir.join("app.py"), "def add(a, b):\n    return a + b\n").unwrap();
+    std::fs::write(
+        dir.join("tests/test_app.py"),
+        "from app import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join(".klaub.toml"),
+        "[tests]\ncommand = [\"echo\", \"ran:\"]\n",
+    )
+    .unwrap();
+    git_in(&dir, &["add", "."]);
+    git_in(&dir, &["commit", "-q", "-m", "add the project"]);
+    std::fs::write(
+        dir.join("app.py"),
+        "def add(a, b, c=0):\n    return a + b + c\n",
+    )
+    .unwrap();
+
+    // Any command that opens a session stores the review of the current state.
+    sandbox
+        .klaub()
+        .current_dir(&dir)
+        .args(["flow", "status"])
+        .assert()
+        .success();
+    let output = sandbox
+        .klaub()
+        .current_dir(&dir)
+        .args(["reviews", "list", "--format", "json"])
+        .output()
+        .unwrap();
+    let reviews: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let id = reviews[0]["id"].as_str().unwrap().to_owned();
+    (dir, id)
+}
+
+#[test]
+fn tests_list_answers_for_the_review_that_was_asked_about() {
+    let sandbox = Sandbox::new();
+    let (dir, id) = reviewed_project(&sandbox);
+    let output = sandbox
+        .klaub()
+        .current_dir(&dir)
+        .args(["tests", "list", "--review", &id])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("tests/test_app.py::test_add"), "{text}");
+}
+
+#[test]
+fn tests_list_refuses_a_review_that_does_not_exist() {
+    let sandbox = Sandbox::new();
+    let (dir, _) = reviewed_project(&sandbox);
+    sandbox
+        .klaub()
+        .current_dir(&dir)
+        .args(["tests", "list", "--review", "rev_aaaaaaaaaaaa"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot load review"));
+}
+
+#[test]
+fn tests_refuse_a_review_whose_files_have_changed_since() {
+    let sandbox = Sandbox::new();
+    let (dir, id) = reviewed_project(&sandbox);
+    std::fs::write(
+        dir.join("app.py"),
+        "def add(a, b, c=0, d=0):\n    return a + b + c + d\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["tests", "list", "--review", id.as_str()],
+        vec!["tests", "run", "--review", id.as_str(), "--yes"],
+    ] {
+        sandbox
+            .klaub()
+            .current_dir(&dir)
+            .args(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("earlier state of this worktree"));
+    }
+}
+
+#[test]
+fn tests_run_runs_the_configured_command_for_the_review() {
+    let sandbox = Sandbox::new();
+    let (dir, id) = reviewed_project(&sandbox);
+    sandbox
+        .klaub()
+        .current_dir(&dir)
+        .args(["tests", "run", "--review", &id, "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ran:"))
+        .stdout(predicate::str::contains("tests/test_app.py::test_add"));
+}
