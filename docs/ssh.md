@@ -20,4 +20,4 @@ SSH is supported on a best-effort basis. The reader and `klaub wrap` are termina
 
 ## How this is tested
 
-The CLI tests run `klaub doctor` with the SSH variables set and with `TERM=dumb`, and check the output. That covers the detection and the advice. It does **not** open a real SSH connection: no test in this repository runs the reader through `sshd`. If you rely on SSH, the manual check is the one in [the acceptance list](specification.pt-BR.md): `klaub wrap`, switch to the reviewer and back five times, comment, finish and prepare, from a real remote session.
+The CLI tests run `klaub doctor` with the SSH variables set and with `TERM=dumb`, and check the output. That covers the detection and the advice. It does **not** open a real SSH connection: no test in this repository runs the reader through `sshd`. If you rely on SSH, the manual check is: `klaub wrap`, switch to the reviewer and back five times, comment, finish and prepare, from a real remote session.

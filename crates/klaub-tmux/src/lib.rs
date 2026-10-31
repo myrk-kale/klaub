@@ -11,9 +11,6 @@
 //! - [`config`]: the server configuration and key bindings;
 //! - [`registry`] and [`session`]: starting, finding, focusing and ending sessions;
 //! - [`channel`]: pane-identity checks and the bracketed, single-line, no-`Enter` paste.
-//!
-//! See `docs/adr/0004-embedded-verified-tmux.md` and
-//! `docs/adr/0005-human-confirmed-paste-never-enter.md`.
 
 pub mod binary;
 pub mod channel;

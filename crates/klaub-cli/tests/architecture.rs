@@ -1,4 +1,4 @@
-//! Executable architecture rules (see `docs/architecture.md` and ADR 0002).
+//! Executable architecture rules (see `docs/architecture.md`).
 //!
 //! The hexagonal layout is only worth having if it is enforced. These tests read
 //! the workspace's dependency graph with `cargo metadata` and scan sources of

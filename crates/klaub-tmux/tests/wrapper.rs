@@ -1,8 +1,6 @@
-//! Phase 0 gate (specification §23): the wrapper must keep the harness alive, address
-//! its pane by id and paste test text as a bracketed paste **without ever submitting it**.
-//!
-//! A failure here means the integration must be fixed before any semantic feature is
-//! built on top of it. Tests run against a real tmux server on a private socket.
+//! The wrapper must keep the harness alive, address its pane by id and paste test text as a
+//! bracketed paste **without ever submitting it**. Tests run against a real tmux server on a
+//! private socket.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

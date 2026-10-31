@@ -18,7 +18,7 @@ Without `just`, the equivalents are in the `justfile`; they are plain `cargo` in
 
 ## Running with a system tmux
 
-Development builds do not embed tmux (see [ADR 0004](adr/0004-embedded-verified-tmux.md)). Point Klaub at one explicitly:
+Development builds do not embed tmux. Point Klaub at one explicitly:
 
 ```shell
 export KLAUB_TMUX_PATH="$(command -v tmux)"
@@ -63,6 +63,21 @@ Set `KLAUB_STATE_DIR`, `KLAUB_CACHE_DIR` and `KLAUB_CONFIG_DIR` to keep experime
 ## Fixtures
 
 Tests that need a repository build one on the fly with the helpers in `klaub-git`'s test support, so no `.git` directories are committed. Static source samples used by parser and matcher tests live under `fixtures/`.
+
+## Checks that need a person
+
+CI drives a real terminal multiplexer, real Git repositories and the real parser, but nothing in this repository runs Codex CLI, Claude Code, a particular terminal emulator or a real SSH connection. Before a release, someone with those installed should check:
+
+- `klaub wrap codex` and `klaub wrap -- claude`: the agent starts, accepts keys, shows colours and follows a resize.
+- Switching to the reviewer and back five times keeps the agent's scrollback and running task.
+- Preparing feedback puts the one-line instruction in the agent's input, no `Enter` is sent, and it can be edited before submitting. This also holds while the input already has text and while the agent is answering.
+- Detaching (`Prefix d`) and `klaub session attach` leaves both windows where they were.
+- In your terminal (Ghostty, WezTerm, iTerm2, Kitty, Tabby): the reader draws, function keys arrive and bracketed paste works.
+- With `[ui] hold_to_peek = true` in a terminal that supports the kitty keyboard protocol: holding `B` shows the old version until release, and accented or `AltGr` characters still type in a comment.
+- With `[ui] mouse = true`: the wheel scrolls, and a click on a tab, a row and a code line does what it says.
+- Over SSH: `klaub doctor` says so and the reader works ([ssh.md](ssh.md)).
+- On a project of your own, the time to the first queue feels right ([benchmarks.md](benchmarks.md)).
+- With the `klaub-flow` skill installed (`klaub skills install flow --harness codex`): ask for a diagram, wait, press `L`, and navigate it.
 
 ## Releases
 

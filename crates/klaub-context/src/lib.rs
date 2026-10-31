@@ -6,7 +6,7 @@
 //!   from a file they name). Klaub never infers intent from an agent's history or a tracker;
 //! - **coverage** of the human review: which units the reviewer explicitly marked as reviewed,
 //!   what is still pending, and a non-blocking warning before finishing. Opening a file, running
-//!   tests or having no alerts never counts as reviewed (§13.7).
+//!   tests or having no alerts never counts as reviewed.
 
 use std::collections::{BTreeMap, HashSet};
 

@@ -1,6 +1,6 @@
 # Benchmarks
 
-Two harnesses time the pipeline against the latency targets the specification sets in §19. They are in the workspace and they run on a **synthetic corpus**, so what they report is the shape of Klaub's work on a repository of a given size, on one machine. Neither number is a promise about your project, and the specification itself calls its targets "hypotheses of engineering, not measured numbers of the product". Nothing is enforced: a target that is missed is printed as `over`, not turned into a failing test, because the figure depends on the machine.
+Two harnesses time the pipeline against Klaub's latency targets: 2 s to open a small or medium review, 100 ms for a key press in a list or tree, 50 ms for the before/after toggle, 3 s to refresh. They are in the workspace and they run on a **synthetic corpus**, so what they report is the shape of Klaub's work on a repository of a given size, on one machine. Neither number is a promise about your project, and the targets are engineering hypotheses to be measured, not promises. Nothing is enforced: a target that is missed is printed as `over`, not turned into a failing test, because the figure depends on the machine.
 
 ## Latency
 
@@ -10,7 +10,7 @@ cargo bench -p klaub-tui --bench ui             # the reader: one key press plus
 KLAUB_BENCH_SIZES=small,medium,large cargo bench -p klaub-app --bench latency
 ```
 
-Both are plain `harness = false` programs that print a table of p50, p95 and max, with the specification's target next to each row and whether the p95 is within it. The `klaub-app` harness builds a Git repository of Python files whose functions call the next one and a function in the next file, commits it, rewrites a share of the files, and times:
+Both are plain `harness = false` programs that print a table of p50, p95 and max, with the target next to each row and whether the p95 is within it. The `klaub-app` harness builds a Git repository of Python files whose functions call the next one and a function in the next file, commits it, rewrites a share of the files, and times:
 
 - the first queue with a cold parse cache and with a warm one (the time to open a review);
 - the work behind the before/after toggle, for every unit in both directions;
@@ -22,7 +22,7 @@ The `klaub-tui` harness drives the real reader over 200 files with 60 changed, d
 
 Apple M4, macOS 26.2, Rust 1.99.1, release profile, synthetic corpus, 2026-10-31. Times are milliseconds. This is one run on one laptop, kept here so a regression is visible, not as a claim about other hardware.
 
-| Corpus | Operation | n | p50 | p95 | max | Specification (§19) |
+| Corpus | Operation | n | p50 | p95 | max | Target |
 | --- | --- | --- | --- | --- | --- | --- |
 | 20 files, 8 changed | first queue, cold cache | 5 | 68.69 | 82.49 | 82.49 | 2 s for a small or medium review: within |
 | 20 files, 8 changed | first queue, warm cache | 9 | 66.10 | 66.83 | 66.83 | no target |
@@ -33,7 +33,7 @@ Apple M4, macOS 26.2, Rust 1.99.1, release profile, synthetic corpus, 2026-10-31
 | 200 files, 60 changed | toggle before/after (view rebuild) | 1200 | 0.09 | 0.09 | 0.10 | p95 50 ms: within |
 | 200 files, 60 changed | refresh after a one-file edit | 10 | 86.05 | 89.88 | 89.88 | p95 3 s: within |
 
-| Operation (200 files, 60 changed, 120×40) | n | p50 | p95 | max | Specification (§19) |
+| Operation (200 files, 60 changed, 120×40) | n | p50 | p95 | max | Target |
 | --- | --- | --- | --- | --- | --- |
 | move in the queue (key + frame) | 300 | 11.97 | 13.13 | 19.66 | p95 100 ms: within |
 | move in the structure tree (key + frame) | 300 | 12.69 | 14.41 | 19.74 | p95 100 ms: within |
@@ -50,7 +50,7 @@ KLAUB_BENCH_REPO=~/src/flask,~/src/django KLAUB_BENCH_BASE=HEAD~60 \
 
 One run, same machine as above (Apple M4, macOS 26.2, Rust 1.99.1, release profile, 2026-10-31). Each repository was cloned with `--depth 80` and compared `HEAD~60` against `HEAD`. Times are milliseconds. The commits are the ones the clones had on that day, so the run can be repeated on the same inputs.
 
-| Repository (commit) | Operation | n | p50 | p95 | max | Specification (§19) |
+| Repository (commit) | Operation | n | p50 | p95 | max | Target |
 | --- | --- | --- | --- | --- | --- | --- |
 | flask `49943b5a94`: 236 files, 94 changed, 369 units | first queue, cold cache | 3 | 259.90 | 264.15 | 264.15 | 2 s: within |
 | | first queue, warm cache | 5 | 212.52 | 215.21 | 215.21 | no target |
@@ -77,12 +77,12 @@ The first run of this harness on these four repositories found three defects tha
 
 - **The cold and warm queue times are about the same.** The files in this corpus are tiny, so parsing is a small share of opening a review, and the cache cannot show its worth. Where the rest of the time goes (capturing the snapshot through the Git CLI, building the call graph, scoring) was not profiled.
 - **Four open-source repositories were measured, on one disk.** A monorepo with large files, deep call graphs and a slow or networked disk will move every one of these rows. The shallow clones also keep only 80 commits, so the diffs are 60 commits of history, not a feature branch someone reviews. The `large` synthetic size (`KLAUB_BENCH_SIZES=large`) exists to see the slope.
-- **The specification's other rows have no harness.** "tmux window switch" is the tmux server's own work, not Klaub's, and "comment recovery after a crash" is a durability property that the storage tests assert (atomic writes) rather than a latency.
+- **Two other targets have no harness.** Switching between the agent and the reviewer is the terminal multiplexer's own work, not Klaub's, and "comment recovery after a crash" is a durability property that the storage tests assert (atomic writes) rather than a latency.
 - **p95 over five or ten samples is close to the maximum.** The slow rows (open, refresh) take a few seconds to repeat, so they have few samples. The key-press rows have 300.
 
 ## What is measured by test, and how
 
-The four figures the specification asks for are measured by test, not by benchmark. Each one is an assertion against a Git repository whose correct answer is known, so a regression fails the test instead of quietly moving a number. They live in [`crates/klaub-app/tests/metrics.rs`](../crates/klaub-app/tests/metrics.rs).
+Four figures are measured by test, not by benchmark. Each one is an assertion against a Git repository whose correct answer is known, so a regression fails the test instead of quietly moving a number. They live in [`crates/klaub-app/tests/metrics.rs`](../crates/klaub-app/tests/metrics.rs).
 
 | Metric | Test | What it asserts |
 | --- | --- | --- |

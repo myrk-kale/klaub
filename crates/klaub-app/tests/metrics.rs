@@ -1,4 +1,4 @@
-//! Measured evidence for the claims the specification asks to be documented: symbol matching,
+//! Measured evidence for the claims Klaub makes about itself: symbol matching,
 //! temporal classification, test association and comment-anchor stability.
 //!
 //! Each number below is an assertion against a repository whose answer is known, so it is

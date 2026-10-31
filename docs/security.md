@@ -24,8 +24,8 @@ Klaub runs on a developer's machine, next to a coding agent, over repositories t
 - **No shell.** Subprocesses (`git`, `tmux`, test commands) are spawned with argument arrays. Test selections are validated and never start with `-`.
 - **Terminal injection.** All text that reaches the screen or a pane passes through `klaub_core::text::sanitize_terminal_text`, which removes C0/C1 controls, ANSI CSI and OSC sequences and bidirectional override characters.
 - **Pane identity.** The agent pane is recorded by tmux pane id and process id. Before pasting, Klaub re-checks that the pane exists, is not dead and still has the recorded process. Otherwise it offers *Copy feedback* or *Show file*.
-- **No automatic submission.** Klaub never sends `Enter` and never clears the composer ([ADR 0005](adr/0005-human-confirmed-paste-never-enter.md)).
-- **Private tmux server.** Dedicated socket label, empty user configuration, verified private binary ([ADR 0004](adr/0004-embedded-verified-tmux.md)). Klaub never runs `kill-server` against a socket it does not own.
+- **No automatic submission.** Klaub never sends `Enter` and never clears the composer.
+- **Private tmux server.** Dedicated socket label, empty user configuration, verified private binary. Klaub never runs `kill-server` against a socket it does not own.
 - **Filesystem.** Cache directories are created with mode `0700`; extracted executables are written to a temporary file and renamed; reads follow symlinks only inside the worktree.
 - **Privacy.** There is no network code, no telemetry and no API key storage. Logs contain identifiers and counts, not code or comments, unless the user raises the log level explicitly.
 

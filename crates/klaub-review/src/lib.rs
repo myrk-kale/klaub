@@ -5,7 +5,7 @@
 //! states, relocation of anchors in a later snapshot, and the follow-up decisions of the next round.
 //!
 //! Everything that happens here is an explicit action of the human; no function infers that a
-//! comment was submitted, resolved or addressed (ADR 0005, specification §13).
+//! comment was submitted, resolved or addressed.
 
 mod anchor;
 mod export;
@@ -513,7 +513,7 @@ mod tests {
             "{}",
             first.prompt
         );
-        assert!(!first.prompt.contains('\n'), "a single line (ADR 0009)");
+        assert!(!first.prompt.contains('\n'), "a single line");
 
         add_comment(
             &mut review,

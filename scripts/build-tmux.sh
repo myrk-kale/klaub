@@ -40,7 +40,7 @@ JEMALLOC_URL="https://github.com/jemalloc/jemalloc/releases/download/${JEMALLOC_
 JEMALLOC_SHA256="200776fac271093e7c2f21edd6d62657ecd2be578d9328633f2a86bfa6ef4f1d"
 
 NCURSES_VERSION="6.6"
-NCURSES_URL="https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VERSION}.tar.gz"
+NCURSES_URL="https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VERSION}.tar.gz https://ftpmirror.gnu.org/ncurses/ncurses-${NCURSES_VERSION}.tar.gz https://invisible-mirror.net/archives/ncurses/ncurses-${NCURSES_VERSION}.tar.gz"
 NCURSES_SHA256="355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -61,18 +61,27 @@ sha256_of() {
   fi
 }
 
-fetch() { # url sha256 destination
-  local url="$1" expected="$2" dest="$3"
-  log "downloading ${url}"
-  curl --fail --silent --show-error --location --retry 3 --output "${dest}" "${url}"
-  local actual
-  actual="$(sha256_of "${dest}")"
-  if [ "${actual}" != "${expected}" ]; then
+# Downloads from the first URL that answers with the right bytes. A URL may be a space-separated
+# list of mirrors; the SHA-256 is checked for every one, so a mirror cannot change what is built.
+fetch() { # urls sha256 destination
+  local urls="$1" expected="$2" dest="$3" url actual
+  for url in ${urls}; do
+    log "downloading ${url}"
+    if ! curl --fail --silent --show-error --location --retry 2 --connect-timeout 20 \
+        --max-time 300 --output "${dest}" "${url}"; then
+      echo "could not download ${url}; trying the next source" >&2
+      continue
+    fi
+    actual="$(sha256_of "${dest}")"
+    if [ "${actual}" = "${expected}" ]; then
+      return 0
+    fi
     echo "SHA-256 mismatch for ${url}" >&2
     echo "  expected ${expected}" >&2
     echo "  actual   ${actual}" >&2
-    exit 1
-  fi
+  done
+  echo "no source gave ${dest##*/} with the expected SHA-256" >&2
+  exit 1
 }
 
 case "$(uname -s)" in

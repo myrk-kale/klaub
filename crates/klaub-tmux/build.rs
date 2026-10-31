@@ -3,8 +3,7 @@
 //! The release pipeline (`scripts/build-tmux.sh`) writes
 //! `assets/tmux/<target>/{tmux.gz,manifest.json}`. When both files exist they are
 //! compiled into the binary and the `klaub_embedded_tmux` cfg is set; otherwise
-//! the crate builds without tmux and requires `--tmux-path` at run time
-//! (see docs/adr/0004-embedded-verified-tmux.md).
+//! the crate builds without tmux and requires `--tmux-path` at run time.
 
 #![allow(clippy::print_stdout)]
 

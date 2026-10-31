@@ -148,7 +148,7 @@ fn terminal_check() -> Check {
 
 /// Notes a session over SSH, where the terminal is remote and the clipboard is not.
 ///
-/// SSH is supported on a best-effort basis (the specification says so): the reader is a terminal
+/// SSH is supported on a best-effort basis: the reader is a terminal
 /// program and works through it, but nothing here can reach the clipboard of the machine the user
 /// is sitting at.
 fn ssh_check() -> Option<Check> {
@@ -165,9 +165,9 @@ fn ssh_check() -> Option<Check> {
     })
 }
 
-/// WSL runs the Linux build, but the specification keeps it out of the supported targets and
-/// `docs/windows.md` lists what is unproven. The check says so instead of staying silent, and
-/// warns about the one thing that is known to hurt: a repository on the Windows file system.
+/// WSL runs the Linux build, but it is not a supported target yet. The check says so instead of
+/// staying silent, and warns about the one thing that is known to hurt: a repository on the
+/// Windows file system.
 fn wsl_check() -> Option<Check> {
     let release = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
     let distro = std::env::var("WSL_DISTRO_NAME").ok();
@@ -177,7 +177,7 @@ fn wsl_check() -> Option<Check> {
     let mut detail = String::from(
         "this is WSL: not a supported target. Klaub runs the Linux build here, but the terminal \
          and the tmux server are on different sides of the VM, so pane identity and paste are \
-         unproven (docs/windows.md)",
+         unproven",
     );
     if std::env::current_dir().is_ok_and(|dir| on_windows_mount(&dir)) {
         detail.push_str(

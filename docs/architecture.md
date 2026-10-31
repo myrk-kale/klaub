@@ -1,8 +1,20 @@
 # Architecture
 
+## What it is built with
+
+Klaub is written in Rust (stable, minimum version 1.90). The pieces that matter for how it behaves:
+
+| Concern | Technology |
+| --- | --- |
+| Terminal interface | [Ratatui](https://ratatui.rs) with crossterm, in an Elm-style loop: state, `handle_key`, `draw` |
+| Parsing | tree-sitter grammars for Python, JavaScript, TypeScript and TSX, Rust, Go and Java |
+| Agent session | A private tmux server per session, with a verified tmux binary embedded in release builds. It keeps the agent alive, addresses its pane by id and pastes with bracketed paste |
+| Git | The `git` executable, with argument arrays, NUL-separated output and a scrubbed environment |
+| Storage | Atomic JSON files for reviews, SQLite for the parse cache |
+| Command line | clap |
+
 Klaub follows the **hexagonal (ports and adapters) architecture**. The business of the product, which is understanding what changed, ranking it and recording a human's feedback, sits in the middle and knows nothing about Git, tree-sitter, SQLite, tmux or terminals. Everything that touches the outside world is an adapter that plugs into a port (a Rust trait) owned by the core.
 
-The decision and its rationale are recorded in [ADR 0002](adr/0002-hexagonal-architecture.md).
 
 ## Layers
 
@@ -64,7 +76,7 @@ Dependencies point inward. Adapters depend on `klaub-core` for the port they imp
 | `klaub-git` | Driven adapter | `SnapshotProvider` and workspace reading through the Git CLI. |
 | `klaub-parse` | Driven adapter | `SourceParser` with tree-sitter grammars. |
 | `klaub-storage` | Driven adapter | Review repository (atomic JSON), analysis cache (SQLite), flow repository, configuration loading. |
-| `klaub-tmux` | Driven adapter | Embedded and verified tmux runtime, one private server per session ([ADR 0008](adr/0008-one-private-tmux-server-per-session.md)), pane identity, single-line bracketed paste ([ADR 0009](adr/0009-pasted-text-is-always-one-line.md)). |
+| `klaub-tmux` | Driven adapter | Embedded and verified tmux runtime, one private server per session, pane identity, single-line bracketed paste. |
 | `klaub-tui` | Driving adapter | Ratatui application: Elm-style model, pure `update`, rendering. |
 | `klaub-cli` | Driving adapter + composition root | `clap` commands, wiring of adapters to ports, process-level concerns (logging, exit codes). |
 
@@ -87,7 +99,7 @@ Ports live in `klaub-core::ports`. Each has an in-memory fake in tests.
 
 ### Extension point for harness adapters
 
-`klaub_core::harness` holds the `HarnessAdapter` trait, the `GenericHarness` fallback and a `HarnessRegistry` that picks an adapter by the name of the program in the agent pane ([ADR 0010](adr/0010-harness-adapters-are-a-seam-not-a-dependency.md)). An adapter can say whether a program looks ready or busy and whether text was submitted, and the reader shows what it says in the paste confirmation. It is deliberately **not** relied on: with only the generic adapter, which knows nothing, the flow is the universal "bracketed paste, no `Enter`" contract ([ADR 0005](adr/0005-human-confirmed-paste-never-enter.md)). No Codex or Claude Code adapter ships; the specification waits for a readiness contract and an acceptance per harness.
+`klaub_core::harness` holds the `HarnessAdapter` trait, the `GenericHarness` fallback and a `HarnessRegistry` that picks an adapter by the name of the program in the agent pane. An adapter can say whether a program looks ready or busy and whether text was submitted, and the reader shows what it says in the paste confirmation. It is deliberately **not** relied on: with only the generic adapter, which knows nothing, the flow is the universal "bracketed paste, no `Enter`" contract. No Codex or Claude Code adapter ships; the specification waits for a readiness contract and an acceptance per harness.
 
 ## How a review is produced
 
