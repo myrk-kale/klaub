@@ -122,16 +122,25 @@ impl Analysis {
         scope: CodeScope,
     ) -> Option<CodeView> {
         let info = self.units.get(unit)?;
-        let entry = &self.files[info.file_index];
-        let change = &self.snapshot.files[info.file_index];
-        let symbol_change = info.change_index.map(|i| &entry.analysis.changes[i]);
+        let owner = &self.files[info.file_index];
+        let symbol_change = info.change_index.map(|i| &owner.analysis.changes[i]);
         let other = match version {
             Version::After => Version::Before,
             Version::Before => Version::After,
         };
+        // A symbol that moved between files is filed under the file it moved to, but its old code
+        // is in the file it moved from. Each version is read from the file it belongs to.
+        let file_at = |v: Version| match (v, symbol_change.and_then(|c| c.before.as_ref())) {
+            (Version::Before, Some(side)) => {
+                crate::analysis::index_for(&self.files, side).unwrap_or(info.file_index)
+            }
+            _ => info.file_index,
+        };
+        let entry = &self.files[file_at(version)];
+        let change = &self.snapshot.files[file_at(version)];
         let text_of = |v: Version| match v {
-            Version::After => change.after_text(),
-            Version::Before => change.before_text(),
+            Version::After => self.snapshot.files[file_at(v)].after_text(),
+            Version::Before => self.snapshot.files[file_at(v)].before_text(),
         };
         let exists = |v: Version| match (v, symbol_change) {
             (Version::After, Some(c)) => c.after.is_some(),

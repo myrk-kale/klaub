@@ -12,9 +12,9 @@ use klaub_core::ids::{UnitId, digest_parts};
 use klaub_core::language::Language;
 use klaub_core::path::RepoPath;
 use klaub_core::ports::CacheKey;
-use klaub_core::semantic::{FileAnalysis, SemanticSupport, SymbolChange};
+use klaub_core::semantic::{FileAnalysis, SemanticSupport, SymbolChange, SymbolRef};
 use klaub_core::snapshot::{ContentKind, FileChange, Snapshot, SnapshotRequest};
-use klaub_core::symbol::{ParsedFile, SymbolKind};
+use klaub_core::symbol::{ParsedFile, Symbol, SymbolKind};
 use klaub_core::testing::{ReportFormat, ReportSource, TestCase, TestEvidence};
 use klaub_core::timestamp::Timestamp;
 use klaub_core::{Error, Result};
@@ -31,6 +31,9 @@ use crate::Ports;
 
 /// Project files beyond this many are not indexed for the call graph.
 const MAX_PROJECT_FILES: usize = 50_000;
+
+/// Project files read and parsed together.
+const PROJECT_BATCH: usize = 512;
 /// Largest report or manifest that is read.
 const MAX_SIDE_FILE_BYTES: u64 = 16 * 1024 * 1024;
 /// Changed files whose modification time is consulted to date a test report.
@@ -118,6 +121,47 @@ impl Analysis {
     pub fn file(&self, path: &RepoPath) -> Option<&FileEntry> {
         self.files.iter().find(|f| &f.analysis.path == path)
     }
+
+    /// The changed file a symbol reference points into.
+    ///
+    /// A symbol that was moved to another file has its "before" side in a different file from the
+    /// one the change is filed under, so the reference names the file: its path, or, for a file
+    /// that was renamed, the path it had before.
+    pub fn entry_of_ref(&self, side: &SymbolRef) -> Option<&FileEntry> {
+        entry_for(&self.files, side)
+    }
+}
+
+/// Position in `files` of the file a symbol reference points into.
+pub(crate) fn index_for(files: &[FileEntry], side: &SymbolRef) -> Option<usize> {
+    files
+        .iter()
+        .position(|f| f.analysis.path == side.file)
+        .or_else(|| {
+            files
+                .iter()
+                .position(|f| f.analysis.old_path.as_ref() == Some(&side.file))
+        })
+}
+
+fn entry_for<'a>(files: &'a [FileEntry], side: &SymbolRef) -> Option<&'a FileEntry> {
+    index_for(files, side).map(|i| &files[i])
+}
+
+/// The parsed symbol a reference names, looked up in the file the reference points into and not in
+/// the file the change is filed under.
+pub(crate) fn symbol_of_ref<'a>(
+    files: &'a [FileEntry],
+    side: &SymbolRef,
+    after: bool,
+) -> Option<&'a Symbol> {
+    let entry = entry_for(files, side)?;
+    let parsed = if after {
+        entry.analysis.after.as_ref()
+    } else {
+        entry.analysis.before.as_ref()
+    }?;
+    parsed.symbols.get(side.index)
 }
 
 /// Runs `f` over `items` on a few threads, keeping the order.
@@ -356,18 +400,22 @@ pub fn analyze(ports: &Ports, request: &SnapshotRequest, config: &Config) -> Res
     if omitted > 0 {
         notes.push(format!("{omitted} project file(s) were not indexed for the call graph (limit {MAX_PROJECT_FILES}); impact may be incomplete"));
     }
-    let indexed = par_map(
-        &candidates[..candidates.len().min(MAX_PROJECT_FILES)],
-        |(path, language)| {
-            let text = ports
-                .snapshots
-                .read_project_file(&snapshot, path)
-                .ok()
-                .flatten()?;
-            let parsed = parsing.parse(*language, &text).ok()?;
-            Some((path.clone(), parsed))
-        },
-    );
+    // Files are read a batch at a time, so a project kept in Git objects costs a few `git`
+    // processes instead of one per file, and only a batch of texts is in memory at once.
+    let mut indexed: Vec<Option<(RepoPath, Arc<ParsedFile>)>> = Vec::new();
+    for batch in candidates[..candidates.len().min(MAX_PROJECT_FILES)].chunks(PROJECT_BATCH) {
+        let paths: Vec<RepoPath> = batch.iter().map(|(path, _)| path.clone()).collect();
+        let texts = ports.snapshots.read_project_files(&snapshot, &paths);
+        let work: Vec<(&RepoPath, Language, Option<Arc<str>>)> = batch
+            .iter()
+            .zip(texts)
+            .map(|((path, language), text)| (path, *language, text))
+            .collect();
+        indexed.extend(par_map(&work, |(path, language, text)| {
+            let parsed = parsing.parse(*language, text.as_ref()?).ok()?;
+            Some(((*path).clone(), parsed))
+        }));
+    }
     parsed.extend(indexed.into_iter().flatten());
 
     let manifests: Vec<ManifestText> = project_files
@@ -487,14 +535,15 @@ pub fn analyze(ports: &Ports, request: &SnapshotRequest, config: &Config) -> Res
         let supported = matches!(entry.analysis.support, SemanticSupport::Full);
         if supported {
             for change in &entry.analysis.changes {
+                // A symbol moved from another file has its old side in that file's parse.
                 let before_sym = change
                     .before
                     .as_ref()
-                    .and_then(|r| entry.analysis.before.as_ref().map(|p| &p.symbols[r.index]));
+                    .and_then(|r| symbol_of_ref(&files, r, false));
                 let after_sym = change
                     .after
                     .as_ref()
-                    .and_then(|r| entry.analysis.after.as_ref().map(|p| &p.symbols[r.index]));
+                    .and_then(|r| symbol_of_ref(&files, r, true));
                 symbol_inputs.push(SymbolInput {
                     file: ctx,
                     change,

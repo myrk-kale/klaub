@@ -45,6 +45,19 @@ pub trait SnapshotProvider: Send + Sync {
     /// Reads a project file on the "after" side; `None` for binary, oversized or missing files.
     fn read_project_file(&self, snapshot: &Snapshot, path: &RepoPath) -> Result<Option<Arc<str>>>;
 
+    /// Reads many project files at once, one answer per path in the same order. A file that cannot
+    /// be read answers `None`, exactly as [`read_project_file`](Self::read_project_file) would for
+    /// a missing one.
+    ///
+    /// The default asks one file at a time. An adapter whose reads are costly one by one (a
+    /// process per file, say) should override it with a single batched read.
+    fn read_project_files(&self, snapshot: &Snapshot, paths: &[RepoPath]) -> Vec<Option<Arc<str>>> {
+        paths
+            .iter()
+            .map(|path| self.read_project_file(snapshot, path).ok().flatten())
+            .collect()
+    }
+
     /// Cheaply checks whether the worktree still matches the snapshot.
     fn probe(&self, snapshot: &Snapshot, request: &SnapshotRequest) -> Result<Drift>;
 }

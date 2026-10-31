@@ -816,3 +816,80 @@ fn ids_and_paths_in_the_queue_are_stable_between_runs() {
     let provider = GitSnapshotProvider::new(Arc::new(FixedClock::default()));
     assert!(provider.discover(repo.path()).is_ok());
 }
+
+// ---- a symbol that moves to another file -------------------------------------------------------
+
+/// `compute` leaves `old.py` and appears, unchanged, in `new.py`.
+fn moved_between_files() -> TempRepo {
+    let repo = TempRepo::new();
+    let body = "def compute(a, b):\n    total = a + b\n    return total * 2\n";
+    repo.write("old.py", &format!("{body}\n\ndef keep(x):\n    return x\n"));
+    repo.write("new.py", "def other():\n    return 0\n");
+    repo.commit_all("initial");
+    repo.write("old.py", "def keep(x):\n    return x\n");
+    repo.write("new.py", &format!("def other():\n    return 0\n\n\n{body}"));
+    repo
+}
+
+fn moved_unit(session: &ReviewSession) -> UnitId {
+    session
+        .analysis()
+        .queue
+        .iter()
+        .find(|item| {
+            session
+                .analysis()
+                .change_of(&item.unit.id)
+                .is_some_and(|c| c.kind == klaub_core::semantic::ChangeKind::Moved)
+        })
+        .map(|item| item.unit.id.clone())
+        .expect("the move is a unit of the queue")
+}
+
+#[test]
+fn a_symbol_moved_to_another_file_opens_without_reading_the_wrong_parse() {
+    let repo = moved_between_files();
+    let session = open(&repo, &Config::default(), &OpenOptions::default());
+    let unit = moved_unit(&session);
+    let change = session.analysis().change_of(&unit).unwrap();
+    assert_eq!(change.before.as_ref().unwrap().file.as_str(), "old.py");
+    assert_eq!(change.after.as_ref().unwrap().file.as_str(), "new.py");
+}
+
+#[test]
+fn the_contract_of_a_moved_symbol_has_both_sides_from_their_own_files() {
+    let repo = moved_between_files();
+    let session = open(&repo, &Config::default(), &OpenOptions::default());
+    let unit = moved_unit(&session);
+    let contract = session.contract(&unit).expect("a contract");
+    let before = contract.before_signature.as_deref().unwrap_or_default();
+    let after = contract.after_signature.as_deref().unwrap_or_default();
+    assert!(before.contains("def compute(a, b)"), "{before}");
+    assert!(after.contains("def compute(a, b)"), "{after}");
+}
+
+#[test]
+fn the_old_code_of_a_moved_symbol_is_read_from_the_file_it_left() {
+    let repo = moved_between_files();
+    let session = open(&repo, &Config::default(), &OpenOptions::default());
+    let unit = moved_unit(&session);
+    let parser = TreeSitterParser::new();
+
+    let before = session
+        .analysis()
+        .code_view(&parser, &unit, Version::Before, CodeScope::Symbol)
+        .unwrap();
+    assert_eq!(before.path.as_str(), "old.py");
+    let shown: Vec<_> = before.lines.iter().map(|l| l.text.as_str()).collect();
+    assert!(
+        shown.iter().any(|l| l.contains("total = a + b")),
+        "the old body is shown: {shown:?}"
+    );
+
+    let after = session
+        .analysis()
+        .code_view(&parser, &unit, Version::After, CodeScope::Symbol)
+        .unwrap();
+    assert_eq!(after.path.as_str(), "new.py");
+    assert!(after.lines.iter().any(|l| l.text.contains("total = a + b")));
+}

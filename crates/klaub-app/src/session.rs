@@ -24,7 +24,6 @@ use klaub_core::review::{
 };
 use klaub_core::semantic::{Confidence, SymbolRef};
 use klaub_core::snapshot::{Drift, SnapshotRequest};
-use klaub_core::symbol::Symbol;
 use klaub_core::testing::{CoverageEntry, EvidenceStatus, ReportSource, TestLink, TestResult};
 use klaub_core::text::{sanitize_terminal_text, truncate_chars};
 use klaub_core::timestamp::Timestamp;
@@ -668,9 +667,15 @@ impl ReviewSession {
     /// compare, and neither does an id the queue does not contain.
     pub fn contract(&self, unit: &UnitId) -> Option<ContractDelta> {
         let change = self.analysis.change_of(unit)?;
-        let entry = self.analysis.file_of(unit)?;
-        let before = Self::symbol_of(entry.analysis.before.as_deref(), change.before.as_ref());
-        let after = Self::symbol_of(entry.analysis.after.as_deref(), change.after.as_ref());
+        // A symbol that moved between files has its old side in the other file's parse.
+        let before = change
+            .before
+            .as_ref()
+            .and_then(|r| crate::analysis::symbol_of_ref(&self.analysis.files, r, false));
+        let after = change
+            .after
+            .as_ref()
+            .and_then(|r| crate::analysis::symbol_of_ref(&self.analysis.files, r, true));
         let impact = change
             .after
             .as_ref()
@@ -683,15 +688,6 @@ impl ReviewSession {
             after,
             impact.as_ref(),
         ))
-    }
-
-    /// The parsed symbol a change references, when the parse and the index both exist.
-    fn symbol_of<'a>(
-        parsed: Option<&'a klaub_core::symbol::ParsedFile>,
-        side: Option<&SymbolRef>,
-    ) -> Option<&'a Symbol> {
-        let side = side?;
-        parsed?.symbols.get(side.index)
     }
 
     /// The changed unit that holds `key`, when the symbol is part of the change.
