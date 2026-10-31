@@ -538,9 +538,9 @@ pub fn match_symbols(pairs: &[FilePair<'_>], thresholds: MatchThresholds) -> Vec
             .push(h);
     }
     let mut paired: HashSet<(bool, Key)> = HashSet::new();
-    for (key, befores) in &by_name_before {
+    for (key, before) in &by_name_before {
         if let (&[b], Some(&[a])) = (
-            befores.as_slice(),
+            before.as_slice(),
             by_name_after.get(key).map(Vec::as_slice),
         ) && ctx.before_path(b) != ctx.after_path(a)
         {
