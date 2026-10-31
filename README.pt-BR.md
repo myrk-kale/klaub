@@ -106,7 +106,12 @@ Outros comandos:
 | [Decisões de arquitetura](docs/adr/) | Por que as coisas são como são |
 | [Modelo de segurança](docs/security.md) | Ameaças, controles, limites explícitos |
 | [Guia de desenvolvimento](docs/development.md) | Ferramentas, convenções, como adicionar adapters |
+| [Configuração](docs/configuration.md) | Cada seção do `.klaub.toml` e como mover as teclas do leitor (em inglês) |
 | [Especificação](docs/specification.pt-BR.md) | Comportamento do produto e critérios de aceitação |
+| [Aceitação](docs/acceptance.md) | Quais checagens de aceitação o CI roda e quais precisam de uma pessoa com um agente real (em inglês) |
+| [Benchmarks](docs/benchmarks.md) | Latência frente às metas da especificação e o que os números não dizem (em inglês) |
+| [Klaub por SSH](docs/ssh.md) | O que funciona e o que a área de transferência não alcança (em inglês) |
+| [Adicionar uma linguagem](docs/adding-a-language.md) | Todos os pontos que uma nova gramática tree-sitter toca (em inglês) |
 
 ## Roadmap
 
@@ -115,8 +120,10 @@ Outros comandos:
 | Fundação | Workspace, lints, CI, arquivos de comunidade, ADRs | ✅ |
 | 0 | tmux embarcado, `wrap`, identidade de pane, bracketed paste seguro, TUI mínima ([gate](docs/phase-0-gate.md)) | ✅ implementada; checagem manual com harnesses reais pendente |
 | 1 | Snapshots Git, Python e JS/TS, matching semântico, fila, grafo reverso, comentários, brief, evidência de testes, risco incremental | ✅ implementada |
-| 2 | Regras de arquitetura, inspetor de contratos, follow-up, cobertura da revisão, `Flow` e a skill `klaub-flow` | ⏳ os motores e as views básicas existem (regras, follow-up, cobertura, validação de flow, o arquivo da skill). A fase não está fechada. |
-| 3 | Mais linguagens, skill geral de feedback, formatos de exportação, ponto de extensão para adapters de harness | ⏳ |
+| 2 | Regras de arquitetura, inspetor de contratos, follow-up, cobertura da revisão, `Flow` e a skill `klaub-flow` | ✅ implementada, incluindo contratos de migrações, manifestos e configurações, silenciar um falso positivo, árvore de fluxo dobrável com breadcrumbs, teclas configuráveis e `review --wait` |
+| 3 | Mais linguagens, skill geral de feedback, formatos de exportação, ponto de extensão para adapters de harness | ✅ Rust e Go além da lista da especificação, a skill `klaub-feedback`, exportações JSON, Markdown e SARIF, e [um guia para adicionar uma linguagem](docs/adding-a-language.md). O ponto de extensão `HarnessAdapter` continua documentado e Windows/WSL continua uma [investigação](docs/windows.md): a especificação deixa os dois fora destas versões. |
+
+Pronto nos testes não é o mesmo que pronto na sua máquina. As checagens que a especificação faz contra sessões reais do Codex CLI e do Claude Code, terminais reais e SSH estão em [docs/acceptance.md](docs/acceptance.md) como manuais, e nenhuma foi executada por um teste automatizado.
 
 ## Contribuindo
 
