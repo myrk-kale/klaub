@@ -1,8 +1,8 @@
 //! # klaub-parse
 //!
-//! The tree-sitter adapter of Klaub. It implements the
-//! [`SourceParser`](klaub_core::ports::SourceParser) port: source text in, language-agnostic
-//! [`ParsedFile`](klaub_core::symbol::ParsedFile) out (symbols with signatures, visibility,
+//! The tree-sitter adapter of Klaub. It implements the [`SourceParser`] port: source text in,
+//! language-agnostic [`ParsedFile`] out (symbols with signatures, visibility, fingerprints and
+//! structural markers; calls; imports; entrypoint hints; highlight spans).
 //! fingerprints and structural markers; calls; imports; entrypoint hints; highlight spans).
 //!
 //! Supported languages: Python, JavaScript, TypeScript (and TSX), Rust and Go. Parsing is
