@@ -1,8 +1,9 @@
 name: Security
 
 on:
+  # No path filter: both jobs are required checks on `main`, and a required check that does not run
+  # leaves a pull request that touches no manifest blocked for ever.
   pull_request:
-    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml"]
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:

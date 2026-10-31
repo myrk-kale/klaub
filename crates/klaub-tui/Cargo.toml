@@ -25,5 +25,9 @@ klaub-storage.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 
+[[bench]]
+name = "ui"
+harness = false
+
 [lints]
 workspace = true
