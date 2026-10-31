@@ -2,8 +2,7 @@
 //!
 //! The persistence adapter of Klaub. It implements the ports for everything stored on disk:
 //!
-//! - [`JsonReviewRepository`]: reviews as versioned JSON, written atomically under an advisory lock
-//!   (ADR 0006);
+//! - [`JsonReviewRepository`]: reviews as versioned JSON, written atomically under an advisory lock;
 //! - [`SqliteCache`]: a derived-data cache in the user's cache directory that is dropped and
 //!   rebuilt on any problem;
 //! - [`FsFlowRepository`]: flow documents, read with size limits and without following links;

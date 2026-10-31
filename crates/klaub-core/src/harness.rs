@@ -5,10 +5,9 @@
 //! is the only thing the reader relies on.
 //!
 //! A [`HarnessAdapter`] is where something specific to one program could plug in later: telling
-//! from the screen whether the program is waiting for input, and whether text was submitted. The
-//! specification (§14.4, §23) keeps real adapters out of these versions until each harness has its
-//! own readiness contract and its own acceptance, so this crate ships only [`GenericHarness`], which
-//! knows nothing and says so. The reader asks the registry for the adapter of the program it is
+//! from the screen whether the program is waiting for input, and whether text was submitted. A
+//! real adapter needs its own readiness contract and its own tests against that program, so this
+//! crate ships only [`GenericHarness`], which knows nothing and says so. The reader asks the registry for the adapter of the program it is
 //! about to paste into, shows its name in the confirmation, and treats "unknown" as "unknown", never
 //! as "ready".
 

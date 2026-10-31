@@ -22,6 +22,12 @@ updates:
       actions:
         patterns: ["*"]
     ignore:
+      # TODO: replace this ignore with a definitive fix. The MSRV job pins its Rust version through
+      # the ref of dtolnay/rust-toolchain (`@1.90.0`), so Dependabot reads it as an action version
+      # and proposes bumps that would stop the job from proving the minimum. Install the MSRV from
+      # `rust-version` in Cargo.toml inside the job instead (for example `rustup toolchain install
+      # "$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].rust_version')"`), so
+      # no action ref carries it, then delete this ignore.
       # The ref of this action is the Rust version the MSRV job installs (`@1.90.0`). Bumping it
       # would make that job stop proving the minimum version. Raise the MSRV on purpose, in
       # Cargo.toml and in ci.yml together.

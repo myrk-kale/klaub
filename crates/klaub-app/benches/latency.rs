@@ -1,8 +1,8 @@
 //! Latency of the review pipeline on a generated corpus.
 //!
-//! The specification sets initial targets (§19) and says they are hypotheses to be measured, not
-//! facts. This harness measures them. It prints a table of p50, p95 and max per operation and sets
-//! the specification's target beside each one. It never fails: the numbers depend on the machine,
+//! The project sets initial latency targets as hypotheses to be measured, not facts. This harness
+//! measures them. It prints a table of p50, p95 and max per operation and sets the target beside
+//! each one. It never fails: the numbers depend on the machine,
 //! so a target that is missed is reported, not enforced.
 //!
 //! The default corpus is synthetic (Python files whose functions call the next one and a function
@@ -399,7 +399,7 @@ fn main() {
     } else {
         println!("Real repositories, one machine. Times are milliseconds.\n");
     }
-    println!("| Corpus | Operation | n | p50 | p95 | max | Specification (§19) |");
+    println!("| Corpus | Operation | n | p50 | p95 | max | Target |");
     println!("| --- | --- | --- | --- | --- | --- | --- |");
     for size in SIZES.iter().filter(|s| wanted.iter().any(|w| w == s.name)) {
         measure(size);

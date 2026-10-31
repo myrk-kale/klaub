@@ -9,7 +9,7 @@
 //!   tests, architecture) are *points with a reason*. Every point is itemised in the
 //!   [`ScoreBreakdown`], so a reviewer can disagree with it.
 //! - **Priority** orders review work. `P0` additionally requires a piece of *critical evidence*, so a
-//!   sensitive word alone can never produce it (ADR 0007).
+//!   sensitive word alone can never produce it.
 //!
 //! Nothing here approves, rejects or certifies code.
 

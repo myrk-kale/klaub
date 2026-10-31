@@ -3,7 +3,7 @@
 //! A pure domain service: given the symbols of two versions of the same files, decide which
 //! symbol is which and how it changed.
 //!
-//! Matching goes from certain to plausible (ADR 0007):
+//! Matching goes from certain to plausible:
 //!
 //! 1. **Identity.** Same kind and qualified name. The comparison then looks at the text, the
 //!    tokens, the declaration and the amount of body that survived, and yields `Modified`,

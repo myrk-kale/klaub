@@ -6,7 +6,7 @@
 //! - **Resolution.** Calls are resolved through scope, imports, `self`, classes and finally by
 //!   name. Every edge says how it was found: `Resolved` (statically unambiguous), `Heuristic`
 //!   (by name, with at most three candidates) or, when a name is too ambiguous to follow,
-//!   the call is counted as unresolved instead of guessed (ADR 0007).
+//!   the call is counted as unresolved instead of guessed.
 //! - **Entrypoints.** Parser hints (routes, `main`, exports) plus package manifests
 //!   (`pyproject.toml` scripts, `package.json` `bin`/`main`/`exports`).
 //! - **Impact.** A reverse traversal from a symbol up to the entrypoints that can reach it, the

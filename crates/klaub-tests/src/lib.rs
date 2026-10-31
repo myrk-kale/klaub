@@ -10,7 +10,7 @@
 //! - building the confirmed **run request** for the user's own test command, without a shell.
 //!
 //! Nothing runs here. Tests are project code with side effects, so running them is an explicit,
-//! previewed and confirmed action of the human (§12.7).
+//! previewed and confirmed action of the human.
 
 mod report;
 

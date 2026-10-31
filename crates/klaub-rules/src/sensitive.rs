@@ -2,7 +2,7 @@
 //!
 //! A sensitive name raises *attention*, never certainty: the keyword list is intentionally a
 //! small set of whole words, matched on identifier parts (`validateToken` has the parts
-//! `validate` and `token`), so `authority` does not match `auth` (ADR 0007).
+//! `validate` and `token`), so `authority` does not match `auth`.
 
 const SENSITIVE_WORDS: &[&str] = &[
     "auth",

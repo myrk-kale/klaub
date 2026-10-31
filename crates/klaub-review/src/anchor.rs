@@ -3,7 +3,7 @@
 //! A comment is anchored to a symbol (by qualified name and kind), to a range inside it and to the
 //! text it was written about (the excerpt). Relocation tries, in order, the same symbol in the
 //! same file, the same symbol elsewhere, a symbol with the same declaration, and the excerpt. It
-//! never moves a comment to another function merely because line numbers coincide (§13.4).
+//! never moves a comment to another function merely because line numbers coincide.
 
 use klaub_core::ids::{UnitId, digest_parts};
 use klaub_core::path::RepoPath;

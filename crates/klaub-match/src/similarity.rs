@@ -7,7 +7,7 @@ use similar::TextDiff;
 pub(crate) const MIN_FUZZY_TOKENS: usize = 6;
 
 /// Weights of the match score. They sum to 1.0 and are versioned: change them only with
-/// fixture evidence (see `docs/adr/0007-deterministic-analysis-with-explicit-confidence.md`).
+/// fixture evidence.
 pub(crate) const W_TOKENS: f32 = 0.45;
 pub(crate) const W_SHAPE: f32 = 0.25;
 pub(crate) const W_SIGNATURE: f32 = 0.10;

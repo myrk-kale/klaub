@@ -1,4 +1,4 @@
-//! Reviews as versioned JSON files (ADR 0006).
+//! Reviews as versioned JSON files.
 //!
 //! `.klaub/reviews/<review-id>.json` is the source of truth for comments. Writes are atomic and
 //! serialised by an advisory lock, so a crash or a second Klaub process cannot corrupt a file;

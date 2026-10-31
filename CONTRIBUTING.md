@@ -16,9 +16,7 @@ By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 For anything larger than a fix, open an issue or a discussion first so we can agree on the approach. Read:
 
 - [docs/architecture.md](docs/architecture.md) for the hexagonal layout and the dependency rules,
-- [docs/development.md](docs/development.md) for tooling and conventions,
-- the [ADRs](docs/adr/) for why things are the way they are,
-- the [specification](docs/specification.pt-BR.md) (Portuguese) for product behaviour.
+- [docs/development.md](docs/development.md) for tooling and conventions.
 
 ## Development workflow
 

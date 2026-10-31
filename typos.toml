@@ -1,9 +1,7 @@
 [default.extend-words]
-# Portuguese words that appear in the reference specification.
-ser = "ser"
 # Product and library names the dictionary mistakes for typos.
 Ratatui = "Ratatui"
 ratatui = "ratatui"
 
 [files]
-extend-exclude = ["README.pt-BR.md", "docs/specification.pt-BR.md", "Cargo.lock", "fixtures/**"]
+extend-exclude = ["README.pt-BR.md", "Cargo.lock", "fixtures/**"]

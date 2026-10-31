@@ -1,134 +1,306 @@
-<h1 align="center">Klaub</h1>
+# Klaub: um revisor de código para agentes de IA
+
+O Klaub é uma ferramenta gratuita e de código aberto, para o terminal, que revisa código escrito por um agente de IA. Funciona com Codex CLI, Claude Code, Aider ou qualquer programa interativo. Mostra cada mudança por função e classe em vez de por linha, ordena as mudanças por risco, mostra quem as chama e deixa você devolver comentários ao agente. Roda offline, não usa LLM e nunca aperta Enter no seu agente por você.
 
 <p align="center">
-  <strong>Um revisor semântico de código para humanos que envolve qualquer agente de programação.</strong><br>
-  Leia o código real, descubra o que merece atenção e devolva instruções precisas ao agente sem sair do terminal nem perder a sessão.
+  <a href="https://github.com/myrk-kale/klaub/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/myrk-kale/klaub/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/myrk-kale/klaub/releases/latest"><img alt="Última versão" src="https://img.shields.io/github/v/release/myrk-kale/klaub"></a>
+  <a href="LICENSE"><img alt="Licença: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Plataformas" src="https://img.shields.io/badge/platforms-linux%20%7C%20macOS-lightgrey.svg">
 </p>
 
 <p align="center">
   <a href="README.md">English</a> ·
-  <a href="docs/architecture.md">Arquitetura</a> ·
-  <a href="docs/specification.pt-BR.md">Especificação</a> ·
-  <a href="CONTRIBUTING.md">Contribuindo</a>
+  <a href="#início-rápido">Início rápido</a> ·
+  <a href="#atalhos-de-teclado">Atalhos</a> ·
+  <a href="#perguntas-frequentes">Perguntas frequentes</a> ·
+  <a href="#recursos">Documentação</a>
 </p>
 
----
-
-> **Status: em desenvolvimento ativo.** As fases 0 e 1 estão implementadas. O leitor semântico tem fila, estrutura, código com antes e depois, impacto, comentários, contexto, testes, follow-up, cobertura e flow. As fases 2 e 3 não estão prontas. A checagem manual contra uma sessão real do Codex ou do Claude Code ainda está pendente. O primeiro release com tag é o v0.1.0. Veja o [changelog](CHANGELOG.md).
-
-## Por que o Klaub
-
-Revisar o que um agente escreveu com um diff de linhas é lento: arquivos novos não têm hunks, reescritas desalinham, a visão lado a lado desperdiça largura e nada diz *qual contrato mudou* ou *quem chama isso*. O Klaub existe para esse momento.
-
-- **Semântico, não por linhas.** Navegue por módulo, arquivo, classe, função e bloco. Arquivo novo aparece inteiro; função reescrita aparece completa, `antes` e `depois` no mesmo viewport.
-- **Fila de revisão, não lista alfabética.** Prioridades P0–P3 vêm de evidências explicáveis e cada achado diz se foi *introduzido*, *preexistente*, *removido* ou *desconhecido*.
-- **Impacto navegável.** Grafo reverso de chamadas do símbolo alterado até os entrypoints, com a confiança de cada aresta (`resolved`, `heuristic`, `unresolved`).
-- **Mesmo terminal, mesma sessão.** `klaub wrap codex` (ou `claude`, ou qualquer programa interativo) roda o agente numa sessão tmux privada; um atalho alterna entre agente e revisor.
-- **Feedback no lugar certo.** Comentários são salvos num JSON versionado no repositório. O Klaub pode *preparar* uma instrução curta no input do agente. Ele nunca aperta `Enter` por você.
-- **Offline, determinístico, sem LLM.** Sem conta, sem chave de API, sem telemetria, sem rede.
-- **O humano decide.** O Klaub nunca aprova, reprova, certifica nem corrige código. Ele ajuda a responder: *o que mudou, por quê, o que pode ser afetado, que evidência existe e o que ainda não inspecionei?*
-
-## Como funciona
-
-```mermaid
-flowchart LR
-    You([Você]) --> Wrap["klaub wrap codex"]
-    Wrap --> Tmux["sessão tmux privada"]
-    Tmux --> Agent["janela: agente<br/>(Codex, Claude Code, ...)"]
-    Tmux --> Review["janela: revisão<br/>(TUI do Klaub)"]
-    Review --> Engine["snapshot Git → AST → diff semântico<br/>→ grafo de chamadas → regras → fila"]
-    Review --> File[(".klaub/reviews/*.json")]
-    File -. "Preparar no agente<br/>(cola, sem Enter)" .-> Agent
-```
-
-## Instalação
-
-O primeiro release com tag é o v0.1.0. Há binários prontos para Linux x86_64 e macOS Apple Silicon. macOS Intel não entra na matriz de release. Num Mac Intel, compile do código-fonte.
-
-### Homebrew
-
-Funciona no macOS e no Linux onde o Homebrew está instalado. A fórmula está no tap `myrk-kale/homebrew-klaub`. Não há bottle pré-compilado para macOS Intel. Essas máquinas compilam do código-fonte.
-
-```shell
-brew tap myrk-kale/klaub
-brew install klaub
-```
-
-### curl
-
-macOS e Linux. O script confere o SHA-256 do arquivo antes de instalar qualquer coisa. Suporta só Linux x86_64 e macOS Apple Silicon.
-
-`KLAUB_VERSION` escolhe a versão (`0.1.0`). `KLAUB_INSTALL_DIR` escolhe o diretório (padrão `~/.local/bin`).
-
-```shell
-curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
-```
-
-### Do código-fonte
-
-Precisa de Rust 1.90+, git e um tmux 3.2 ou mais novo no `PATH` até o release embarcar um. Aponte `KLAUB_TMUX_PATH` para esse tmux.
-
-```shell
-git clone https://github.com/myrk-kale/klaub && cd klaub
-cargo install --path crates/klaub-cli --locked
-export KLAUB_TMUX_PATH="$(command -v tmux)"
-klaub doctor
-```
+<p align="center">
+  <img src="docs/media/klaub-review.gif" alt="O Klaub revisando uma mudança no terminal: uma fila ordenada, o motivo de cada prioridade, o código antigo e o novo, a visão de contrato, os chamadores até uma rota e um comentário na linha exata" width="860">
+</p>
 
 ## Início rápido
 
+Instale o Klaub, entre num repositório Git em que um agente alterou arquivos e abra o revisor.
+
 ```shell
+brew tap myrk-kale/klaub && brew install klaub      # macOS e Linux com Homebrew
+# ou
+curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
+
 cd meu-projeto
-klaub wrap codex                 # ou: klaub wrap -- claude --model <modelo>
-# Ctrl+B, R   abre o revisor        Ctrl+B, A   volta ao agente     Ctrl+B, d   desanexa
-# Ctrl+B, I   impacto   C   comentários   T   testes   B   brief   L   flow
-klaub session list               # depois: klaub session attach
+klaub review                                        # revisa o que mudou desde o HEAD
 ```
 
-O prefixo é `Ctrl+B`, a menos que você defina `--prefix` ou `KLAUB_TMUX_PREFIX`. `Prefix+?` mostra os atalhos. `Prefix+R` e `Prefix+A` trocam de janela. `Prefix+I`, `C`, `T`, `B` e `L` abrem o revisor e mandam `F5` a `F9` para ele (impacto, comentários, testes, brief, flow).
+Para manter o agente e o revisor lado a lado, inicie o agente pelo Klaub:
 
-`klaub review` abre o leitor semântico, inclusive de dentro do wrap. A revisão do worktree é o padrão.
+```shell
+klaub wrap codex                 # ou: klaub wrap -- claude --model <modelo>
+```
 
-Outros comandos:
+O Klaub roda o agente numa sessão própria, com uma janela de revisão ao lado. Aperte `Ctrl+B` e depois `R` para abrir o revisor, `Ctrl+B` e depois `A` para voltar ao agente, e `Ctrl+B` e depois `D` para deixar a sessão rodando em segundo plano. `klaub session attach` traz a sessão de volta.
 
-- `klaub review --base REV --scope worktree|staged|unstaged|branch --brief ARQUIVO` compara contra uma revisão, um escopo ou um arquivo de brief local.
-- `klaub reviews list` lista as revisões gravadas. `show ID` imprime uma. `export ID` grava JSON ou Markdown.
-- `klaub feedback ID` imprime o feedback de uma revisão finalizada.
-- `klaub tests list --review ID` lista as associações de teste. `run --review ID` mostra o comando e pergunta antes de rodar.
-- `klaub flow status` diz se o snapshot tem um diagrama de flow. `context` imprime o contexto do snapshot em JSON. `validate ARQUIVO` confere um documento de flow. `prompt` imprime a instrução que pede um diagrama ao agente, e não envia nada.
-- `klaub skills install flow|feedback --harness codex|claude` copia uma skill empacotada para a configuração desse agente.
+A primeira revisão tem seis passos:
 
-## Documentação
+1. Abra a fila com `klaub review`. A mudança mais arriscada vem primeiro.
+2. Aperte `w` para ver por que ela tem essa prioridade.
+3. Aperte `Enter` para ler a função inteira. Aperte `v` para alternar entre a versão antiga e a nova.
+4. Aperte `i` para o contrato e `4` para os chamadores e as rotas que chegam até a mudança.
+5. Aperte `c` para comentar uma linha e `r` para marcar uma unidade como revisada.
+6. Aperte `F` para finalizar. O Klaub salva os comentários e prepara uma instrução curta para o agente.
+
+Aperte `?` a qualquer momento para ver a lista de teclas.
+
+## Por que o Klaub
+
+Um diff por linhas é uma forma ruim de ler o que um agente escreveu. Um arquivo novo não tem hunks, uma função reescrita fica desalinhada, e nada diz qual contrato público mudou nem quem depende dele. O Klaub lê o código como a linguagem lê, então a revisão segue a estrutura do código.
+
+- Você vê funções, classes e métodos, não linhas. Um arquivo novo aparece inteiro, e uma função reescrita aparece completa, com a versão antiga e a nova no mesmo lugar.
+- A fila é ordenada por evidência. Cada prioridade, de P0 a P3, vem de uma pontuação detalhada, e cada achado diz se a mudança o introduziu, se já existia ou se foi removido.
+- Você vê o impacto. O Klaub segue as chamadas para cima, da função alterada até as rotas, comandos e funções `main` que conseguem alcançá-la, e classifica cada aresta como resolvida, heurística ou não resolvida.
+- Seu feedback chega ao agente. Os comentários ficam no repositório como JSON versionado, e o Klaub pode colocar uma instrução de uma linha na entrada do agente. Quem aperta Enter é você.
+- Tudo é local. Não há conta, chave de API, telemetria nem acesso à rede. O mesmo código gera sempre a mesma revisão.
+- Você continua no comando. O Klaub nunca aprova, rejeita nem corrige código. Ele ajuda você a responder o que mudou, o que pode ser afetado, que evidências existem e o que você ainda não olhou.
+
+## O que você recebe
+
+### Uma fila de revisão ordenada por risco
+
+Cada função, classe e arquivo alterado é uma unidade da fila, ordenada de P0 a P3. Aperte `w` numa unidade para ver os pontos que a colocaram ali: um contrato alterado, um ponto de entrada que a alcança, uma área sensível como `auth`, um achado de risco, um teste que falta. Uma palavra sensível sozinha nunca produz um P0.
+
+O Klaub classifica cada símbolo como adicionado, removido, modificado, movido, renomeado, com assinatura alterada, reescrito ou só de formatação. Ele acompanha uma função que mudou de arquivo. Os achados são marcados como introduzidos, preexistentes, removidos ou desconhecidos, para você separar problemas novos de antigos.
+
+Os achados de risco que o Klaub procura são erros engolidos, consultas montadas com texto dinâmico, segredos escritos no código, I/O dentro de laços, execução dinâmica de código, execução de shell, blocos `unsafe` e verificação de certificado desligada. Ele também confere regras de arquitetura que você define, como dependências proibidas e novos ciclos de importação. Se um achado for um falso positivo, aperte `w`, depois o número do achado, e o Klaub silencia essa regra na revisão.
+
+### Código antigo e novo no mesmo lugar
+
+A versão atual ocupa a tela. Aperte `v` para trocá-la pela versão anterior no mesmo viewport, e `[` e `]` para pular entre as regiões alteradas. Aperte `o` para abrir a unidade dentro do arquivo inteiro. Num terminal que informa a soltura de teclas, `[ui] hold_to_peek` deixa você segurar `B` para ver a versão antiga e soltar para voltar.
+
+### O contrato de uma mudança
+
+Aperte `i` para ver o que um chamador notaria: parâmetros e tipo de retorno, decorators e anotações, as rotas que o símbolo atende, as exceções que ele lança ou declara, seus efeitos observáveis e os membros públicos de um tipo. Cada item aparece como linhas adicionadas e removidas. A mesma tecla funciona em migrações (SQL, Alembic, Django, Rails), manifestos de dependências e arquivos de configuração, e nunca mostra valores secretos.
+
+### Impacto que você consegue seguir
+
+Aperte `4` para ver os chamadores da função alterada, as funções que ela chama e os pontos de entrada que conseguem alcançá-la, com o caminho e a confiança de cada salto. Você pode abrir qualquer um deles e pivotar a visão nele.
+
+### Comentários e o ciclo de feedback
+
+Os comentários ficam ancorados a um símbolo e a uma versão, e acompanham o símbolo quando as linhas mudam. Se o código comentado desaparece, o comentário é marcado como obsoleto em vez de cair na função errada. Ao finalizar, o Klaub congela os comentários num arquivo de feedback e oferece preparar uma instrução de uma linha na entrada do agente, copiá-la ou mostrar o arquivo. Na rodada seguinte, os comentários anteriores voltam, e você decide para cada um se foi resolvido, parcialmente resolvido, não resolvido ou uma regressão.
+
+`klaub review --wait` deixa um agente rodar o revisor e esperar por você. Ele sai com 0 quando você finaliza a revisão e com 3 quando você fecha como rascunho, e com `--format json` imprime a revisão e mais nada.
+
+### Testes, cobertura e contexto
+
+O Klaub liga os símbolos alterados aos testes que provavelmente os exercitam e diz como sabe (uma referência, um nome, um arquivo). Ele lê relatórios JUnit e Coverage.py e avisa quando são mais antigos que a mudança. `X` roda o comando de testes configurado, depois de mostrá-lo e perguntar. Uma visão de cobertura mostra quais unidades você ainda não revisou. Você pode importar um briefing com `--brief ARQUIVO` e marcar você mesmo os critérios de aceitação.
+
+### Diagramas de fluxo
+
+Peça ao agente um diagrama da mudança com `p` na visão Flow. O agente o escreve como JSON com a skill `klaub-flow`, o Klaub o valida contra o snapshot, e você navega pelos passos até o código real. Um diagrama obsoleto, malformado ou que aponta para fora do repositório é recusado.
+
+### Exportação e automação
+
+`klaub reviews export` grava uma revisão como JSON, Markdown ou SARIF 2.1.0, para que os comentários possam ir para ferramentas de varredura de código. `klaub feedback` imprime o feedback de uma revisão finalizada. `klaub skills install` adiciona a skill `klaub-flow` ou `klaub-feedback` ao Codex ou ao Claude Code.
+
+## Linguagens suportadas
+
+| Linguagem | Extensões | O que o Klaub entende |
+| --- | --- | --- |
+| Python | `.py`, `.pyi` | Símbolos, assinaturas, decorators, chamadas, imports, rotas (estilo FastAPI e Flask), funções de teste, achados de risco |
+| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` | Símbolos, assinaturas, chamadas, imports e reexports, rotas estilo Express, achados de risco |
+| TypeScript | `.ts`, `.tsx`, `.mts`, `.cts` | O mesmo do JavaScript, mais interfaces, tipos e enums |
+| Rust | `.rs` | Funções, impls, traits, structs, enums, caminhos `use`, erros `Result`, `unsafe`, `#[test]` |
+| Go | `.go` | Funções, métodos, structs, interfaces, pacotes, retornos `error`, rotas, `main` |
+| Java | `.java` | Classes, interfaces, enums, records, métodos, anotações, `throws`, rotas Spring e JAX-RS, testes JUnit |
+
+Arquivos em outras linguagens são listados, mostrados inteiros e comparados como texto, e o Klaub avisa que não houve análise semântica neles. Adicionar uma linguagem é uma mudança documentada, passo a passo: veja [como adicionar uma linguagem](docs/adding-a-language.md).
+
+## Atalhos de teclado
+
+Todas as teclas abaixo podem ser mudadas no `.klaub.toml`, em `[keys]` ([configuração](docs/configuration.md)). Aperte `?` no leitor para ver a mesma lista, `:` ou `Ctrl+P` para a paleta de comandos e `q` duas vezes para fechar.
+
+### Modos
+
+| Tecla | Modo |
+| --- | --- |
+| `1` ou `F2` | Queue (fila) |
+| `2` ou `F3` | Structure: módulos, arquivos e símbolos |
+| `3` ou `F4` | Code (código) |
+| `4`, `g` ou `F5` | Impact: chamadores, pontos de entrada, chamados |
+| `5` ou `F6` | Comments (comentários) |
+| `6`, `b` ou `F8` | Context: briefing e critérios de aceitação |
+| `7`, `t` ou `F7` | Tests (testes) |
+| `8` ou `F10` | Follow-up: decidir sobre os comentários da rodada anterior |
+| `9` | Coverage (cobertura) |
+| `0`, `f` ou `F9` | Flow (fluxo) |
+| `Tab`, `Shift+Tab` | Próximo modo e modo anterior |
+| `Esc` | Voltar |
+
+### Mover e ler
+
+| Tecla | Ação |
+| --- | --- |
+| `j`, `k` ou setas | Mover |
+| `h`, `l` | Rolar para os lados no código |
+| `Enter` | Abrir a unidade, símbolo ou passo selecionado |
+| `v` | Alternar entre antigo e novo |
+| `B` (segurar) | Mostrar a versão anterior enquanto estiver apertada, em terminais compatíveis |
+| `[`, `]` | Região alterada anterior e próxima |
+| `o` | Abrir a unidade no arquivo inteiro |
+| `S` | Alternar entre o símbolo e o arquivo inteiro |
+| `i` | Inspecionar o contrato |
+| `<`, `>` | Voltar e avançar pelas unidades visitadas |
+| `/` | Buscar |
+| `+`, `-` | Mostrar mais ou menos na árvore de estrutura |
+
+### Revisar
+
+| Tecla | Ação |
+| --- | --- |
+| `c` | Comentar a seleção (`V` seleciona várias linhas) |
+| `w` | Por que essa prioridade, e silenciar um falso positivo |
+| `r` | Marcar como revisado ou desmarcar |
+| `m`, `,` | Marcar uma unidade, ir para o próximo marcador |
+| `n`, `P` | Próxima e anterior unidade não revisada |
+| `N` | Próxima unidade P0 ou P1 não revisada |
+| `e`, `d` | Em Comments: editar ou apagar um rascunho |
+| `y`, `p`, `u`, `X` | Em Follow-up: resolvido, parcial, não resolvido, regressão |
+| `F` | Finalizar a revisão |
+| `R` | Tirar um novo snapshot depois que o worktree mudou |
+
+### Filtros e ferramentas
+
+| Tecla | Ação |
+| --- | --- |
+| `H` | Só P0 e P1 |
+| `u` | Só não revisadas |
+| `I` | Introduzidas por esta mudança |
+| `T` | Unidades sem testes |
+| `W` | Arquivos novos |
+| `s` | Alcance mínimo: local, módulo ou global |
+| `M` | Próximo módulo |
+| `x` | Limpar filtros |
+| `X` | Rodar os testes associados (pergunta antes) |
+| `U` | Recarregar relatórios de testes |
+| `L` | Recarregar o diagrama de fluxo |
+| `p` | Em Impact: pivotar num símbolo. Em Flow: pedir um diagrama ao agente |
+
+### Ao redor do agente
+
+Funcionam depois de `klaub wrap`. Aperte o prefixo (`Ctrl+B` por padrão), solte e aperte a tecla.
+
+| Tecla | Ação |
+| --- | --- |
+| `R` | Abrir o revisor |
+| `A` | Voltar ao agente |
+| `I`, `C`, `T`, `B`, `L` | Abrir o revisor em impacto, comentários, testes, briefing ou fluxo |
+| `D` | Desanexar e deixar a sessão rodando |
+| `?` | Imprimir estes atalhos |
+
+Um modo opcional de mouse (`[ui] mouse = true`) adiciona rolagem pela roda e cliques em abas, linhas e linhas de código.
+
+## Referência de comandos
+
+| Comando | O que faz |
+| --- | --- |
+| `klaub review` | Abre o revisor. Opções: `--base REV`, `--scope worktree\|staged\|unstaged\|branch`, `--brief ARQUIVO`, `--wait`, `--format json` |
+| `klaub wrap <agente>` | Roda um agente com um revisor ao lado. `--detach` inicia em segundo plano |
+| `klaub session list\|attach\|kill` | Gerencia sessões |
+| `klaub reviews list\|show\|export` | Lista revisões salvas, imprime uma, exporta em JSON, Markdown ou SARIF |
+| `klaub feedback ID` | Imprime o feedback de uma revisão finalizada |
+| `klaub tests list\|run` | Lista associações de testes, ou roda o comando configurado depois de confirmar |
+| `klaub flow status\|context\|validate\|prompt` | Trabalha com diagramas de fluxo |
+| `klaub skills install flow\|feedback` | Instala uma skill para Codex ou Claude Code |
+| `klaub doctor` | Verifica Git, terminal, gramáticas, cache, diretórios e SSH |
+| `klaub crashes list\|show` | Lê relatórios de falha salvos nesta máquina. Nada é enviado |
+| `klaub completions SHELL` | Imprime um script de autocompletar do shell |
+
+## Perguntas frequentes
+
+### O que é o Klaub?
+
+O Klaub é um aplicativo de terminal que revisa mudanças de código por função e classe. Foi feito para ler o que agentes de IA escrevem, mas revisa qualquer mudança no Git.
+
+### Como reviso o código que o Claude Code ou o Codex escreveu?
+
+Rode `klaub wrap claude` ou `klaub wrap codex` no seu repositório, deixe o agente trabalhar e aperte `Ctrl+B` e `R`. Você também pode rodar `klaub review` em outro terminal a qualquer momento. Ao finalizar, o Klaub pode preparar seus comentários na entrada do agente para que ele os trate.
+
+### O Klaub envia meu código para algum lugar?
+
+Não. O Klaub não faz requisições de rede, não tem telemetria e não precisa de conta. Comentários e revisões são arquivos em `.klaub/` no seu repositório, e os relatórios de falha ficam na sua máquina.
+
+### O Klaub usa um LLM?
+
+Não. A análise é determinística: ele interpreta o código, casa símbolos entre versões, monta um grafo de chamadas e aplica regras fixas. A mesma mudança gera a mesma fila, e toda pontuação pode ser explicada.
+
+### O Klaub aperta Enter ou envia algo no meu agente?
+
+Nunca. Colocar texto na entrada do agente sempre mostra antes o destino e o texto exato, e envia uma linha como bracketed paste, então não pode ser lido como um envio. Você aperta o Enter.
+
+### Com quais agentes de IA ele funciona?
+
+Codex CLI, Claude Code e Aider são os alvos, e qualquer programa interativo de terminal roda pelo `klaub wrap`. Você também pode usar `klaub review` sem agente nenhum.
+
+### Quais linguagens de programação ele suporta?
+
+Python, JavaScript, TypeScript (incluindo TSX), Rust, Go e Java têm análise semântica completa. Os outros arquivos aparecem inteiros e são comparados como texto. Veja [linguagens suportadas](#linguagens-suportadas).
+
+### Como a prioridade de uma mudança é decidida?
+
+O Klaub soma pontos por evidência: um contrato público alterado, um ponto de entrada que alcança o símbolo, uma área sensível, um achado de risco, complexidade crescente, testes ausentes. Aperte `w` para ver cada termo. Os pesos ficam em `[priority]` e estão descritos na [configuração](docs/configuration.md).
+
+### Como silencio um falso positivo?
+
+Abra "Why this priority" com `w`, aperte o número do achado e confirme. A regra é silenciada naquela revisão e a fila é recalculada. "Bring back silenced rules" na paleta desfaz.
+
+### Onde ficam meus comentários?
+
+Em `.klaub/reviews/`, na raiz do repositório, como JSON versionado. O Klaub não edita o `.gitignore` e não faz commit de nada. A primeira revisão de um repositório avisa isso uma vez.
+
+### Posso mudar as teclas?
+
+Sim. Toda ação, e toda tecla que só funciona num modo, pode ser movida para outro caractere em `[keys]`. O rodapé e a ajuda mostram as teclas que você escolheu.
+
+### Como uso o Klaub no CI ou com varredura de código?
+
+Rode `klaub reviews export ID --format sarif`. Cada comentário vira um resultado num log SARIF 2.1.0, com a prioridade nas propriedades.
+
+### Funciona por SSH?
+
+Sim, como programa de terminal. A área de transferência da sua máquina fica fora de alcance numa sessão remota, então use "Show file" ou `klaub feedback` ali. O `klaub doctor` avisa quando detecta SSH. Veja [usando o Klaub por SSH](docs/ssh.md).
+
+### Roda no Windows?
+
+Ainda não. Linux e macOS (Intel e Apple Silicon) são suportados, e o Windows é uma possível extensão futura.
+
+### Qual a velocidade?
+
+Num checkout do Django com 7.000 arquivos, abrir a revisão de uma mudança de 266 arquivos leva cerca de 2 segundos na primeira vez e 1 segundo com o cache aquecido. Projetos de algumas centenas de arquivos abrem em 0,3 a 1,1 segundo. Uma tecla numa lista leva bem menos de 100 ms. Os [benchmarks](docs/benchmarks.md) trazem o método e os limites desses números.
+
+### Como desinstalo?
+
+Remova o binário (`brew uninstall klaub`, ou apague `~/.local/bin/klaub`). Se quiser, remova também as pastas `.klaub/` dos seus repositórios e os diretórios de estado e cache do Klaub, que o `klaub doctor` imprime.
+
+## Recursos
 
 | | |
 | --- | --- |
-| [Arquitetura](docs/architecture.md) | Layout hexagonal, crates, portas, fluxo de dados |
-| [Decisões de arquitetura](docs/adr/) | Por que as coisas são como são |
-| [Modelo de segurança](docs/security.md) | Ameaças, controles, limites explícitos |
-| [Guia de desenvolvimento](docs/development.md) | Ferramentas, convenções, como adicionar adapters |
-| [Configuração](docs/configuration.md) | Cada seção do `.klaub.toml` e como mover as teclas do leitor (em inglês) |
-| [Especificação](docs/specification.pt-BR.md) | Comportamento do produto e critérios de aceitação |
-| [Aceitação](docs/acceptance.md) | Quais checagens de aceitação o CI roda e quais precisam de uma pessoa com um agente real (em inglês) |
-| [Benchmarks](docs/benchmarks.md) | Latência frente às metas da especificação e o que os números não dizem (em inglês) |
-| [Klaub por SSH](docs/ssh.md) | O que funciona e o que a área de transferência não alcança (em inglês) |
-| [Adicionar uma linguagem](docs/adding-a-language.md) | Todos os pontos que uma nova gramática tree-sitter toca (em inglês) |
-
-## Roadmap
-
-| Fase | Escopo | Status |
-| --- | --- | --- |
-| Fundação | Workspace, lints, CI, arquivos de comunidade, ADRs | ✅ |
-| 0 | tmux embarcado, `wrap`, identidade de pane, bracketed paste seguro, TUI mínima ([gate](docs/phase-0-gate.md)) | ✅ implementada; checagem manual com harnesses reais pendente |
-| 1 | Snapshots Git, Python e JS/TS, matching semântico, fila, grafo reverso, comentários, brief, evidência de testes, risco incremental | ✅ implementada |
-| 2 | Regras de arquitetura, inspetor de contratos, follow-up, cobertura da revisão, `Flow` e a skill `klaub-flow` | ✅ implementada, incluindo contratos de migrações, manifestos e configurações, silenciar um falso positivo, árvore de fluxo dobrável com breadcrumbs, teclas configuráveis e `review --wait` |
-| 3 | Mais linguagens, skill geral de feedback, formatos de exportação, ponto de extensão para adapters de harness | ✅ Rust, Go e Java além da lista da especificação, a skill `klaub-feedback`, exportações JSON, Markdown e SARIF, [um guia para adicionar uma linguagem](docs/adding-a-language.md) e o [ponto de extensão `HarnessAdapter`](docs/adr/0010-harness-adapters-are-a-seam-not-a-dependency.md), com só o adapter genérico por trás. Windows/WSL continua uma [investigação](docs/windows.md): a especificação o deixa fora destas versões, e o `klaub doctor` avisa dentro do WSL. |
-
-Pronto nos testes não é o mesmo que pronto na sua máquina. As checagens que a especificação faz contra sessões reais do Codex CLI e do Claude Code, terminais reais e SSH estão em [docs/acceptance.md](docs/acceptance.md) como manuais, e nenhuma foi executada por um teste automatizado.
+| [Configuração](docs/configuration.md) | Cada seção do `.klaub.toml` e como mover teclas |
+| [Arquitetura](docs/architecture.md) | Como o Klaub é construído: crates, portas, fluxo de dados, a camada de terminal |
+| [Modelo de segurança](docs/security.md) | Ameaças, controles e limites explícitos |
+| [Usando o Klaub por SSH](docs/ssh.md) | O que funciona e o que a área de transferência não alcança |
+| [Benchmarks](docs/benchmarks.md) | Latência em repositórios sintéticos e reais |
+| [Adicionar uma linguagem](docs/adding-a-language.md) | Cada lugar que uma nova gramática toca |
+| [Guia de desenvolvimento](docs/development.md) | Compilar do código-fonte, ferramentas e convenções |
+| [Changelog](CHANGELOG.md) | O que mudou em cada versão |
+| [Releases](RELEASING.md) | Como uma versão é publicada |
 
 ## Contribuindo
 
-Contribuições são bem-vindas. Comece por [CONTRIBUTING.md](CONTRIBUTING.md) e leia o [Código de Conduta](CODE_OF_CONDUCT.md). Problemas de segurança seguem [SECURITY.md](SECURITY.md).
+Contribuições são bem-vindas. Comece por [CONTRIBUTING.md](CONTRIBUTING.md) e leia o [Código de Conduta](CODE_OF_CONDUCT.md). Relate problemas de segurança como descrito em [SECURITY.md](SECURITY.md) e faça perguntas por [SUPPORT.md](SUPPORT.md).
 
 ## Licença
 
-[MIT](LICENSE). O tmux, libevent e ncurses embarcados mantêm suas próprias licenças, distribuídas em cada release em `THIRD-PARTY-NOTICES.md`.
+[MIT](LICENSE). Os componentes de terceiros que acompanham as versões mantêm suas próprias licenças, listadas em `THIRD-PARTY-NOTICES.md` em cada arquivo de release.

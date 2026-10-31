@@ -1,6 +1,6 @@
 //! Latency of the reader itself: one key press followed by the frame it causes.
 //!
-//! This is the other half of the specification's targets (§19): list and tree navigation under
+//! This is the other half of the latency targets: list and tree navigation under
 //! 100 ms at p95 and the before/after toggle under 50 ms at p95. It drives the real `App` over a
 //! generated repository and draws into a `TestBackend` of 120×40, so what it times is state update
 //! plus layout plus widget rendering, not a terminal emulator. `klaub-app`'s `latency` bench covers
@@ -155,7 +155,7 @@ fn main() {
     println!(
         "Reader over {FILES} files, {CHANGED} changed, drawn at 120x40. Times are milliseconds.\n"
     );
-    println!("| Operation | n | p50 | p95 | max | Specification (§19) |");
+    println!("| Operation | n | p50 | p95 | max | Target |");
     println!("| --- | --- | --- | --- | --- | --- |");
 
     // The queue: move down the list.

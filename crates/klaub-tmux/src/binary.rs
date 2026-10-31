@@ -104,7 +104,7 @@ pub fn resolve(explicit: Option<&Path>, bin_dir: &Path) -> Result<ResolvedTmux> 
     }
     Err(Error::Tmux(
         "this build of klaub does not embed tmux; pass --tmux-path <path> or set KLAUB_TMUX_PATH \
-         (release builds embed a verified tmux, see docs/adr/0004-embedded-verified-tmux.md)"
+         (release builds embed a verified tmux)"
             .to_owned(),
     ))
 }

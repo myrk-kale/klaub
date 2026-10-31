@@ -2,7 +2,7 @@
 
 /// The text `Prepare in agent` pastes. It points at the review file, which is the source of truth.
 ///
-/// It is **one line** on purpose (ADR 0009) and says that comments are notes to read, not
+/// It is **one line** on purpose and says that comments are notes to read, not
 /// commands to run, because their text is untrusted from the agent's point of view as well.
 pub fn feedback_prompt(comment_count: usize, comments_file: &str) -> String {
     let noun = if comment_count == 1 {

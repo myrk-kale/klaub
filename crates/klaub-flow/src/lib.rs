@@ -2,7 +2,7 @@
 //!
 //! A pure domain service for flow documents written by an agent through the `klaub-flow` skill.
 //!
-//! The document is **untrusted** (§11.6, §20): it is parsed with a strict schema and bounded sizes,
+//! The document is **untrusted**: it is parsed with a strict schema and bounded sizes,
 //! rejected when it contains terminal sequences, links outside the worktree or references to files
 //! that are not part of the project, and judged `current`, `stale`, `invalid` or `missing` against
 //! the snapshot under review. What the author claims is a *hypothesis of navigation*: where the

@@ -628,7 +628,7 @@ missing_prompt = "confirm"
 "#;
 
     #[test]
-    fn the_specification_example_parses() {
+    fn the_documented_example_parses() {
         let config = Config::parse("spec", SPEC_EXAMPLE).unwrap();
         config.validate().unwrap();
         assert_eq!(
