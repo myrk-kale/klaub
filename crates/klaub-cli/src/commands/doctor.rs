@@ -52,6 +52,7 @@ pub(super) fn run(tmux_path: Option<PathBuf>, format: Format) -> Result<ExitCode
             checks.push(tmux_check(&ctx));
             checks.push(terminal_check());
             checks.extend(ssh_check());
+            checks.extend(wsl_check());
             checks.push(clipboard_check());
             checks.push(grammars_check());
             checks.extend(directory_checks(&ctx));
@@ -162,6 +163,49 @@ fn ssh_check() -> Option<Check> {
              not of your machine, so use Show file (or `klaub feedback`) to read it",
         )
     })
+}
+
+/// WSL runs the Linux build, but the specification keeps it out of the supported targets and
+/// `docs/windows.md` lists what is unproven. The check says so instead of staying silent, and
+/// warns about the one thing that is known to hurt: a repository on the Windows file system.
+fn wsl_check() -> Option<Check> {
+    let release = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
+    let distro = std::env::var("WSL_DISTRO_NAME").ok();
+    if !is_wsl(&release, distro.as_deref()) {
+        return None;
+    }
+    let mut detail = String::from(
+        "this is WSL: not a supported target. Klaub runs the Linux build here, but the terminal \
+         and the tmux server are on different sides of the VM, so pane identity and paste are \
+         unproven (docs/windows.md)",
+    );
+    if std::env::current_dir().is_ok_and(|dir| on_windows_mount(&dir)) {
+        detail.push_str(
+            ". The current directory is on the Windows file system (/mnt/<drive>): git is slow \
+             there and paths differ from the Linux side; keep the repository inside the Linux \
+             file system",
+        );
+    }
+    Some(check("wsl", Status::Warn, detail))
+}
+
+/// Whether a kernel release string or a distro name says this is WSL.
+fn is_wsl(osrelease: &str, distro: Option<&str>) -> bool {
+    let release = osrelease.to_ascii_lowercase();
+    distro.is_some_and(|name| !name.is_empty())
+        || release.contains("microsoft")
+        || release.contains("wsl")
+}
+
+/// Whether `dir` is under a Windows drive mounted at `/mnt/<letter>`.
+fn on_windows_mount(dir: &Path) -> bool {
+    let mut parts = dir.components().filter_map(|c| c.as_os_str().to_str());
+    // The root component prints as "/".
+    parts.next();
+    matches!(
+        (parts.next(), parts.next()),
+        (Some("mnt"), Some(drive)) if drive.len() == 1 && drive.chars().all(|c| c.is_ascii_alphabetic())
+    )
 }
 
 /// Which program `Copy feedback` would use.
@@ -308,5 +352,28 @@ fn sessions_check(ctx: &Context) -> Check {
             )
         }
         Err(error) => check("sessions", Status::Warn, error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wsl_is_recognised_by_the_kernel_or_the_distro_name() {
+        assert!(is_wsl("5.15.153.1-microsoft-standard-WSL2", None));
+        assert!(is_wsl("6.6.0", Some("Ubuntu")));
+        assert!(!is_wsl("6.8.0-45-generic", None));
+        assert!(!is_wsl("", Some("")));
+        assert!(!is_wsl("24.1.0", None), "a macOS kernel is not WSL");
+    }
+
+    #[test]
+    fn only_a_mounted_windows_drive_counts_as_the_windows_file_system() {
+        assert!(on_windows_mount(Path::new("/mnt/c/Users/me/project")));
+        assert!(on_windows_mount(Path::new("/mnt/d")));
+        assert!(!on_windows_mount(Path::new("/mnt/data/project")));
+        assert!(!on_windows_mount(Path::new("/home/me/mnt/c")));
+        assert!(!on_windows_mount(Path::new("/mnt")));
     }
 }

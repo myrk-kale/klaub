@@ -117,6 +117,17 @@ log "building ncurses ${NCURSES_VERSION}"
   make install.libs install.includes >/dev/null
 )
 
+# macOS allocator: jemalloc, which tmux asks for there because the system calloc has been seen
+# not to zero memory, or the system allocator. On x86_64 macOS a tmux built with jemalloc 5.4 dies
+# with a segmentation fault in the forked child before it can exec the pane's command, with or
+# without jemalloc's zone allocator (observed on the macos-15-intel runner; the same source works
+# on Apple Silicon). That target therefore uses the system allocator. KLAUB_TMUX_MALLOC (jemalloc,
+# jemalloc-nozone or system) overrides the choice for experiments.
+case "${target}" in
+  x86_64-apple-darwin) default_malloc=system ;;
+  *) default_malloc=jemalloc ;;
+esac
+malloc_choice="${KLAUB_TMUX_MALLOC:-${default_malloc}}"
 tmux_flags=(--disable-utf8proc)
 if [ "$(uname -s)" = Darwin ]; then
   fetch "${UTF8PROC_URL}" "${UTF8PROC_SHA256}" "${work}/utf8proc.tar.gz"
@@ -134,14 +145,22 @@ if [ "$(uname -s)" = Darwin ]; then
     rm -f "${prefix}"/lib/libutf8proc*.dylib
   )
 
-  log "building jemalloc ${JEMALLOC_VERSION}"
-  (
-    cd "${work}/src/jemalloc"
-    ./configure --prefix="${prefix}" --disable-shared --enable-static >/dev/null
-    make -j"${jobs}" build_lib_static >/dev/null
-    make install_lib_static install_include >/dev/null
-  )
-  tmux_flags=(--enable-utf8proc --enable-jemalloc)
+  if [ "${malloc_choice}" = system ]; then
+    tmux_flags=(--enable-utf8proc --disable-jemalloc)
+  else
+    jemalloc_flags=(--disable-shared --enable-static)
+    if [ "${malloc_choice}" = jemalloc-nozone ]; then
+      jemalloc_flags+=(--disable-zone-allocator)
+    fi
+    log "building jemalloc ${JEMALLOC_VERSION} (${malloc_choice})"
+    (
+      cd "${work}/src/jemalloc"
+      ./configure --prefix="${prefix}" "${jemalloc_flags[@]}" >/dev/null
+      make -j"${jobs}" build_lib_static >/dev/null
+      make install_lib_static install_include >/dev/null
+    )
+    tmux_flags=(--enable-utf8proc --enable-jemalloc)
+  fi
 fi
 
 log "building tmux ${TMUX_VERSION}"

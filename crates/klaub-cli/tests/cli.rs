@@ -450,6 +450,31 @@ fn check_named<'a>(checks: &'a [Value], name: &str) -> Option<&'a Value> {
 }
 
 #[test]
+fn doctor_says_when_it_runs_under_wsl() {
+    let sandbox = Sandbox::new();
+    let checks = doctor_checks(&sandbox, |command| {
+        command.env("WSL_DISTRO_NAME", "Ubuntu");
+    });
+    let wsl = check_named(&checks, "wsl").expect("a wsl check");
+    assert_eq!(wsl["status"], "warn", "{wsl}");
+    assert!(
+        wsl["detail"]
+            .as_str()
+            .unwrap()
+            .contains("not a supported target")
+    );
+
+    let plain = doctor_checks(&sandbox, |command| {
+        command.env_remove("WSL_DISTRO_NAME");
+    });
+    let on_wsl_kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .is_ok_and(|release| release.to_ascii_lowercase().contains("microsoft"));
+    if !on_wsl_kernel {
+        assert!(check_named(&plain, "wsl").is_none(), "{plain:?}");
+    }
+}
+
+#[test]
 fn doctor_proves_every_grammar_parses() {
     let sandbox = Sandbox::new();
     let checks = doctor_checks(&sandbox, |_| {});

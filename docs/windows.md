@@ -14,6 +14,10 @@ WSL2 can run the Linux binary, including its embedded tmux. That does not make t
 
 The two sides do not share a path space. A repository checked out on the Windows side is visible to WSL2 under `/mnt`, with different path spelling, and the home directory that holds Klaub's state is the Linux one, not the Windows one. Anything that stores or compares paths, or that looks for configuration under the home directory, would have to say which side it means.
 
+## What `klaub doctor` does about it
+
+Under WSL, `klaub doctor` prints a `wsl` warning that this is not a supported target, and a second sentence when the current directory is on the Windows file system (`/mnt/<drive>`), where git is slow and paths differ from the Linux side. It detects WSL from the kernel release or `WSL_DISTRO_NAME`. That is all it does: it reports the situation and claims nothing about it.
+
 ## Before support could be claimed
 
 All of the following would have to be true, and shown:
