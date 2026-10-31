@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-31
+
 ### Added
 
 - **`cargo install klaub`.** Every crate of the workspace is published to crates.io when a release is tagged, through Trusted Publishing, and the binary package is now called `klaub`. A build without the bundled tmux uses the one on `PATH` and says so in `klaub doctor`. CI packages the whole workspace on every pull request.
