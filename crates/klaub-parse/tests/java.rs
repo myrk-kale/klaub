@@ -47,7 +47,7 @@ import static com.shop.util.Strings.slug;
 /** A cart. */
 @Service
 public class Cart extends Base implements Priced {
-    private static final String API_KEY = "fake-key-7f3a9c2e81b64d05";
+    private static final String API_KEY = "h7Q2m9Zc41xPw8Lr";
     private final Database db;
 
     public Cart(Database db) {
