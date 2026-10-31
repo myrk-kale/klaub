@@ -29,5 +29,9 @@ klaub-parse.workspace = true
 klaub-storage.workspace = true
 tempfile.workspace = true
 
+[[bench]]
+name = "latency"
+harness = false
+
 [lints]
 workspace = true
