@@ -21,6 +21,7 @@ use crate::actions::ENTRIES;
 use crate::app::{
     App, Confirm, DELIVERY_OPTIONS, Editor, EditorPurpose, FinishStage, Mode, Overlay, StatusKind,
 };
+use crate::keymap::Keymap;
 use crate::theme::Theme;
 use crate::update::palette_matches;
 use crate::views::{draw_mode, explain_lines};
@@ -165,7 +166,7 @@ fn draw_status(frame: &mut Frame<'_>, area: Rect, app: &App, theme: Theme) {
     let (text, style) = match &app.status {
         Some((text, kind)) => (clean(text), status_style(*kind, theme)),
         None if app.session.analysis().config.ui.show_hints => (
-            hint_for(app.mode, app.filters.any()).to_owned(),
+            hint_for(app.mode, app.filters.any(), &app.keymap),
             theme.dim(),
         ),
         None => (String::new(), theme.dim()),
@@ -184,30 +185,87 @@ fn status_style(kind: StatusKind, theme: Theme) -> Style {
     }
 }
 
-/// The keys worth knowing in the current mode. Shown only while no status message is pending.
-fn hint_for(mode: Mode, filtered: bool) -> &'static str {
-    let filter = if filtered { " · x clear filters" } else { "" };
+/// The keys worth knowing in the current mode, written with the keys the reader is really using.
+/// Shown only while no status message is pending.
+fn hint_for(mode: Mode, filtered: bool, keys: &Keymap) -> String {
+    let k = |id: &str| keys.key_for(id);
+    let moves = format!("{}/{}", k("down"), k("up"));
     match mode {
         Mode::Queue => {
-            if filter.is_empty() {
-                " j/k move · Enter open · c comment · r reviewed · w why · / search · ? help · q q quit"
+            let end = if filtered {
+                format!("{} clear filters", k("clear_filters"))
             } else {
-                " j/k move · Enter open · c comment · r reviewed · w why · / search · x clear filters"
-            }
+                format!("{} help · q q quit", k("help"))
+            };
+            format!(
+                " {moves} move · Enter open · {} comment · {} reviewed · {} why · {} search · {end}",
+                k("comment"),
+                k("toggle_reviewed"),
+                k("explain"),
+                k("search"),
+            )
         }
-        Mode::Structure => " j/k move · Enter open · +/- depth · c comment · r reviewed · ? help",
-        Mode::Code => {
-            " j/k move · i contract · o file · v old/new · [ ] change · c comment · V select · < > back/forward"
-        }
-        Mode::Impact => " j/k move · Enter open the symbol · g back to the queue · ? help",
-        Mode::Comments => " j/k move · Enter open the code · e edit · d delete a draft · ? help",
-        Mode::Context => " j/k scroll · i set intent · a add criterion · ? help",
-        Mode::Tests => " j/k move · X run (asks first) · U reload reports · ? help",
-        Mode::Followup => {
-            " j/k move · y resolved · p partial · u not resolved · X regression · ? help"
-        }
-        Mode::Coverage => " j/k move · Enter open a pending unit · ? help",
-        Mode::Flow => " j/k scroll · p ask the agent for a diagram · L reload · ? help",
+        Mode::Structure => format!(
+            " {moves} move · Enter open · {}/{} depth · {} comment · {} reviewed · {} help",
+            k("deeper_tree"),
+            k("shallower_tree"),
+            k("comment"),
+            k("toggle_reviewed"),
+            k("help"),
+        ),
+        Mode::Code => format!(
+            " {moves} move · {} contract · {} file · {} old/new · {} {} change · {} comment · {} select · {} {} back/forward",
+            k("inspect_contract"),
+            k("open_file"),
+            k("toggle_version"),
+            k("previous_change"),
+            k("next_change"),
+            k("comment"),
+            k("select_lines"),
+            k("history_back"),
+            k("history_forward"),
+        ),
+        Mode::Impact => format!(
+            " {moves} move · Enter open the symbol · {} back to the queue · {} help",
+            k("impact"),
+            k("help"),
+        ),
+        Mode::Comments => format!(
+            " {moves} move · Enter open the code · {} edit · {} delete a draft · {} help",
+            k("edit_comment"),
+            k("delete_comment"),
+            k("help"),
+        ),
+        Mode::Context => format!(
+            " {moves} scroll · {} set intent · {} add criterion · {} help",
+            k("edit_intent"),
+            k("add_criterion"),
+            k("help"),
+        ),
+        Mode::Tests => format!(
+            " {moves} move · {} run (asks first) · {} reload reports · {} help",
+            k("run_tests"),
+            k("reload_reports"),
+            k("help"),
+        ),
+        Mode::Followup => format!(
+            " {moves} move · {} resolved · {} partial · {} not resolved · {} regression · {} help",
+            k("decide_resolved"),
+            k("decide_partial"),
+            k("decide_unresolved"),
+            k("decide_regression"),
+            k("help"),
+        ),
+        Mode::Coverage => format!(
+            " {moves} move · Enter open a pending unit · {} help",
+            k("help")
+        ),
+        Mode::Flow => format!(
+            " {moves} scroll · {} ask the agent for a diagram · {} reload · {} help",
+            k("request_flow"),
+            k("reload_flow"),
+            k("help"),
+        ),
     }
 }
 

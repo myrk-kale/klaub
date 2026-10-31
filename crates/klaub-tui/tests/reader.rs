@@ -20,7 +20,7 @@ use klaub_parse::TreeSitterParser;
 use klaub_storage::{
     FsConfigSource, FsFileReader, FsFlowRepository, JsonReviewRepository, SqliteCache,
 };
-use klaub_tui::{App, Overlay, draw, handle_key};
+use klaub_tui::{App, Mode, Overlay, draw, handle_key};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -553,6 +553,45 @@ fn the_help_lists_the_configured_key() {
         row.trim_start().starts_with("e "),
         "the help row for reviewed units shows the new key: {row:?}"
     );
+}
+
+#[test]
+fn a_moved_movement_key_moves_the_cursor_and_releases_the_old_one() {
+    let repo = changed_repo();
+    let mut app = reader_with_keys(&repo, &[("down", "z"), ("up", "Z")]);
+    press(&mut app, '3');
+    assert_eq!(app.mode, Mode::Code);
+    let start = app.code.cursor;
+
+    press(&mut app, 'j');
+    assert_eq!(app.code.cursor, start, "the old key no longer moves");
+    press(&mut app, 'z');
+    assert_eq!(app.code.cursor, start + 1);
+    press(&mut app, 'Z');
+    assert_eq!(app.code.cursor, start);
+}
+
+#[test]
+fn the_footer_names_the_moved_movement_key() {
+    let repo = changed_repo();
+    let mut app = reader_with_keys(&repo, &[("down", "z"), ("comment", "e")]);
+    let text = screen(&mut app, 140, 30);
+    assert!(text.contains("z/k move"), "{text}");
+    assert!(text.contains("e comment"), "{text}");
+    assert!(!text.contains("j/k"), "{text}");
+}
+
+#[test]
+fn a_moved_follow_up_decision_key_does_not_leave_the_old_one_acting() {
+    let repo = changed_repo();
+    let mut app = reader_with_keys(&repo, &[("decide_resolved", "z")]);
+    // The decision keys only act on a comment of the previous round; without one they do nothing,
+    // so the check here is that the old key does not fall through to another action.
+    app.go(Mode::Followup);
+    press(&mut app, 'y');
+    assert!(app.overlay.is_none());
+    press(&mut app, 'z');
+    assert!(app.overlay.is_none(), "there is no comment to decide on");
 }
 
 #[test]

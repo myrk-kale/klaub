@@ -43,7 +43,31 @@ The ids are:
 
 `queue`, `structure`, `code`, `impact`, `comments`, `context`, `tests`, `followup`, `coverage`, `flow`, `next_unreviewed`, `previous_unreviewed`, `next_critical`, `toggle_reviewed`, `toggle_bookmark`, `next_bookmark`, `comment`, `explain`, `toggle_version`, `next_change`, `previous_change`, `toggle_code_scope`, `search`, `filter_high`, `filter_unreviewed`, `filter_introduced`, `filter_no_tests`, `filter_new`, `cycle_scope`, `cycle_module`, `clear_filters`, `history_back`, `history_forward`, `deeper_tree`, `shallower_tree`, `run_tests`, `reload_reports`, `reload_flow`, `refresh`, `finish`, `help`.
 
-Some keys are deliberately not rebindable, because a terminal cannot be assumed to deliver anything else reliably: the arrow, page and function keys, `Esc`, `Enter`, `Tab`, the palette (`:`), quitting (`q`), movement (`j`, `k`, `h`, `l`) and the keys that mean something only inside one mode (the follow-up decisions, the contract inspector and the whole-file key, the flow request, line selection). A binding on one of those is refused. So is a value that is not exactly one printable character, an id that does not exist, and two actions on one character. The reader will not open with an invalid `[keys]` table; it says which entry is wrong.
+The keys that only mean something inside some modes move the same way. A moved key answers to its new character in the modes it works in, and its old character stops acting there:
+
+| Id | Default | Works in |
+| --- | --- | --- |
+| `down`, `up` | `j`, `k` | every list, scrolling view and the delivery list |
+| `scroll_left`, `scroll_right` | `h`, `l` | Code |
+| `select_lines` | `V` | Code |
+| `open_file` | `o` | Code |
+| `inspect_contract` | `i` | Code |
+| `pivot_impact` | `p` | Impact |
+| `request_flow` | `p` | Flow |
+| `edit_intent`, `add_criterion` | `i`, `a` | Context |
+| `edit_comment`, `delete_comment` | `e`, `d` | Comments |
+| `decide_resolved`, `decide_partial`, `decide_unresolved`, `decide_regression` | `y`, `p`, `u`, `X` | Follow-up |
+
+```toml
+[keys]
+down = "z"
+up = "Z"
+decide_resolved = "Y"
+```
+
+A mode-specific key may take a letter that another mode uses, but not one that is live in the same mode, and not one a global action already has. The footer and the help show the keys in use.
+
+Some keys are deliberately not rebindable, because a terminal cannot be assumed to deliver anything else reliably: the arrow, page and function keys, `Esc`, `Enter`, `Tab`, the palette (`:`), quitting (`q`), `Space` and the confirmation keys (`y`/`n` inside a question). A binding on one of those is refused. So is a value that is not exactly one printable character, an id that does not exist, and two keys that would be live on one character. The reader will not open with an invalid `[keys]` table; it says which entry is wrong.
 
 ## `[analysis]`
 
