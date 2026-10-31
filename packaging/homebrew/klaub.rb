@@ -3,33 +3,33 @@
 # This file is meant to live in the tap repository myrk-kale/homebrew-klaub, at Formula/klaub.rb,
 # so that `brew tap myrk-kale/klaub && brew install klaub` works on macOS and on Linux.
 #
-# The sha256 values are the digests of the v0.2.0 release assets.
+# The sha256 values are the digests of the v0.3.1 release assets.
 
 class Klaub < Formula
   desc "Semantic code reviewer for humans that wraps any coding agent"
   homepage "https://github.com/myrk-kale/klaub"
-  version "0.2.0"
+  version "0.3.1"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/myrk-kale/klaub/releases/download/v0.2.0/klaub-0.2.0-aarch64-apple-darwin.tar.gz"
-      sha256 "ba7d09d5ce29b90e8820e25f9e99fdfe1ed57a3c029b32abb06947ad02aadd99"
+      url "https://github.com/myrk-kale/klaub/releases/download/v0.3.1/klaub-0.3.1-aarch64-apple-darwin.tar.gz"
+      sha256 "6ebe71f7ffc2a93820c3d113733c1784187e62f4e0fdb678a362b7eb8fa48e48"
     end
     on_intel do
-      url "https://github.com/myrk-kale/klaub/releases/download/v0.2.0/klaub-0.2.0-x86_64-apple-darwin.tar.gz"
-      sha256 "f53b7eb87c7b4a5afda164b363ad138e7a1eebeeb24d07620228f6b8394554df"
+      url "https://github.com/myrk-kale/klaub/releases/download/v0.3.1/klaub-0.3.1-x86_64-apple-darwin.tar.gz"
+      sha256 "37a502d615c08e1da86ea4e27b35ae7d5df799a874b4faa68ce3c33185a90b0d"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/myrk-kale/klaub/releases/download/v0.2.0/klaub-0.2.0-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "f09a984493d9090f9974542f6a1c42de36cbb7b5f56911ca35cf4f9b98e8c3e0"
+      url "https://github.com/myrk-kale/klaub/releases/download/v0.3.1/klaub-0.3.1-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "e4b3cf65f3b387f9079074c0165264914f54e5b2a2d1b16b0e5bdfdb1218e2ac"
     end
     on_intel do
-      url "https://github.com/myrk-kale/klaub/releases/download/v0.2.0/klaub-0.2.0-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "8e70a7eaf2d7105cf2aeaf006af3045624435492e738f2306486700167758291"
+      url "https://github.com/myrk-kale/klaub/releases/download/v0.3.1/klaub-0.3.1-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "bc16847b8d88a254c664e3ed72f219c1a7bb1b808b5b299f9736a1549b5ca3af"
     end
   end
 
@@ -40,6 +40,6 @@ class Klaub < Formula
   end
 
   test do
-    assert_match "klaub 0.2.0", shell_output("#{bin}/klaub version")
+    assert_match "klaub 0.3.1", shell_output("#{bin}/klaub version")
   end
 end
