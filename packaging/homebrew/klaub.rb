@@ -14,14 +14,14 @@ class Klaub < Formula
   on_macos do
     on_arm do
       url "https://github.com/myrk-kale/klaub/releases/download/v0.1.0/klaub-0.1.0-aarch64-apple-darwin.tar.gz"
-      sha256 "25b4e34402c17a567d44aac935758d1491eec4f4fd973f011b3c8a2902b4bc40"
+      sha256 "e5b8f468171b4a4dc1ee94876be5772aa42b250c34852edff5c4677487e0df27"
     end
   end
 
   on_linux do
     on_intel do
       url "https://github.com/myrk-kale/klaub/releases/download/v0.1.0/klaub-0.1.0-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "7dc6f8879d390bf1346e52c7761c67478157a301139f96c5c658d2044fc9c838"
+      sha256 "440b51fa1f3cc521c1131bd14ba4a096c88bea9bc5b1a6344442bc4884524ece"
     end
   end
 
