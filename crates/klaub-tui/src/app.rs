@@ -310,6 +310,10 @@ pub enum ConfirmAction {
     DeleteComment(CommentId),
     /// Take a new snapshot.
     Refresh,
+    /// Silence a rule for this review (a false positive).
+    MuteRule(String),
+    /// Bring back every rule this review silenced.
+    RestoreRules,
 }
 
 /// A yes/no question with the facts needed to answer it.
