@@ -358,3 +358,25 @@ fn highlighting_covers_the_basics() {
     assert_eq!(class_at("\"s\""), Some(HighlightClass::String));
     assert_eq!(class_at("42"), Some(HighlightClass::Number));
 }
+
+#[test]
+fn thrown_errors_are_recorded_by_constructor_name() {
+    let file = parse(
+        Language::TypeScript,
+        r#"
+export function load(id: string): string {
+  if (!id) {
+    throw new TypeError("id is required");
+  }
+  if (id === "x") {
+    throw makeError("x");
+  }
+  throw lastError;
+}
+"#,
+    );
+    assert_eq!(
+        symbol(&file, "load").features.raises,
+        vec!["TypeError", "makeError", "lastError"]
+    );
+}

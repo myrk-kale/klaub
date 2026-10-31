@@ -21,6 +21,7 @@ klaub-review.workspace = true
 klaub-rules.workspace = true
 klaub-tests.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

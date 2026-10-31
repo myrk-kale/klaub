@@ -7,7 +7,7 @@
 //! Nothing drawn here comes from the repository, a comment or a document without passing through
 //! [`clean`] first, so a hostile sequence in a symbol name cannot reach the terminal.
 
-use klaub_app::ContractDelta;
+use klaub_app::{ContractDelta, Delta, FileContract};
 use klaub_core::finding::Priority;
 use klaub_core::review::FeedbackRecord;
 use klaub_core::snapshot::Drift;
@@ -197,7 +197,7 @@ fn hint_for(mode: Mode, filtered: bool) -> &'static str {
         }
         Mode::Structure => " j/k move · Enter open · +/- depth · c comment · r reviewed · ? help",
         Mode::Code => {
-            " j/k move · o contract · v old/new · [ ] change · c comment · V select · S symbol/file"
+            " j/k move · i contract · o file · v old/new · [ ] change · c comment · V select · < > back/forward"
         }
         Mode::Impact => " j/k move · Enter open the symbol · g back to the queue · ? help",
         Mode::Comments => " j/k move · Enter open the code · e edit · d delete a draft · ? help",
@@ -215,11 +215,14 @@ fn hint_for(mode: Mode, filtered: bool) -> &'static str {
 
 fn draw_overlay(frame: &mut Frame<'_>, body: Rect, app: &App, overlay: &Overlay, theme: Theme) {
     match overlay {
-        Overlay::Help => draw_help(frame, body, theme),
-        Overlay::Palette { input, selected } => draw_palette(frame, body, input, *selected, theme),
+        Overlay::Help => draw_help(frame, body, app, theme),
+        Overlay::Palette { input, selected } => {
+            draw_palette(frame, body, app, input, *selected, theme);
+        }
         Overlay::Search { input } => draw_search(frame, body, input, theme),
         Overlay::Editor(editor) => draw_editor(frame, body, editor, theme),
         Overlay::Confirm(confirm) => draw_confirm(frame, body, confirm, theme),
+        Overlay::Notice { title, text } => draw_notice(frame, body, title, text, theme),
         Overlay::Explain(unit) => draw_explain(frame, body, app, unit, theme),
         Overlay::Contract(unit) => draw_contract(frame, body, app, unit, theme),
         Overlay::Finish(stage) => draw_finish(frame, body, stage, theme),
@@ -248,7 +251,7 @@ fn boxed<'a>(title: &str, lines: Vec<Line<'a>>, theme: Theme) -> Paragraph<'a> {
     )
 }
 
-fn draw_help(frame: &mut Frame<'_>, body: Rect, theme: Theme) {
+fn draw_help(frame: &mut Frame<'_>, body: Rect, app: &App, theme: Theme) {
     let area = panel(
         body,
         body.width.saturating_sub(4),
@@ -260,10 +263,11 @@ fn draw_help(frame: &mut Frame<'_>, body: Rect, theme: Theme) {
         theme.dim(),
     ))];
     for entry in ENTRIES {
-        let key = if entry.key.is_empty() {
+        let label = app.keymap.label(entry);
+        let key = if label.is_empty() {
             "palette"
         } else {
-            entry.key
+            label.as_str()
         };
         let row = format!("{key:<14} {}", entry.name);
         lines.push(Line::from(Span::raw(fit(&row, inner))));
@@ -272,7 +276,14 @@ fn draw_help(frame: &mut Frame<'_>, body: Rect, theme: Theme) {
     frame.render_widget(boxed("Help", lines, theme), area);
 }
 
-fn draw_palette(frame: &mut Frame<'_>, body: Rect, input: &str, selected: usize, theme: Theme) {
+fn draw_palette(
+    frame: &mut Frame<'_>,
+    body: Rect,
+    app: &App,
+    input: &str,
+    selected: usize,
+    theme: Theme,
+) {
     let matches = palette_matches(input);
     let shown = u16::try_from(matches.len())
         .unwrap_or(u16::MAX)
@@ -292,7 +303,7 @@ fn draw_palette(frame: &mut Frame<'_>, body: Rect, input: &str, selected: usize,
     }
     for (index, entry) in matches.iter().enumerate() {
         let mark = if index == selected { "▶" } else { " " };
-        let row = format!("{mark} {}   {}", entry.name, entry.key);
+        let row = format!("{mark} {}   {}", entry.name, app.keymap.label(entry));
         let style = if index == selected {
             theme.selected()
         } else {
@@ -420,6 +431,28 @@ fn draw_confirm(frame: &mut Frame<'_>, body: Rect, confirm: &Confirm, theme: The
     frame.render_widget(boxed(&clean(&confirm.title), lines, theme), area);
 }
 
+/// A one-time explanation in a box. The text is wrapped to the box and never cut mid-word.
+fn draw_notice(frame: &mut Frame<'_>, body: Rect, title: &str, text: &str, theme: Theme) {
+    let width = body.width.saturating_sub(4).min(72);
+    let inner = usize::from(width).saturating_sub(2);
+    let mut lines: Vec<Line<'_>> = crate::widgets::wrap(text, inner)
+        .into_iter()
+        .map(|row| Line::from(Span::raw(row)))
+        .collect();
+    lines.push(Line::from(Span::raw(String::new())));
+    lines.push(Line::from(Span::styled(
+        "Press any key to continue.",
+        theme.dim(),
+    )));
+    let height = u16::try_from(lines.len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(2)
+        .min(body.height);
+    let area = panel(body, width, height);
+    frame.render_widget(Clear, area);
+    frame.render_widget(boxed(title, lines, theme), area);
+}
+
 fn draw_explain(
     frame: &mut Frame<'_>,
     body: Rect,
@@ -460,15 +493,34 @@ fn draw_contract(
         body.height.saturating_sub(2),
     );
     let inner = usize::from(area.width).saturating_sub(4);
-    let lines = match app.session.contract(unit) {
-        Some(delta) => contract_lines(&delta, inner, theme),
-        None => vec![Line::from(Span::styled(
-            "This unit has no symbol contract to inspect.",
+    let lines = if let Some(delta) = app.session.contract(unit) {
+        contract_lines(&delta, inner, theme)
+    } else if let Some(file) = app.session.file_contract(unit) {
+        file_contract_lines(&file, inner, theme)
+    } else {
+        vec![Line::from(Span::styled(
+            "This unit has no contract to inspect: it is not a symbol, a migration, a dependency manifest or a settings file.",
             theme.dim(),
-        ))],
+        ))]
     };
+    let lines = clip_lines(lines, usize::from(area.height).saturating_sub(2), theme);
     frame.render_widget(Clear, area);
     frame.render_widget(boxed("Contract", lines, theme), area);
+}
+
+/// Keeps what fits the box and says how much was left out, so a short terminal never hides that
+/// there was more to read.
+fn clip_lines(mut lines: Vec<Line<'static>>, room: usize, theme: Theme) -> Vec<Line<'static>> {
+    if room == 0 || lines.len() <= room {
+        return lines;
+    }
+    let hidden = lines.len() - room + 1;
+    lines.truncate(room.saturating_sub(1));
+    lines.push(Line::from(Span::styled(
+        format!("… {hidden} more lines; make the terminal taller"),
+        theme.dim(),
+    )));
+    lines
 }
 
 fn contract_lines(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line<'static>> {
@@ -479,38 +531,76 @@ fn contract_lines(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line
             &format!("{:.2}", delta.confidence.value()),
             theme,
         ),
-        labelled(
-            "before",
-            delta.before_signature.as_deref().unwrap_or("none"),
-            theme,
-        ),
-        labelled(
-            "after",
-            delta.after_signature.as_deref().unwrap_or("none"),
-            theme,
-        ),
-        labelled(
-            "visibility before",
-            delta.visibility_before.as_deref().unwrap_or("none"),
-            theme,
-        ),
-        labelled(
-            "visibility after",
-            delta.visibility_after.as_deref().unwrap_or("none"),
-            theme,
-        ),
     ];
+    if let Some(schema) = &delta.schema {
+        lines.push(labelled("data type", schema, theme));
+    }
+    lines.push(labelled(
+        "before",
+        delta.before_signature.as_deref().unwrap_or("none"),
+        theme,
+    ));
+    lines.push(labelled(
+        "after",
+        delta.after_signature.as_deref().unwrap_or("none"),
+        theme,
+    ));
+    let parameters = Delta {
+        before: delta
+            .signature_before
+            .as_ref()
+            .map(|p| p.parameters.clone())
+            .unwrap_or_default(),
+        after: delta
+            .signature_after
+            .as_ref()
+            .map(|p| p.parameters.clone())
+            .unwrap_or_default(),
+    };
+    push_delta(&mut lines, "parameters", &parameters, width, theme);
+    let returns =
+        |parts: &Option<klaub_app::SignatureParts>| parts.as_ref().and_then(|p| p.returns.clone());
+    match (
+        returns(&delta.signature_before),
+        returns(&delta.signature_after),
+    ) {
+        (Some(old), Some(new)) if old != new => {
+            lines.push(labelled("returns", &format!("{old} -> {new}"), theme));
+        }
+        (Some(old), None) => lines.push(labelled("returns", &format!("{old} -> none"), theme)),
+        (None, Some(new)) => lines.push(labelled("returns", &format!("none -> {new}"), theme)),
+        (Some(same), Some(_)) => lines.push(labelled("returns", &same, theme)),
+        (None, None) => {}
+    }
+    if delta.visibility_before != delta.visibility_after {
+        lines.push(labelled(
+            "visibility",
+            &format!(
+                "{} -> {}",
+                delta.visibility_before.as_deref().unwrap_or("none"),
+                delta.visibility_after.as_deref().unwrap_or("none")
+            ),
+            theme,
+        ));
+    } else if let Some(same) = &delta.visibility_after {
+        lines.push(labelled("visibility", same, theme));
+    }
+    push_delta(&mut lines, "decorators", &delta.decorators, width, theme);
+    push_delta(&mut lines, "endpoints", &delta.endpoints, width, theme);
+    push_delta(&mut lines, "raises", &delta.raises, width, theme);
+    push_delta(&mut lines, "effects", &delta.effects, width, theme);
+    push_delta(&mut lines, "members", &delta.members, width, theme);
     push_group(
         &mut lines,
-        "effects",
-        &delta.effects,
-        "none recorded",
+        "reachable from",
+        &delta.reachable,
+        "no entrypoint found (absence of a path is not proof of no impact)",
         width,
         theme,
     );
     push_group(
         &mut lines,
-        "affected",
+        "direct callers",
         &delta.affected,
         "none",
         width,
@@ -529,6 +619,67 @@ fn contract_lines(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line
         theme.dim(),
     )));
     lines
+}
+
+/// A migration, a manifest or a settings file, as added, removed and changed entries.
+fn file_contract_lines(file: &FileContract, width: usize, theme: Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        labelled("file", file.path.as_str(), theme),
+        labelled("kind", file.kind.label(), theme),
+        labelled(
+            "read",
+            if file.parsed {
+                "yes"
+            } else {
+                "no, use the textual diff"
+            },
+            theme,
+        ),
+    ];
+    let marked = |sign: &str, items: &[String]| -> Vec<String> {
+        items.iter().map(|item| format!("{sign} {item}")).collect()
+    };
+    for (heading, sign, items) in [
+        ("added", "+", &file.added),
+        ("removed", "-", &file.removed),
+        ("changed", "~", &file.changed),
+    ] {
+        if !items.is_empty() {
+            push_group(&mut lines, heading, &marked(sign, items), "", width, theme);
+        }
+    }
+    push_group(&mut lines, "notes", &file.notes, "none", width, theme);
+    lines.push(Line::from(Span::styled(
+        fit("any key closes", width),
+        theme.dim(),
+    )));
+    lines
+}
+
+/// A list that changed: `+` for what appeared, `-` for what went away and a plain row for what
+/// stayed. Nothing is drawn when neither version has anything.
+fn push_delta(
+    lines: &mut Vec<Line<'static>>,
+    heading: &str,
+    delta: &Delta,
+    width: usize,
+    theme: Theme,
+) {
+    if delta.is_empty() {
+        return;
+    }
+    lines.push(Line::from(Span::styled(heading.to_owned(), theme.dim())));
+    let rows = delta
+        .added()
+        .into_iter()
+        .map(|item| ("+", item))
+        .chain(delta.removed().into_iter().map(|item| ("-", item)))
+        .chain(delta.kept().into_iter().map(|item| (" ", item)));
+    for (sign, item) in rows {
+        for row in wrap(&format!("  {sign} {}", clean(item)), width.max(1)) {
+            lines.push(Line::from(Span::raw(row)));
+        }
+    }
 }
 
 /// `label  value`, with the label dimmed and the value cleaned.

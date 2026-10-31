@@ -188,6 +188,22 @@ pub(crate) fn dynamic_exec_call(receiver: &Receiver, name: &str) -> bool {
     matches!(receiver, Receiver::None) && matches!(name, "eval" | "exec")
 }
 
+/// The exception name from the text a `raise` or `throw` names, or `None` when that text is not a
+/// plain (possibly dotted) identifier. A raised variable, an index or a call result is not a name
+/// the contract can state, so it is left out instead of being shown as one.
+pub(crate) fn exception_name(raw: &str) -> Option<String> {
+    let name = raw.trim();
+    let plain = !name.is_empty()
+        && name.len() <= 80
+        && name.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        });
+    plain.then(|| name.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +267,18 @@ mod tests {
             &Receiver::Path(vec!["re".into()]),
             "exec"
         ));
+    }
+
+    #[test]
+    fn only_plain_names_count_as_raised_exceptions() {
+        assert_eq!(exception_name("ValueError").as_deref(), Some("ValueError"));
+        assert_eq!(
+            exception_name("errors.NotFound").as_deref(),
+            Some("errors.NotFound")
+        );
+        assert_eq!(exception_name("exc").as_deref(), Some("exc"));
+        for not_a_name in ["", "make_error()", "errors[0]", "a b", "x\u{1b}[31m"] {
+            assert_eq!(exception_name(not_a_name), None, "{not_a_name:?}");
+        }
     }
 }

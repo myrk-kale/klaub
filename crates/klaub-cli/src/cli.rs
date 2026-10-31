@@ -52,8 +52,11 @@ pub(crate) enum Command {
     /// Inspect and control wrapped sessions.
     #[command(subcommand)]
     Session(SessionCommand),
-    /// Check the environment: git, tmux, terminal and directories.
+    /// Check the environment: git, tmux, terminal, grammars, the cache and directories.
     Doctor(FormatArgs),
+    /// Read the crash reports Klaub saved on this machine. Nothing is ever sent.
+    #[command(subcommand)]
+    Crashes(CrashesCommand),
     /// Print version and build information.
     Version(FormatArgs),
     /// Print a shell completion script.
@@ -131,6 +134,17 @@ pub(crate) struct ReviewArgs {
     /// With --wait: `json` prints the review export on standard output and nothing else.
     #[arg(long, value_enum, default_value_t = Format::Text, requires = "wait")]
     pub(crate) format: Format,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CrashesCommand {
+    /// List the saved reports, oldest first.
+    List(FormatArgs),
+    /// Print one report. Read it before sharing it.
+    Show {
+        /// The report file name from `list`; the newest when omitted.
+        name: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

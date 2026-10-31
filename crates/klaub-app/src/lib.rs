@@ -11,7 +11,9 @@
 
 mod analysis;
 mod contract;
+mod file_contract;
 mod session;
+mod signature;
 mod view;
 
 use std::sync::Arc;
@@ -22,8 +24,11 @@ use klaub_core::ports::{
 };
 
 pub use analysis::{Analysis, FileEntry, UnitInfo, analyze};
-pub use contract::{ContractDelta, inspect};
+pub use contract::{ContractDelta, Delta, SymbolView, inspect};
+pub use file_contract::{FileContract, FileKind, inspect_file};
+pub use klaub_flow::{FlowRow, layout as flow_layout};
 pub use session::{FlowView, OpenOptions, Reports, ReviewOutcome, ReviewSession, TestPanel};
+pub use signature::SignatureParts;
 pub use view::{CodeLine, CodeScope, CodeView, HighlightedSpan};
 
 /// The collaborators the application needs. Production wiring is in `klaub-cli`; tests use real

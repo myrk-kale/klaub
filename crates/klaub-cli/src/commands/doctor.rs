@@ -51,8 +51,13 @@ pub(super) fn run(tmux_path: Option<PathBuf>, format: Format) -> Result<ExitCode
         Ok(ctx) => {
             checks.push(tmux_check(&ctx));
             checks.push(terminal_check());
+            checks.extend(ssh_check());
+            checks.push(clipboard_check());
+            checks.push(grammars_check());
             checks.extend(directory_checks(&ctx));
+            checks.push(cache_check(&ctx));
             checks.push(sessions_check(&ctx));
+            checks.push(crashes_check(&ctx));
         }
         Err(error) => {
             checks.push(check("directories", Status::Fail, error.to_string()));
@@ -138,6 +143,137 @@ fn terminal_check() -> Check {
         detail.push_str("; inside tmux: `klaub wrap` is unavailable here, `klaub review` works");
     }
     check("terminal", status, detail)
+}
+
+/// Notes a session over SSH, where the terminal is remote and the clipboard is not.
+///
+/// SSH is supported on a best-effort basis (the specification says so): the reader is a terminal
+/// program and works through it, but nothing here can reach the clipboard of the machine the user
+/// is sitting at.
+fn ssh_check() -> Option<Check> {
+    let over_ssh = ["SSH_CONNECTION", "SSH_TTY", "SSH_CLIENT"]
+        .iter()
+        .any(|key| std::env::var_os(key).is_some());
+    over_ssh.then(|| {
+        check(
+            "ssh",
+            Status::Warn,
+            "this is an SSH session: best effort. Copy feedback goes to the clipboard of this host, \
+             not of your machine, so use Show file (or `klaub feedback`) to read it",
+        )
+    })
+}
+
+/// Which program `Copy feedback` would use.
+fn clipboard_check() -> Check {
+    let candidates: &[&str] = if cfg!(target_os = "macos") {
+        &["pbcopy"]
+    } else {
+        &["wl-copy", "xclip"]
+    };
+    let found = candidates.iter().find(|program| on_path(program));
+    match found {
+        Some(program) => check("clipboard", Status::Ok, format!("`{program}` will be used")),
+        None => check(
+            "clipboard",
+            Status::Warn,
+            format!(
+                "none of {} was found; Copy feedback will say so and Show file still works",
+                candidates.join(", ")
+            ),
+        ),
+    }
+}
+
+fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
+}
+
+/// Parses a tiny sample in every language to prove each grammar loads and finds a function.
+fn grammars_check() -> Check {
+    use klaub_core::language::Language;
+    use klaub_core::ports::SourceParser;
+
+    let parser = klaub_parse::TreeSitterParser::new();
+    let mut broken = Vec::new();
+    for language in Language::ALL {
+        let sample = match language {
+            Language::Python => "def f():\n    pass\n",
+            Language::JavaScript => "function f() {}\n",
+            Language::TypeScript => "function f(a: number): number { return a }\n",
+            Language::Tsx => "const A = () => <div />;\nfunction f() {}\n",
+            Language::Rust => "fn f() {}\n",
+            Language::Go => "package p\n\nfunc f() {}\n",
+        };
+        // The module symbol always exists; a working grammar also finds the function.
+        let works = parser
+            .parse(language, sample)
+            .is_ok_and(|parsed| parsed.symbols.len() > 1);
+        if !works {
+            broken.push(language.name());
+        }
+    }
+    if broken.is_empty() {
+        check(
+            "grammars",
+            Status::Ok,
+            format!("{} languages parse a sample", Language::ALL.len()),
+        )
+    } else {
+        check(
+            "grammars",
+            Status::Fail,
+            format!("did not parse a sample: {}", broken.join(", ")),
+        )
+    }
+}
+
+/// The parse cache, looked at without being opened for writing or repaired.
+fn cache_check(ctx: &Context) -> Check {
+    let path = ctx.dirs.cache_db();
+    if !path.exists() {
+        return check(
+            "cache",
+            Status::Ok,
+            "no cache yet (created by the first review)",
+        );
+    }
+    match klaub_storage::SqliteCache::check(&path) {
+        Ok(health) if health.is_healthy() => check(
+            "cache",
+            Status::Ok,
+            format!("{} entries, integrity ok", health.entries),
+        ),
+        Ok(health) => check(
+            "cache",
+            Status::Warn,
+            format!(
+                "integrity {:?}, schema {}: the next review rebuilds it, nothing is lost",
+                health.integrity, health.schema_version
+            ),
+        ),
+        Err(error) => check(
+            "cache",
+            Status::Warn,
+            format!("unreadable ({error}): the next review replaces it, nothing is lost"),
+        ),
+    }
+}
+
+fn crashes_check(ctx: &Context) -> Check {
+    let count = crate::crash::list(&ctx.dirs.crashes_dir()).len();
+    if count == 0 {
+        check("crashes", Status::Ok, "no crash reports")
+    } else {
+        check(
+            "crashes",
+            Status::Warn,
+            format!(
+                "{count} saved on this machine; `klaub crashes list` shows them. Nothing was sent"
+            ),
+        )
+    }
 }
 
 fn directory_checks(ctx: &Context) -> Vec<Check> {

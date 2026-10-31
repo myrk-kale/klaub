@@ -315,6 +315,12 @@ pub struct Review {
     /// because it named a unit of the previous snapshot.
     #[serde(default)]
     pub last_unit: Option<UnitId>,
+    /// Rule ids the reviewer marked as false positives in this review.
+    ///
+    /// They are added to `[rules] disabled` while this review is open and are carried into the
+    /// next round. Absent from reviews written before the field existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub muted_rules: Vec<String>,
     /// The finished feedback, once there is one.
     pub feedback: Option<FeedbackRecord>,
     /// Status of the flow diagram when the review was last saved.
