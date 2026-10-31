@@ -630,6 +630,38 @@ impl SnapshotProvider for GitSnapshotProvider {
         Ok(blob.and_then(|b| b.as_text().cloned()))
     }
 
+    fn read_project_files(&self, snapshot: &Snapshot, paths: &[RepoPath]) -> Vec<Option<Arc<str>>> {
+        let root = &snapshot.worktree.root;
+        let spec_of = |path: &RepoPath| match (&snapshot.scope, &snapshot.target_oid) {
+            (_, Some(target)) => Some(format!("{target}:{path}")),
+            (Scope::Staged, None) => Some(format!(":{path}")),
+            _ => None,
+        };
+        // Files that live in Git objects are fetched by one `git cat-file --batch` instead of one
+        // process per file, which is what made a branch or commit review of a large project slow.
+        let specs: Vec<String> = paths.iter().filter_map(spec_of).collect();
+        let fetched = if specs.is_empty() {
+            None
+        } else {
+            self.runner
+                .read_blobs(root, &specs, self.project_file_limit)
+                .ok()
+        };
+        paths
+            .iter()
+            .map(|path| match spec_of(path) {
+                Some(spec) => match fetched.as_ref()?.get(&spec) {
+                    Some(BlobData::Bytes(bytes)) => blob_from_bytes(bytes).as_text().cloned(),
+                    Some(BlobData::TooLarge { .. }) | None => None,
+                },
+                None => worktree_blob(root, path, self.project_file_limit)
+                    .ok()
+                    .flatten()
+                    .and_then(|b| b.as_text().cloned()),
+            })
+            .collect()
+    }
+
     fn probe(&self, snapshot: &Snapshot, request: &SnapshotRequest) -> Result<Drift> {
         let repo = self.open(&snapshot.worktree.root)?;
         let plan = self.plan(&repo, &snapshot.scope, &snapshot.base_label)?;

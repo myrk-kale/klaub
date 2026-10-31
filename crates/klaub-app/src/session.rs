@@ -778,9 +778,15 @@ impl ReviewSession {
     /// compare, and neither does an id the queue does not contain.
     pub fn contract(&self, unit: &UnitId) -> Option<ContractDelta> {
         let change = self.analysis.change_of(unit)?;
-        let entry = self.analysis.file_of(unit)?;
-        let before = Self::view_of(entry.analysis.before.as_deref(), change.before.as_ref());
-        let after = Self::view_of(entry.analysis.after.as_deref(), change.after.as_ref());
+        // A symbol that moved between files has its old side in the other file's parse.
+        let before = change
+            .before
+            .as_ref()
+            .and_then(|r| crate::analysis::view_of_ref(&self.analysis.files, r, false));
+        let after = change
+            .after
+            .as_ref()
+            .and_then(|r| crate::analysis::view_of_ref(&self.analysis.files, r, true));
         let impact = change
             .after
             .as_ref()
@@ -809,20 +815,6 @@ impl ReviewSession {
             change.before_text().map(AsRef::as_ref),
             change.after_text().map(AsRef::as_ref),
         )
-    }
-
-    /// The parsed symbol a change references, when the parse and the index both exist.
-    fn view_of<'a>(
-        parsed: Option<&'a klaub_core::symbol::ParsedFile>,
-        side: Option<&SymbolRef>,
-    ) -> Option<crate::contract::SymbolView<'a>> {
-        let side = side?;
-        let file = parsed?;
-        file.symbols.get(side.index)?;
-        Some(crate::contract::SymbolView {
-            file,
-            index: side.index,
-        })
     }
 
     /// The changed unit that holds `key`, when the symbol is part of the change.

@@ -5,14 +5,20 @@
 //! the specification's target beside each one. It never fails: the numbers depend on the machine,
 //! so a target that is missed is reported, not enforced.
 //!
-//! The corpus is synthetic (Python files whose functions call the next one and a function in the
-//! next file), so what is measured is the pipeline's shape on a repository of a given size, not
-//! the speed of any real project. `docs/benchmarks.md` says what that does and does not tell you.
+//! The default corpus is synthetic (Python files whose functions call the next one and a function
+//! in the next file), so what is measured is the pipeline's shape on a repository of a given size,
+//! not the speed of any real project. `docs/benchmarks.md` says what that does and does not tell
+//! you. Point `KLAUB_BENCH_REPO` at a real repository to time the same operations on it.
 //!
 //! ```text
 //! cargo bench -p klaub-app --bench latency
 //! KLAUB_BENCH_SIZES=small,medium,large cargo bench -p klaub-app --bench latency
+//! KLAUB_BENCH_REPO=~/src/flask,~/src/django KLAUB_BENCH_BASE=HEAD~40 \
+//!     cargo bench -p klaub-app --bench latency
 //! ```
+//!
+//! A real repository is cloned into a temporary directory first, so the review files Klaub writes
+//! never land in it. The review is the branch scope: `KLAUB_BENCH_BASE` against `HEAD`.
 
 #![allow(
     clippy::unwrap_used,
@@ -24,6 +30,8 @@
 )]
 
 use std::fmt::Write as _;
+use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -33,7 +41,7 @@ use klaub_core::config::Config;
 use klaub_core::ids::UnitId;
 use klaub_core::ports::{AnalysisCache, IdGenerator};
 use klaub_core::review::Version;
-use klaub_core::snapshot::SnapshotRequest;
+use klaub_core::snapshot::{Scope, SnapshotRequest};
 use klaub_git::GitSnapshotProvider;
 use klaub_git::testing::{FixedClock, TempRepo};
 use klaub_parse::TreeSitterParser;
@@ -117,13 +125,13 @@ fn edit(repo: &TempRepo, size: &Size, revision: u32) {
     }
 }
 
-fn ports(repo: &TempRepo, config: &Config, cache: Arc<dyn AnalysisCache>) -> Ports {
+fn ports(root: &Path, config: &Config, cache: Arc<dyn AnalysisCache>) -> Ports {
     let clock = Arc::new(FixedClock::default());
     Ports {
         snapshots: Arc::new(GitSnapshotProvider::new(clock.clone())),
         parser: Arc::new(TreeSitterParser::new()),
-        reviews: Arc::new(JsonReviewRepository::new(repo.path())),
-        flows: Arc::new(FsFlowRepository::new(repo.path(), &config.flows.directory).unwrap()),
+        reviews: Arc::new(JsonReviewRepository::new(root)),
+        flows: Arc::new(FsFlowRepository::new(root, &config.flows.directory).unwrap()),
         cache,
         files: Arc::new(FsFileReader),
         config: Arc::new(FsConfigSource::new(None)),
@@ -134,10 +142,18 @@ fn ports(repo: &TempRepo, config: &Config, cache: Arc<dyn AnalysisCache>) -> Por
 }
 
 fn open(repo: &TempRepo, cache: Arc<dyn AnalysisCache>) -> ReviewSession {
+    open_request(repo.path(), SnapshotRequest::worktree(repo.path()), cache)
+}
+
+fn open_request(
+    root: &Path,
+    request: SnapshotRequest,
+    cache: Arc<dyn AnalysisCache>,
+) -> ReviewSession {
     let config = Config::default();
     ReviewSession::open(
-        ports(repo, &config, cache),
-        SnapshotRequest::worktree(repo.path()),
+        ports(root, &config, cache),
+        request,
         &config,
         &OpenOptions::default(),
     )
@@ -268,19 +284,129 @@ fn measure(size: &Size) {
     );
 }
 
-fn main() {
-    let wanted: Vec<String> = std::env::var("KLAUB_BENCH_SIZES")
-        .unwrap_or_else(|_| "small,medium".to_owned())
-        .split(',')
-        .map(|s| s.trim().to_owned())
-        .collect();
-    println!(
-        "Synthetic corpus, one machine, {} sample(s) per row at most. Times are milliseconds.\n",
-        10
+fn git(dir: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+/// The same operations on a real repository: `base` against `HEAD`, read-only (no refresh, since
+/// that needs an edit). The repository is cloned first so nothing is written into it.
+fn measure_repo(path: &Path, base: &str) {
+    let scratch = tempfile::tempdir().unwrap();
+    let clone = scratch.path().join("repo");
+    git(
+        scratch.path(),
+        &["clone", "--quiet", &path.display().to_string(), "repo"],
+    );
+    let files = git(&clone, &["ls-files"]).lines().count();
+    let request = SnapshotRequest {
+        scope: Scope::Branch,
+        base: base.to_owned(),
+        ..SnapshotRequest::worktree(&clone)
+    };
+    let name = path.file_name().map_or_else(
+        || "repository".to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+
+    let mut session = open_request(
+        &clone,
+        request.clone(),
+        Arc::new(SqliteCache::in_memory().unwrap()),
+    );
+    let changed = session.analysis().snapshot.files.len();
+    let queue = session.analysis().queue.len();
+    let label = format!("{name}: {files} files, {changed} changed, {queue} units");
+
+    let cold = Samples::new(
+        (0..3)
+            .map(|_| {
+                let cache: Arc<dyn AnalysisCache> = Arc::new(SqliteCache::in_memory().unwrap());
+                time(|| open_request(&clone, request.clone(), cache.clone()))
+            })
+            .collect(),
+    );
+    row(
+        &label,
+        "first queue, cold cache",
+        &cold,
+        Some((
+            Duration::from_secs(2),
+            "target 2 s for a small or medium review",
+        )),
+    );
+
+    let cache: Arc<dyn AnalysisCache> = Arc::new(SqliteCache::in_memory().unwrap());
+    session = open_request(&clone, request.clone(), cache.clone());
+    let warm = Samples::new(
+        (0..5)
+            .map(|_| time(|| open_request(&clone, request.clone(), cache.clone())))
+            .collect(),
+    );
+    row(&label, "first queue, warm cache", &warm, None);
+
+    let parser = TreeSitterParser::new();
+    let toggle: Vec<Duration> = units(&session)
+        .iter()
+        .take(500)
+        .flat_map(|unit| [Version::Before, Version::After].map(|v| (unit.clone(), v)))
+        .map(|(unit, version)| {
+            time(|| {
+                session
+                    .analysis()
+                    .code_view(&parser, &unit, version, klaub_app::CodeScope::Symbol)
+            })
+        })
+        .collect();
+    row(
+        &label,
+        "toggle before/after (view rebuild)",
+        &Samples::new(toggle),
+        Some((Duration::from_millis(50), "target p95 50 ms")),
+    );
+}
+
+fn main() {
+    let repos: Vec<String> = std::env::var("KLAUB_BENCH_REPO")
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let sizes = std::env::var("KLAUB_BENCH_SIZES").ok();
+    // A real repository replaces the synthetic corpus unless the sizes are asked for as well.
+    let wanted: Vec<String> = match (&sizes, repos.is_empty()) {
+        (Some(sizes), _) => sizes.split(',').map(|s| s.trim().to_owned()).collect(),
+        (None, true) => vec!["small".to_owned(), "medium".to_owned()],
+        (None, false) => Vec::new(),
+    };
+    if repos.is_empty() {
+        println!(
+            "Synthetic corpus, one machine, {} sample(s) per row at most. Times are milliseconds.\n",
+            10
+        );
+    } else {
+        println!("Real repositories, one machine. Times are milliseconds.\n");
+    }
     println!("| Corpus | Operation | n | p50 | p95 | max | Specification (§19) |");
     println!("| --- | --- | --- | --- | --- | --- | --- |");
     for size in SIZES.iter().filter(|s| wanted.iter().any(|w| w == s.name)) {
         measure(size);
+    }
+    let base = std::env::var("KLAUB_BENCH_BASE").unwrap_or_else(|_| "HEAD~30".to_owned());
+    for repo in &repos {
+        let path = std::fs::canonicalize(repo).expect("KLAUB_BENCH_REPO names an existing path");
+        measure_repo(&path, &base);
     }
 }

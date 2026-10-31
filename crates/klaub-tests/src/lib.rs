@@ -131,12 +131,17 @@ pub fn associate(sources: &[TestSource<'_>], targets: &[(Target, &RepoPath)]) ->
         case: TestCase,
         calls: HashSet<&'a str>,
         name: String,
+    }
+    /// The cases of one test file. What a file imports and what it is named after are the same for
+    /// every case in it, so they are kept once per file and checked once per target and file, not
+    /// once per target and case. A project with thousands of tests made the difference seconds.
+    struct Group<'a> {
         file_subject: String,
         imports: Vec<&'a str>,
+        cases: Vec<Case<'a>>,
     }
-    let mut cases: Vec<Case<'_>> = Vec::new();
+    let mut groups: Vec<Group<'_>> = Vec::new();
     for source in sources {
-        let subject = subject_stem(source.path);
         let imports: Vec<&str> = source
             .parsed
             .imports
@@ -145,6 +150,7 @@ pub fn associate(sources: &[TestSource<'_>], targets: &[(Target, &RepoPath)]) ->
                 std::iter::once(i.module.as_str()).chain(i.names.iter().map(|n| n.name.as_str()))
             })
             .collect();
+        let mut cases: Vec<Case<'_>> = Vec::new();
         for case in enumerate_tests(source) {
             let Some(index) = source.parsed.find(&case.name) else {
                 continue;
@@ -164,12 +170,13 @@ pub fn associate(sources: &[TestSource<'_>], targets: &[(Target, &RepoPath)]) ->
                     .trim_start_matches("test")
                     .trim_start_matches("Test"),
             );
-            cases.push(Case {
-                case,
-                calls,
-                name,
-                file_subject: subject.clone(),
-                imports: imports.clone(),
+            cases.push(Case { case, calls, name });
+        }
+        if !cases.is_empty() {
+            groups.push(Group {
+                file_subject: subject_stem(source.path),
+                imports,
+                cases,
             });
         }
     }
@@ -181,39 +188,42 @@ pub fn associate(sources: &[TestSource<'_>], targets: &[(Target, &RepoPath)]) ->
             continue;
         }
         let target_subject = normalize(target_file.stem());
-        for case in &cases {
-            let referenced = case.calls.contains(target.name.as_str());
-            let imports_module = case
+        for group in &groups {
+            let imports_module = group
                 .imports
                 .iter()
                 .any(|i| module_matches(i, target_file) || *i == target.name);
-            let name_match = !case.name.is_empty()
-                && (case.name.contains(&wanted)
-                    || (wanted.contains(&case.name) && case.name.len() >= 4));
-            let file_match = !case.file_subject.is_empty() && case.file_subject == target_subject;
-            let (method, confidence) = match (referenced, imports_module, name_match, file_match) {
-                (true, true, _, _) => (LinkMethod::Reference, 0.9),
-                (true, false, _, true) => (LinkMethod::Reference, 0.75),
-                (true, false, _, false) => (LinkMethod::Reference, 0.6),
-                (false, _, true, true) => (LinkMethod::NameConvention, 0.7),
-                (false, _, true, false) => (LinkMethod::NameConvention, 0.5),
-                _ => continue,
-            };
-            let key = (target.key.clone(), case.case.id.clone());
-            let link = TestLink {
-                test: case.case.clone(),
-                target: target.key.clone(),
-                method,
-                confidence: Confidence::new(confidence),
-            };
-            links
-                .entry(key)
-                .and_modify(|existing| {
-                    if link.confidence > existing.confidence {
-                        *existing = link.clone();
-                    }
-                })
-                .or_insert(link);
+            let file_match = !group.file_subject.is_empty() && group.file_subject == target_subject;
+            for case in &group.cases {
+                let referenced = case.calls.contains(target.name.as_str());
+                let name_match = !case.name.is_empty()
+                    && (case.name.contains(&wanted)
+                        || (wanted.contains(&case.name) && case.name.len() >= 4));
+                let (method, confidence) =
+                    match (referenced, imports_module, name_match, file_match) {
+                        (true, true, _, _) => (LinkMethod::Reference, 0.9),
+                        (true, false, _, true) => (LinkMethod::Reference, 0.75),
+                        (true, false, _, false) => (LinkMethod::Reference, 0.6),
+                        (false, _, true, true) => (LinkMethod::NameConvention, 0.7),
+                        (false, _, true, false) => (LinkMethod::NameConvention, 0.5),
+                        _ => continue,
+                    };
+                let key = (target.key.clone(), case.case.id.clone());
+                let link = TestLink {
+                    test: case.case.clone(),
+                    target: target.key.clone(),
+                    method,
+                    confidence: Confidence::new(confidence),
+                };
+                links
+                    .entry(key)
+                    .and_modify(|existing| {
+                        if link.confidence > existing.confidence {
+                            *existing = link.clone();
+                        }
+                    })
+                    .or_insert(link);
+            }
         }
     }
 

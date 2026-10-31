@@ -440,6 +440,38 @@ fn project_files_are_listed_and_read_for_each_scope() {
 }
 
 #[test]
+fn many_project_files_are_read_in_one_call_with_the_answers_of_reading_each() {
+    let repo = base_repo();
+    repo.write("src/app.py", "def run():\n    return 2\n");
+    repo.write("src/other.py", "def other():\n    return 3\n");
+    repo.write("image.bin", "\u{0}\u{1}\u{2}");
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    repo.commit_all("feature");
+    let provider = provider();
+    let paths: Vec<RepoPath> = ["src/app.py", "missing.py", "src/other.py", "image.bin"]
+        .iter()
+        .map(|p| RepoPath::new(p).unwrap())
+        .collect();
+
+    for scope in [Scope::Worktree, Scope::Staged, Scope::Branch] {
+        let snapshot = provider
+            .capture(&SnapshotRequest {
+                base: "main".into(),
+                ..request(&repo, scope.clone())
+            })
+            .unwrap();
+        let batch = provider.read_project_files(&snapshot, &paths);
+        let one_by_one: Vec<_> = paths
+            .iter()
+            .map(|p| provider.read_project_file(&snapshot, p).unwrap())
+            .collect();
+        assert_eq!(batch, one_by_one, "{scope:?}");
+        assert!(batch[1].is_none(), "a missing file answers None");
+        assert!(batch[0].is_some() && batch[2].is_some(), "{scope:?}");
+    }
+}
+
+#[test]
 fn directory_symlinks_cannot_lead_outside_the_worktree() {
     let repo = base_repo();
     let outside = tempfile::tempdir().unwrap();
