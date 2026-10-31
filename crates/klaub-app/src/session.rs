@@ -130,6 +130,26 @@ fn with_muted(config: &Config, base_disabled: &[String], muted: &[String]) -> Co
     effective
 }
 
+/// How a review ended, for `klaub review --wait`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewOutcome {
+    /// The review id.
+    pub review_id: String,
+    /// Draft, finished, prepared or submitted.
+    pub status: klaub_core::review::ReviewStatus,
+    /// How many comments the review holds.
+    pub comments: usize,
+    /// The review file, relative to the worktree.
+    pub file: String,
+}
+
+impl ReviewOutcome {
+    /// The human finished the review (feedback exists), as opposed to closing a draft.
+    pub fn finished(&self) -> bool {
+        self.status != klaub_core::review::ReviewStatus::Draft
+    }
+}
+
 fn target(
     analysis: &Analysis,
     session: Option<SessionId>,
@@ -1097,6 +1117,16 @@ impl ReviewSession {
                 linked.len().saturating_sub(passed + failed),
             )),
             flow: self.review.flow.clone(),
+        }
+    }
+
+    /// How the review stands, for a caller that waited for the human to finish.
+    pub fn outcome(&self) -> ReviewOutcome {
+        ReviewOutcome {
+            review_id: self.review.review_id.to_string(),
+            status: self.review.status,
+            comments: self.review.comments.len(),
+            file: self.review_file(),
         }
     }
 

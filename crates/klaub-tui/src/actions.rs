@@ -834,28 +834,50 @@ fn ask_flow_request(app: &mut App) {
 }
 
 /// The confirmation shown before anything is pasted into the agent.
+/// Whether a process name is an interactive shell. A login shell is shown with a leading `-`.
+fn is_shell(command: &str) -> bool {
+    const SHELLS: &[&str] = &[
+        "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "pwsh", "elvish", "xonsh",
+    ];
+    let name = command.rsplit('/').next().unwrap_or(command);
+    SHELLS.contains(&name.trim_start_matches('-'))
+}
+
 pub(crate) fn prepare_confirm(
     app: &App,
     title: &str,
     text: &str,
     action: ConfirmAction,
 ) -> Confirm {
+    let mut foreground = None;
     let destination = match &app.agent {
         None => "none — Klaub is not managing an agent here; use Copy instead".to_owned(),
         Some(channel) => match channel.target() {
-            Ok(Some(target)) => sanitize_single_line(&target.description),
+            Ok(Some(target)) => {
+                foreground = Some(sanitize_single_line(&target.command));
+                sanitize_single_line(&target.description)
+            }
             Ok(None) => "none — no agent pane was found; use Copy instead".to_owned(),
             Err(error) => format!("unverified — {error}"),
         },
     };
+    let mut lines = vec![format!("destination: {destination}")];
+    if let Some(command) = &foreground {
+        lines.push(format!("running there: {command}"));
+        if is_shell(command) {
+            lines.push(format!(
+                "⚠ {command} is a shell. If your agent is not the one reading the keyboard, the text lands on a shell prompt."
+            ));
+        }
+    }
+    lines.extend([
+        "text to paste (Klaub never presses Enter; you decide when to send it):".to_owned(),
+        format!("  {}", sanitize_single_line(text)),
+        "If the agent's input already has text, the paste may be appended to it.".to_owned(),
+    ]);
     Confirm {
         title: title.to_owned(),
-        lines: vec![
-            format!("destination: {destination}"),
-            "text to paste (Klaub never presses Enter; you decide when to send it):".to_owned(),
-            format!("  {}", sanitize_single_line(text)),
-            "If the agent's input already has text, the paste may be appended to it.".to_owned(),
-        ],
+        lines,
         action,
     }
 }
@@ -885,5 +907,20 @@ pub(crate) fn followup_decision(key: char) -> Option<FollowupStatus> {
         'u' => Some(FollowupStatus::Unresolved),
         'X' => Some(FollowupStatus::Regression),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_shell;
+
+    #[test]
+    fn shells_are_recognised_by_name_even_as_login_shells_or_paths() {
+        for shell in ["bash", "-zsh", "/bin/sh", "fish", "pwsh"] {
+            assert!(is_shell(shell), "{shell}");
+        }
+        for other in ["codex", "node", "claude", "python3", "bashful", ""] {
+            assert!(!is_shell(other), "{other}");
+        }
     }
 }

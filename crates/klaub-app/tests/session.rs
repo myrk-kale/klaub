@@ -817,6 +817,31 @@ fn ids_and_paths_in_the_queue_are_stable_between_runs() {
     assert!(provider.discover(repo.path()).is_ok());
 }
 
+#[test]
+fn the_outcome_tells_a_closed_draft_from_a_finished_review() {
+    let repo = project();
+    edit(&repo);
+    let mut session = open(&repo, &Config::default(), &OpenOptions::default());
+
+    let draft = session.outcome();
+    assert!(!draft.finished(), "{draft:?}");
+    assert_eq!(draft.comments, 0);
+    assert!(draft.file.contains(".klaub/reviews/"), "{}", draft.file);
+
+    let find = unit(&session, "find");
+    session
+        .add_comment(&find, Version::After, None, "parameterise this", None)
+        .unwrap();
+    assert_eq!(session.outcome().comments, 1);
+    assert!(!session.outcome().finished(), "a comment alone is a draft");
+
+    session.finish().unwrap();
+    let finished = session.outcome();
+    assert!(finished.finished(), "{finished:?}");
+    assert_eq!(finished.review_id, draft.review_id);
+    assert_eq!(finished.file, draft.file);
+}
+
 /// A repository whose one change adds an `except` block that only discards the error.
 fn swallowing_repo() -> TempRepo {
     let repo = TempRepo::new();

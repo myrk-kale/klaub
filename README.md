@@ -100,6 +100,7 @@ The prefix is `Ctrl+B` unless you set `--prefix` or `KLAUB_TMUX_PREFIX`. `Prefix
 Other commands:
 
 - `klaub review --base REV --scope worktree|staged|unstaged|branch --brief FILE` compares against a revision, a scope, or a local brief file.
+- `klaub review --wait [--format json]` stays until the reader is closed and says how it ended: exit 0 for a finished review, 3 for a draft. With `--format json` standard output is the review export and nothing else. It is for an agent that runs the reviewer and waits for the human, and it needs a terminal like any review.
 - `klaub reviews list` lists stored reviews. `show ID` prints one. `export ID` writes JSON or Markdown.
 - `klaub feedback ID` prints the feedback of a finished review.
 - `klaub tests list --review ID` lists test associations. `run --review ID` shows the command and asks before running it.
