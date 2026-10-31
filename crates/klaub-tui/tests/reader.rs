@@ -890,6 +890,103 @@ impl AgentChannel for FakeChannel {
     }
 }
 
+/// A channel whose pane shows what the test says.
+struct ScreenChannel {
+    command: String,
+    screen: String,
+}
+
+impl AgentChannel for ScreenChannel {
+    fn target(&self) -> klaub_core::Result<Option<AgentTarget>> {
+        Ok(Some(AgentTarget {
+            pane_id: "%7".to_owned(),
+            command: self.command.clone(),
+            description: "session klaub-1 · window agent · pane %7".to_owned(),
+        }))
+    }
+
+    fn prepare_input(&self, _text: &str) -> klaub_core::Result<PrepareOutcome> {
+        Ok(PrepareOutcome::Prepared)
+    }
+
+    fn screen_tail(&self, _lines: usize) -> klaub_core::Result<Option<String>> {
+        Ok(Some(self.screen.clone()))
+    }
+}
+
+struct BusyAware;
+
+impl klaub_core::harness::HarnessAdapter for BusyAware {
+    fn id(&self) -> &'static str {
+        "busy-aware"
+    }
+    fn name(&self) -> &'static str {
+        "Busy-aware test harness"
+    }
+    fn recognizes(&self, command: &str) -> bool {
+        command == "busy-aware"
+    }
+    fn readiness(&self, screen_tail: &str) -> klaub_core::harness::Readiness {
+        if screen_tail.contains("working") {
+            klaub_core::harness::Readiness::Busy("it says it is still working".to_owned())
+        } else {
+            klaub_core::harness::Readiness::Ready
+        }
+    }
+}
+
+/// The text of the confirmation that `Prepare in agent` opens.
+fn prepare_confirmation(command: &str, screen: &str, with_adapter: bool) -> String {
+    let repo = changed_repo();
+    let mut session = open(&repo);
+    let unit = session.analysis().queue[0].unit.id.clone();
+    session
+        .add_comment(&unit, Version::After, None, "use a parameter", None)
+        .unwrap();
+    let channel = Arc::new(ScreenChannel {
+        command: command.to_owned(),
+        screen: screen.to_owned(),
+    });
+    let mut app = App::new(
+        session,
+        Arc::new(TreeSitterParser::new()),
+        Some(channel),
+        None::<Arc<dyn Clipboard>>,
+    );
+    if with_adapter {
+        app = app.with_harnesses(
+            klaub_core::harness::HarnessRegistry::default().with(Arc::new(BusyAware)),
+        );
+    }
+    press(&mut app, 'F');
+    press(&mut app, 'y');
+    // The delivery list: "Prepare in the agent" is the first option.
+    handle_key(&mut app, key(KeyCode::Enter));
+    screen_text(&mut app)
+}
+
+fn screen_text(app: &mut App) -> String {
+    screen(app, 140, 40)
+}
+
+#[test]
+fn the_confirmation_says_the_generic_adapter_knows_nothing_about_the_program() {
+    let text = prepare_confirmation("codex", "working...", false);
+    assert!(text.contains("harness: generic"), "{text}");
+    assert!(!text.contains("still working"), "{text}");
+}
+
+#[test]
+fn a_known_harness_adapter_can_warn_that_the_program_looks_busy() {
+    let text = prepare_confirmation("busy-aware", "working on it", true);
+    assert!(text.contains("harness: Busy-aware test harness"), "{text}");
+    assert!(text.contains("it says it is still working"), "{text}");
+
+    let idle = prepare_confirmation("busy-aware", "> ", true);
+    assert!(idle.contains("harness: Busy-aware test harness"), "{idle}");
+    assert!(!idle.contains("still working"), "{idle}");
+}
+
 #[test]
 fn finish_never_sends_enter() {
     let repo = changed_repo();

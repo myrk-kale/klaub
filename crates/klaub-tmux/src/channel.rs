@@ -8,7 +8,7 @@
 
 use klaub_core::Result;
 use klaub_core::ports::{AgentChannel, AgentTarget, PrepareOutcome};
-use klaub_core::text::{sanitize_single_line, truncate_chars};
+use klaub_core::text::{sanitize_single_line, sanitize_terminal_text, truncate_chars};
 
 use crate::client::{PaneState, TmuxClient};
 use crate::registry::SessionRecord;
@@ -129,6 +129,27 @@ impl AgentChannel for TmuxAgentChannel {
         self.client.select_pane(&pane.pane_id)?;
         Ok(PrepareOutcome::Prepared)
     }
+
+    fn screen_tail(&self, lines: usize) -> Result<Option<String>> {
+        let pane = match self.verify()? {
+            PaneCheck::Verified(pane) => pane,
+            PaneCheck::Rejected(_) => return Ok(None),
+        };
+        let screen = self.client.capture_pane(&pane.pane_id)?;
+        Ok(Some(tail_lines(&sanitize_terminal_text(&screen), lines)))
+    }
+}
+
+/// The last `count` non-empty lines of `screen`.
+fn tail_lines(screen: &str, count: usize) -> String {
+    let mut kept: Vec<&str> = screen
+        .lines()
+        .rev()
+        .filter(|line| !line.trim().is_empty())
+        .take(count)
+        .collect();
+    kept.reverse();
+    kept.join("\n")
 }
 
 #[cfg(test)]
@@ -149,6 +170,14 @@ mod tests {
             prepare_paste_text("text\x1b[201~ rm -rf /").as_deref(),
             Some("text rm -rf /")
         );
+    }
+
+    #[test]
+    fn the_screen_tail_skips_blank_lines_and_keeps_the_order() {
+        let screen = "one\n\ntwo\n   \nthree\nfour\n\n";
+        assert_eq!(tail_lines(screen, 2), "three\nfour");
+        assert_eq!(tail_lines(screen, 10), "one\ntwo\nthree\nfour");
+        assert_eq!(tail_lines("", 3), "");
     }
 
     #[test]
