@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-31
+
 ### Added
 
 - **Java.** Classes, interfaces, enums, records, methods and constructors with their annotations (kept as decorators), signatures without the annotations, visibility (package-private is `Internal`), `throw new X` and `throws`, calls with receivers, imports (classes, packages and static members), `public static void main`, Spring (`@GetMapping`, `@RequestMapping` with the class prefix and verb) and JAX-RS (`@GET` with `@Path`) routes, JUnit `@Test` methods, and the same risk markers as the other languages (swallowed `catch`, SQL built by concatenation or `String.format`, a shell started by `ProcessBuilder` or `Runtime.exec`, a secret in a string literal, I/O in a loop). Imports resolve to files under any source root. Test files are `src/test/**/*.java`, `*Test.java`, `*Tests.java` and `*IT.java` (`tests.java_patterns`). Reflection, dependency injection and code generation are not followed, so calls through them stay unresolved. Parser version 3.
@@ -13,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Optional mouse** (`[ui] mouse = true`): the wheel scrolls, a click on a tab switches to it, a click on a row selects it, a second click opens it, a click on a code line moves the cursor. It only does what a key already does.
 - **Hold to see the previous version** (`[ui] hold_to_peek = true`, `B`), where the terminal reports key releases (kitty keyboard protocol). Elsewhere, inside tmux included, the key says it cannot be held and `v` still toggles. The protocol is dropped while a text field is open so compose and `AltGr` characters still type.
 - **A `HarnessAdapter` seam** (`klaub_core::harness`) with `GenericHarness` as the only adapter. The paste confirmation names the adapter and shows a busy warning if an adapter reports one. The paste contract is unchanged, and no Codex or Claude Code adapter ships.
-- **Linux aarch64 and macOS Intel** in the tmux asset, release and CI test matrices, and in `scripts/install.sh`. The Homebrew formula and the install text change when a release carries those archives.
+- **Linux aarch64 and macOS Intel** builds join Linux x86_64 and macOS Apple Silicon in the release, the install script and the Homebrew formula. The macOS Intel build uses the system memory allocator, because a build with jemalloc crashes in the forked child on that platform. Source downloads in the tmux build fall back to mirrors, and every source is checked against its SHA-256.
 - `klaub doctor` warns under WSL, and when the directory is on the Windows file system.
 - `KLAUB_BENCH_REPO` runs the latency harness on real repositories; `docs/benchmarks.md` has a run on flask, django, tokio and vue core.
 - **Contract inspector (`i`).** The declaration of a callable is split into parameters and return type for Python, JavaScript/TypeScript, Rust, Go and Java (where `throws` is listed with the exceptions). Decorators, the routes a symbol serves, the exceptions its body raises or throws (and the error a Rust `Result` or a Go `error` declares), observable effects (risk markers and I/O-looking calls) and, for a type, its public members and what kind of data type it looks like are shown as `+`/`-` lists before and after. The entrypoints that can reach the symbol are named with their certainty. A declaration it cannot read is reported as unknown.
