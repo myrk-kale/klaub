@@ -223,6 +223,17 @@ pub struct CodeState {
     pub selection: Option<usize>,
     /// A symbol of the project that is not part of the change (reached from the impact view).
     pub detached: Option<klaub_core::graph::SymbolKey>,
+    /// Where the code lines were drawn last, so a mouse click can pick a line.
+    pub area: ratatui::layout::Rect,
+}
+
+/// A key held down to look at the previous version. Releasing it puts the version back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Peek {
+    /// The character being held.
+    pub key: char,
+    /// The version to go back to on release.
+    pub restore: Version,
 }
 
 /// What a row of the impact view is.
@@ -475,6 +486,13 @@ pub struct App {
     pub should_quit: bool,
     /// When the worktree was last probed for changes.
     pub last_probe: Instant,
+    /// Where each tab was drawn last, so a mouse click can switch to it.
+    pub tab_hits: Vec<(ratatui::layout::Rect, Mode)>,
+    /// Whether the terminal reports key releases. Only then can a key be held to look at the
+    /// previous version.
+    pub hold_supported: bool,
+    /// The key being held to look at the previous version, if any.
+    pub peek: Option<Peek>,
 }
 
 /// What the first review of a worktree explains about `.klaub/`.
@@ -492,6 +510,15 @@ impl App {
             text: STORAGE_NOTICE.to_owned(),
         });
         self
+    }
+
+    /// Whether a text field or the palette is open, where keys must arrive as typed.
+    #[must_use]
+    pub fn text_input_open(&self) -> bool {
+        matches!(
+            self.overlay,
+            Some(Overlay::Editor(_) | Overlay::Search { .. } | Overlay::Palette { .. })
+        )
     }
 
     /// Creates the reader over an open session.
@@ -545,6 +572,9 @@ impl App {
             quit_armed: false,
             should_quit: false,
             last_probe: Instant::now(),
+            tab_hits: Vec::new(),
+            hold_supported: false,
+            peek: None,
         };
         app.unit = app
             .session

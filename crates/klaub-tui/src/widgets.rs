@@ -133,6 +133,8 @@ pub(crate) fn draw_list(
     theme: Theme,
 ) {
     view.height = usize::from(area.height);
+    view.area = area;
+    view.len = rows.len();
     view.clamp(rows.len());
     let window = view.window(rows.len());
     let selected = view.selected;

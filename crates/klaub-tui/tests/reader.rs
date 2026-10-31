@@ -20,7 +20,7 @@ use klaub_parse::TreeSitterParser;
 use klaub_storage::{
     FsConfigSource, FsFileReader, FsFlowRepository, JsonReviewRepository, SqliteCache,
 };
-use klaub_tui::{App, Mode, Overlay, draw, handle_key};
+use klaub_tui::{App, Mode, Overlay, draw, end_peek, handle_key, handle_mouse};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -592,6 +592,195 @@ fn a_moved_follow_up_decision_key_does_not_leave_the_old_one_acting() {
     assert!(app.overlay.is_none());
     press(&mut app, 'z');
     assert!(app.overlay.is_none(), "there is no comment to decide on");
+}
+
+fn released(c: char) -> KeyEvent {
+    KeyEvent::new_with_kind(
+        KeyCode::Char(c),
+        KeyModifiers::empty(),
+        ratatui::crossterm::event::KeyEventKind::Release,
+    )
+}
+
+#[test]
+fn holding_the_peek_key_shows_the_previous_version_until_it_is_released() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    app.hold_supported = true;
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.mode, Mode::Code);
+    assert_eq!(app.code.version, Some(klaub_core::review::Version::After));
+
+    press(&mut app, 'B');
+    assert_eq!(app.code.version, Some(klaub_core::review::Version::Before));
+    // A held key repeats; that must not toggle it back.
+    press(&mut app, 'B');
+    assert_eq!(app.code.version, Some(klaub_core::review::Version::Before));
+
+    handle_key(&mut app, released('B'));
+    assert_eq!(app.code.version, Some(klaub_core::review::Version::After));
+    assert!(app.peek.is_none());
+}
+
+#[test]
+fn a_lost_focus_ends_a_peek_whose_release_will_never_arrive() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    app.hold_supported = true;
+    handle_key(&mut app, key(KeyCode::Enter));
+    press(&mut app, 'B');
+    assert_eq!(app.code.version, Some(klaub_core::review::Version::Before));
+    end_peek(&mut app);
+    assert_eq!(app.code.version, Some(klaub_core::review::Version::After));
+}
+
+#[test]
+fn without_key_releases_the_peek_key_explains_and_leaves_the_code_alone() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    press(&mut app, 'B');
+    assert_eq!(app.code.version, Some(klaub_core::review::Version::After));
+    let status = app.status.clone().expect("it says why").0;
+    assert!(status.contains("does not report key releases"), "{status}");
+    assert!(status.contains("v toggles"), "{status}");
+}
+
+fn click(app: &mut App, column: u16, row: u16) {
+    handle_mouse(
+        app,
+        ratatui::crossterm::event::MouseEvent {
+            kind: ratatui::crossterm::event::MouseEventKind::Down(
+                ratatui::crossterm::event::MouseButton::Left,
+            ),
+            column,
+            row,
+            modifiers: KeyModifiers::empty(),
+        },
+    );
+}
+
+fn wheel(app: &mut App, down: bool) {
+    let kind = if down {
+        ratatui::crossterm::event::MouseEventKind::ScrollDown
+    } else {
+        ratatui::crossterm::event::MouseEventKind::ScrollUp
+    };
+    handle_mouse(
+        app,
+        ratatui::crossterm::event::MouseEvent {
+            kind,
+            column: 10,
+            row: 10,
+            modifiers: KeyModifiers::empty(),
+        },
+    );
+}
+
+/// Three functions changed, so the queue has three rows to click.
+fn three_changes() -> TempRepo {
+    let repo = TempRepo::new();
+    repo.write(
+        "service.py",
+        "def one(a):\n    return a\n\n\ndef two(a):\n    return a\n\n\ndef three(a):\n    return a\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "def one(a):\n    return a + 1\n\n\ndef two(a):\n    return a + 2\n\n\ndef three(a):\n    return a + 3\n",
+    );
+    repo
+}
+
+#[test]
+fn clicking_a_tab_switches_to_that_mode() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    let _ = screen(&mut app, 140, 30);
+    let (area, mode) = *app
+        .tab_hits
+        .iter()
+        .find(|(_, mode)| *mode == Mode::Coverage)
+        .expect("the tab row is wide enough to show every tab");
+    click(&mut app, area.x + 1, area.y);
+    assert_eq!(app.mode, mode);
+}
+
+#[test]
+fn clicking_a_row_selects_it_and_clicking_the_selected_row_opens_it() {
+    let repo = three_changes();
+    let mut app = reader(open(&repo));
+    let _ = screen(&mut app, 140, 30);
+    assert!(app.queue_view.len >= 3);
+    let first = app.queue_selection();
+
+    let area = app.queue_view.area;
+    click(&mut app, area.x + 4, area.y + 2);
+    assert_eq!(app.queue_view.selected, 2);
+    assert_ne!(
+        app.queue_selection(),
+        first,
+        "the unit under the cursor follows the click"
+    );
+    assert_eq!(app.mode, Mode::Queue, "one click only selects");
+
+    let _ = screen(&mut app, 140, 30);
+    click(&mut app, area.x + 4, area.y + 2);
+    assert_eq!(
+        app.mode,
+        Mode::Code,
+        "a second click on the same row opens it"
+    );
+}
+
+#[test]
+fn a_click_below_the_last_row_does_nothing() {
+    let repo = three_changes();
+    let mut app = reader(open(&repo));
+    let _ = screen(&mut app, 140, 30);
+    let area = app.queue_view.area;
+    click(&mut app, area.x + 4, area.y + 20);
+    assert_eq!(app.queue_view.selected, 0);
+    assert_eq!(app.mode, Mode::Queue);
+}
+
+#[test]
+fn the_wheel_moves_like_the_arrow_keys() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    let _ = screen(&mut app, 140, 30);
+    let start = app.code.cursor;
+    // The function is short, so the wheel's three lines stop at the last one.
+    let last = app.code.view.as_ref().unwrap().lines.len() - 1;
+    wheel(&mut app, true);
+    assert_eq!(app.code.cursor, (start + 3).min(last));
+    assert!(app.code.cursor > start);
+    wheel(&mut app, false);
+    assert_eq!(app.code.cursor, (start + 3).min(last).saturating_sub(3));
+}
+
+#[test]
+fn clicking_a_code_line_puts_the_cursor_there() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    let _ = screen(&mut app, 140, 30);
+    let area = app.code.area;
+    click(&mut app, area.x + 10, area.y + 1);
+    assert_eq!(app.code.cursor, 1);
+}
+
+#[test]
+fn the_mouse_is_ignored_while_a_text_field_is_open() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    press(&mut app, '/');
+    let before = app.queue_view;
+    wheel(&mut app, true);
+    click(&mut app, 5, 5);
+    assert!(matches!(app.overlay, Some(Overlay::Search { .. })));
+    assert_eq!(app.queue_view, before);
 }
 
 #[test]

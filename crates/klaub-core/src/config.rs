@@ -84,6 +84,12 @@ pub struct UiConfig {
     pub theme: Theme,
     /// Show key hints in the status bar.
     pub show_hints: bool,
+    /// Let the mouse scroll, select and switch tabs. Off by default: capturing the mouse stops the
+    /// terminal's own text selection until the modifier it offers for that is held.
+    pub mouse: bool,
+    /// Hold a key to see the previous version for as long as it is down. Needs a terminal that
+    /// reports key releases; without one the setting has no effect and `v` still toggles.
+    pub hold_to_peek: bool,
 }
 
 impl Default for UiConfig {
@@ -91,6 +97,8 @@ impl Default for UiConfig {
         Self {
             theme: Theme::Dark,
             show_hints: true,
+            mouse: false,
+            hold_to_peek: false,
         }
     }
 }

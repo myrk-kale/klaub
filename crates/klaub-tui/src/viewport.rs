@@ -1,5 +1,7 @@
 //! Scrolling bookkeeping for lists and text.
 
+use ratatui::layout::Rect;
+
 /// A cursor inside a scrolled window.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Viewport {
@@ -9,6 +11,10 @@ pub struct Viewport {
     pub offset: usize,
     /// How many rows fit on screen (set by the view each frame).
     pub height: usize,
+    /// Where the rows were drawn last, so a mouse click can be turned into a row.
+    pub area: Rect,
+    /// How many rows the list had when it was drawn last.
+    pub len: usize,
 }
 
 impl Viewport {
@@ -46,6 +52,20 @@ impl Viewport {
         self.ensure_visible();
     }
 
+    /// The row under a screen position, if the position is on a row of this list.
+    #[must_use]
+    pub fn row_at(&self, x: u16, y: u16) -> Option<usize> {
+        let inside = x >= self.area.x
+            && x < self.area.x.saturating_add(self.area.width)
+            && y >= self.area.y
+            && y < self.area.y.saturating_add(self.area.height);
+        if !inside {
+            return None;
+        }
+        let row = self.offset + usize::from(y - self.area.y);
+        (row < self.len).then_some(row)
+    }
+
     /// A page of rows (at least one).
     pub fn page(&self) -> isize {
         isize::try_from(self.height.saturating_sub(1).max(1)).unwrap_or(1)
@@ -80,11 +100,30 @@ mod tests {
     }
 
     #[test]
+    fn a_position_maps_to_the_row_drawn_there() {
+        let view = Viewport {
+            offset: 10,
+            height: 5,
+            len: 12,
+            area: Rect::new(2, 4, 30, 5),
+            ..Viewport::default()
+        };
+        assert_eq!(view.row_at(2, 4), Some(10));
+        assert_eq!(view.row_at(31, 5), Some(11));
+        assert_eq!(view.row_at(5, 6), None, "row 12 does not exist");
+        assert_eq!(view.row_at(1, 4), None, "left of the list");
+        assert_eq!(view.row_at(32, 4), None, "right of the list");
+        assert_eq!(view.row_at(5, 3), None, "above the list");
+        assert_eq!(view.row_at(5, 9), None, "below the list");
+    }
+
+    #[test]
     fn empty_and_shrinking_lists_are_safe() {
         let mut view = Viewport {
             height: 4,
             selected: 7,
             offset: 5,
+            ..Viewport::default()
         };
         view.clamp(3);
         assert_eq!((view.selected, view.offset), (2, 2));
