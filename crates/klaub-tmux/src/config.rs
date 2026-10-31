@@ -25,8 +25,8 @@ pub struct SessionConfig<'a> {
 }
 
 /// The help shown by `Prefix ?`.
-pub const HELP_TEXT: &str =
-    "klaub  Prefix+R review  Prefix+A agent  Prefix+d detach  (Prefix is Ctrl+B unless configured)";
+pub const HELP_TEXT: &str = "klaub  Prefix+R review  Prefix+A agent  Prefix+I impact  Prefix+C comments  \
+Prefix+T tests  Prefix+B brief  Prefix+L flow  Prefix+d detach  (Prefix is Ctrl+B unless configured)";
 
 /// Checks a tmux key name such as `C-b`, `C-Space` or `M-a`.
 pub fn validate_prefix(prefix: &str) -> Result<()> {
@@ -160,6 +160,35 @@ pub fn configuration(spec: &SessionConfig<'_>) -> Result<Vec<Vec<String>>> {
         "10000",
         HELP_TEXT,
     ]));
+    // These open the reviewer on a specific mode. The review window is selected first, then the
+    // function key is delivered to its pane, where the reader maps it to a mode.
+    for (key, function_key) in [
+        ("I", "F5"),
+        ("C", "F6"),
+        ("T", "F7"),
+        ("B", "F8"),
+        ("L", "F9"),
+    ] {
+        commands.push(command(&[
+            "bind-key",
+            "-T",
+            "prefix",
+            key,
+            "run-shell",
+            "-b",
+            "#{@klaub-focus-review}",
+        ]));
+        commands.push(command(&[
+            "bind-key",
+            "-T",
+            "prefix",
+            key,
+            "send-keys",
+            "-t",
+            "review",
+            function_key,
+        ]));
+    }
     commands.push(command(&[
         "set-hook",
         "-g",
@@ -206,6 +235,15 @@ mod tests {
                 .any(|c| c == "bind-key -T prefix A run-shell -b #{@klaub-focus-agent}")
         );
         assert!(flat.iter().any(|c| c == "set-option -g @klaub-focus-review /usr/bin/klaub session focus --id ses_abc123 review"));
+        assert!(
+            flat.iter()
+                .any(|c| c == "bind-key -T prefix I send-keys -t review F5"),
+            "Prefix+I opens the impact view"
+        );
+        assert!(
+            flat.iter()
+                .any(|c| c == "bind-key -T prefix L send-keys -t review F9")
+        );
         assert!(
             !flat.iter().any(|c| c.contains("unbind-key")),
             "default prefix is left alone"
