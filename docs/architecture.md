@@ -64,7 +64,7 @@ Dependencies point inward. Adapters depend on `klaub-core` for the port they imp
 | `klaub-git` | Driven adapter | `SnapshotProvider` and workspace reading through the Git CLI. |
 | `klaub-parse` | Driven adapter | `SourceParser` with tree-sitter grammars. |
 | `klaub-storage` | Driven adapter | Review repository (atomic JSON), analysis cache (SQLite), flow repository, configuration loading. |
-| `klaub-tmux` | Driven adapter | Embedded tmux runtime, private server, sessions and windows, pane identity, safe paste. |
+| `klaub-tmux` | Driven adapter | Embedded and verified tmux runtime, one private server per session ([ADR 0008](adr/0008-one-private-tmux-server-per-session.md)), pane identity, single-line bracketed paste ([ADR 0009](adr/0009-pasted-text-is-always-one-line.md)). |
 | `klaub-tui` | Driving adapter | Ratatui application: Elm-style model, pure `update`, rendering. |
 | `klaub-cli` | Driving adapter + composition root | `clap` commands, wiring of adapters to ports, process-level concerns (logging, exit codes). |
 

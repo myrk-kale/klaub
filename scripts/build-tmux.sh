@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+#
+# Builds a self-contained tmux for one target and writes the asset that
+# crates/klaub-tmux/build.rs embeds into the klaub binary:
+#
+#   assets/tmux/<target>/tmux.gz           gzip-compressed, stripped executable
+#   assets/tmux/<target>/manifest.json     tmux version, target and SHA-256 of the executable
+#   assets/tmux/<target>/dependencies.txt  system libraries the executable links to
+#   assets/tmux/<target>/licenses/         licence texts of tmux, libevent and ncurses
+#
+# libevent and ncurses are built from pinned, hash-verified tarballs and linked
+# statically; only the platform's C library (and, on macOS, system libraries) stay dynamic.
+#
+# Intended for CI runners (see .github/workflows/tmux-asset.yml and release.yml). It
+# downloads and compiles third-party source code, so run it locally only if you want that.
+#
+# Usage: scripts/build-tmux.sh [target-triple]   (default: the host triple of rustc)
+#
+# Updating a pin: change the version and SHA-256 below in one reviewed commit and
+# let CI rebuild. Hashes come from the upstream release page.
+
+set -euo pipefail
+
+TMUX_VERSION="3.8"
+TMUX_URL="https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz"
+TMUX_SHA256="e79c699c7e949dccd0a4a125e17b8d1261e311b16979dbc8eb34542f3966d82e"
+
+LIBEVENT_VERSION="2.1.13-stable"
+LIBEVENT_URL="https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VERSION}/libevent-${LIBEVENT_VERSION}.tar.gz"
+LIBEVENT_SHA256="f7e9383b8c0baa81b687e5b5eecc01beefaf1b19b64151d95ed61647fe7a315c"
+
+NCURSES_VERSION="6.6"
+NCURSES_URL="https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VERSION}.tar.gz"
+NCURSES_SHA256="355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11"
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+target="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
+out="${root}/assets/tmux/${target}"
+work="$(mktemp -d)"
+prefix="${work}/prefix"
+jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+trap 'rm -rf "${work}"' EXIT
+
+log() { printf '\n==> %s\n' "$*"; }
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+fetch() { # url sha256 destination
+  local url="$1" expected="$2" dest="$3"
+  log "downloading ${url}"
+  curl --fail --silent --show-error --location --retry 3 --output "${dest}" "${url}"
+  local actual
+  actual="$(sha256_of "${dest}")"
+  if [ "${actual}" != "${expected}" ]; then
+    echo "SHA-256 mismatch for ${url}" >&2
+    echo "  expected ${expected}" >&2
+    echo "  actual   ${actual}" >&2
+    exit 1
+  fi
+}
+
+case "$(uname -s)" in
+  Darwin)
+    export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
+    cflags="-O2 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
+    ;;
+  *)
+    cflags="-O2"
+    ;;
+esac
+export CFLAGS="${cflags} -fPIC"
+
+mkdir -p "${prefix}" "${work}/src"
+fetch "${LIBEVENT_URL}" "${LIBEVENT_SHA256}" "${work}/libevent.tar.gz"
+fetch "${NCURSES_URL}" "${NCURSES_SHA256}" "${work}/ncurses.tar.gz"
+fetch "${TMUX_URL}" "${TMUX_SHA256}" "${work}/tmux.tar.gz"
+for name in libevent ncurses tmux; do
+  mkdir -p "${work}/src/${name}"
+  tar -xzf "${work}/${name}.tar.gz" -C "${work}/src/${name}" --strip-components=1
+done
+
+log "building libevent ${LIBEVENT_VERSION}"
+(
+  cd "${work}/src/libevent"
+  ./configure --prefix="${prefix}" --disable-shared --enable-static --with-pic \
+    --disable-openssl --disable-samples --disable-libevent-regress >/dev/null
+  make -j"${jobs}" >/dev/null
+  make install >/dev/null
+)
+
+log "building ncurses ${NCURSES_VERSION}"
+(
+  cd "${work}/src/ncurses"
+  ./configure --prefix="${prefix}" \
+    --without-shared --without-debug --without-ada --without-cxx --without-cxx-binding \
+    --without-manpages --without-tests --without-progs --without-gpm \
+    --enable-widec --enable-pc-files --with-pkg-config-libdir="${prefix}/lib/pkgconfig" \
+    --with-terminfo-dirs=/etc/terminfo:/lib/terminfo:/usr/share/terminfo:/usr/lib/terminfo \
+    --with-default-terminfo-dir=/usr/share/terminfo >/dev/null
+  make -j"${jobs}" >/dev/null
+  make install.libs install.includes >/dev/null
+)
+
+log "building tmux ${TMUX_VERSION}"
+(
+  cd "${work}/src/tmux"
+  export PKG_CONFIG_PATH="${prefix}/lib/pkgconfig"
+  export LIBEVENT_CFLAGS="-I${prefix}/include"
+  export LIBEVENT_LIBS="-L${prefix}/lib -levent_core"
+  export LIBNCURSES_CFLAGS="-I${prefix}/include -I${prefix}/include/ncursesw"
+  export LIBNCURSES_LIBS="-L${prefix}/lib -lncursesw"
+  ./configure --prefix="${prefix}" >/dev/null
+  make -j"${jobs}" >/dev/null
+)
+
+binary="${work}/src/tmux/tmux"
+strip "${binary}"
+reported="$("${binary}" -V)"
+echo "built: ${reported}"
+if [ "${reported}" != "tmux ${TMUX_VERSION}" ]; then
+  echo "unexpected version: ${reported}" >&2
+  exit 1
+fi
+
+log "writing ${out}"
+rm -rf "${out}"
+mkdir -p "${out}/licenses"
+gzip -9 --no-name --stdout "${binary}" > "${out}/tmux.gz"
+digest="$(sha256_of "${binary}")"
+cat > "${out}/manifest.json" <<JSON
+{
+  "schema_version": 1,
+  "tmux_version": "${TMUX_VERSION}",
+  "target": "${target}",
+  "sha256": "${digest}"
+}
+JSON
+
+# Inventory of what stays dynamic, as required by the distribution policy.
+{
+  echo "# Dynamic dependencies of tmux ${TMUX_VERSION} (${target})"
+  case "$(uname -s)" in
+    Darwin) otool -L "${binary}" | tail -n +2 ;;
+    *)      ldd "${binary}" ;;
+  esac
+} > "${out}/dependencies.txt"
+
+cp "${work}/src/tmux/COPYING"     "${out}/licenses/tmux-COPYING"
+cp "${work}/src/libevent/LICENSE" "${out}/licenses/libevent-LICENSE"
+cp "${work}/src/ncurses/COPYING"  "${out}/licenses/ncurses-COPYING"
+
+echo
+echo "tmux ${TMUX_VERSION} for ${target}"
+echo "  sha256  ${digest}"
+echo "  asset   ${out}"
+cat "${out}/dependencies.txt"

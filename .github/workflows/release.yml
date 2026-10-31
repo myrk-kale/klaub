@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and upload artifacts without publishing a release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  tmux:
+    name: tmux
+    uses: ./.github/workflows/tmux-asset.yml
+
+  build:
+    name: Package (${{ matrix.target }})
+    needs: tmux
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "klaub-cli") | .version')"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the workspace version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: tmux-${{ matrix.target }}
+          path: assets/tmux/${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked -p klaub-cli
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          name="klaub-${VERSION}-${TARGET}"
+          mkdir -p "dist/${name}/licenses"
+          cp target/release/klaub LICENSE README.md CHANGELOG.md THIRD-PARTY-NOTICES.md "dist/${name}/"
+          cp "assets/tmux/${TARGET}/licenses/"* "dist/${name}/licenses/"
+          cp "assets/tmux/${TARGET}/dependencies.txt" "dist/${name}/"
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum "${name}.tar.gz"; else shasum -a 256 "${name}.tar.gz"; fi > "${name}.tar.gz.sha256"
+          cat "${name}.tar.gz.sha256"
+      - name: Smoke test the packaged binary
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          tar -xzf "dist/klaub-${VERSION}-${TARGET}.tar.gz" -C "$work"
+          KLAUB_STATE_DIR="$work/state" KLAUB_CACHE_DIR="$work/cache" KLAUB_CONFIG_DIR="$work/config" \
+            "$work/klaub-${VERSION}-${TARGET}/klaub" doctor
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: dist/*.tar.gz
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*.tar.gz*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish release
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Release notes from the changelog
+        run: scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > notes.md
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --title "klaub ${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            "${flags[@]}"

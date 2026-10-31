@@ -25,7 +25,22 @@ export KLAUB_TMUX_PATH="$(command -v tmux)"
 cargo run -p klaub-cli -- doctor
 ```
 
-To build with an embedded tmux, run `scripts/build-tmux.sh` and then `cargo build --release`; the script prints where it wrote the asset.
+### Embedded tmux
+
+Release builds embed a hash-verified tmux. To produce one locally, run `scripts/build-tmux.sh` and then `cargo build --release`. The script **downloads and compiles tmux, libevent and ncurses** from pinned, SHA-256-verified tarballs and writes `assets/tmux/<target>/`; CI does the same on disposable runners (`.github/workflows/tmux-asset.yml`), so you rarely need to. `klaub doctor` shows whether the binary in use is embedded and verified or an explicit path.
+
+### Trying a wrapped session from source
+
+```shell
+export KLAUB_TMUX_PATH="$(command -v tmux)"
+cargo build -p klaub-cli
+target/debug/klaub wrap -- sh        # any interactive program works as a stand-in agent
+# Ctrl+B R  review window   Ctrl+B A  back to the agent   Ctrl+B d  detach
+target/debug/klaub session list
+target/debug/klaub session kill --yes <id>
+```
+
+Set `KLAUB_STATE_DIR`, `KLAUB_CACHE_DIR` and `KLAUB_CONFIG_DIR` to keep experiments out of your real directories. `KLAUB_LOG=debug` writes a log file for the review window.
 
 ## Conventions
 

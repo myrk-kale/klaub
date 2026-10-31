@@ -51,22 +51,23 @@ flowchart LR
 
 ## Quick start
 
-> Installation instructions will be added with the first release. Until then, build from source:
+There is no release yet. Build from source (Rust 1.90+, `git`, and a `tmux` 3.2+ on your `PATH` until release builds embed one):
 
 ```shell
 git clone https://github.com/myrk-kale/klaub && cd klaub
 cargo install --path crates/klaub-cli --locked
+export KLAUB_TMUX_PATH="$(command -v tmux)"
+klaub doctor
 ```
 
 ```shell
 cd my-project
 klaub wrap codex                 # or: klaub wrap -- claude --model <model>
-# Ctrl+B, R   open the reviewer     Ctrl+B, A   back to the agent
-# c           comment               r           mark reviewed
-# F           finish review         Prepare in agent → press Enter yourself
+# Ctrl+B, R   open the reviewer     Ctrl+B, A   back to the agent     Ctrl+B, d   detach
+klaub session list               # later: klaub session attach
 ```
 
-Outside a wrapped session, `klaub review` opens the same reviewer for the current worktree and lets you copy or export the feedback.
+Working today: the wrapper (phase 0). The semantic reader (queue, code, impact, comments and *Prepare in agent*) lands with phase 1; see the roadmap below.
 
 ## Documentation
 
@@ -83,7 +84,7 @@ Outside a wrapped session, `klaub review` opens the same reviewer for the curren
 | Phase | Scope | Status |
 | --- | --- | --- |
 | Foundation | Workspace, lints, CI, community files, ADRs | ✅ |
-| 0 | Embedded tmux, `wrap`, pane identity, safe bracketed paste, minimal TUI | ⏳ |
+| 0 | Embedded tmux, `wrap`, pane identity, safe bracketed paste, minimal TUI ([gate](docs/phase-0-gate.md)) | ✅ implemented; manual check with real harnesses pending |
 | 1 | Git snapshots, Python and JS/TS, semantic matching, queue, reverse call graph, comments, brief, tests evidence, incremental risk | ⏳ |
 | 2 | Architecture rules, contract inspector, follow-up, review coverage, `Flow` and the `klaub-flow` skill | ⏳ |
 | 3 | More languages, general feedback skill, export formats, harness adapter seam | ⏳ |
