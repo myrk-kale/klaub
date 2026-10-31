@@ -36,7 +36,7 @@ impl JsonReviewRepository {
 
     /// The path of a review file relative to the worktree (what feedback prompts refer to).
     pub fn relative_path(id: &ReviewId) -> String {
-        format!("{INTERNAL_DIR}/reviews/{id}.json")
+        klaub_core::review::review_file(id)
     }
 
     fn file(&self, id: &ReviewId) -> PathBuf {

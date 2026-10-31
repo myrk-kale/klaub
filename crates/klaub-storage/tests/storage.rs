@@ -179,7 +179,11 @@ fn concurrent_saves_never_corrupt_a_review() {
         .unwrap()
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| std::path::Path::new(n).extension().is_some_and(|e| e == "tmp"))
+        .filter(|n| {
+            std::path::Path::new(n)
+                .extension()
+                .is_some_and(|e| e == "tmp")
+        })
         .collect();
     assert!(stray.is_empty(), "{stray:?}");
 }

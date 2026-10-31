@@ -20,6 +20,11 @@ use crate::timestamp::Timestamp;
 /// The current version of the review file schema.
 pub const REVIEW_SCHEMA_VERSION: u32 = 1;
 
+/// Where a review is stored, relative to the worktree (what the feedback prompt points at).
+pub fn review_file(id: &ReviewId) -> String {
+    format!("{}/reviews/{id}.json", crate::path::INTERNAL_DIR)
+}
+
 /// Which side of the comparison an anchor refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
