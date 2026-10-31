@@ -87,7 +87,7 @@ Ports live in `klaub-core::ports`. Each has an in-memory fake in tests.
 
 ### Extension point for harness adapters
 
-Phase 3 of the roadmap reserves a `HarnessAdapter` seam: harness-specific readiness detection and confirmed submission. It is deliberately **not** used by phases 0–2, which only rely on the universal "bracketed paste, no `Enter`" contract ([ADR 0005](adr/0005-human-confirmed-paste-never-enter.md)).
+`klaub_core::harness` holds the `HarnessAdapter` trait, the `GenericHarness` fallback and a `HarnessRegistry` that picks an adapter by the name of the program in the agent pane ([ADR 0010](adr/0010-harness-adapters-are-a-seam-not-a-dependency.md)). An adapter can say whether a program looks ready or busy and whether text was submitted, and the reader shows what it says in the paste confirmation. It is deliberately **not** relied on: with only the generic adapter, which knows nothing, the flow is the universal "bracketed paste, no `Enter`" contract ([ADR 0005](adr/0005-human-confirmed-paste-never-enter.md)). No Codex or Claude Code adapter ships; the specification waits for a readiness contract and an acceptance per harness.
 
 ## How a review is produced
 

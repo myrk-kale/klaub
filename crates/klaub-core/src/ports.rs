@@ -167,6 +167,15 @@ pub trait AgentChannel: Send + Sync {
     /// Pastes `text` into the agent's input as one bracketed paste and selects the agent window.
     /// Never sends `Enter` and never clears existing input.
     fn prepare_input(&self, text: &str) -> Result<PrepareOutcome>;
+
+    /// The last `lines` lines of what the agent's pane shows, for a [`HarnessAdapter`] to read, or
+    /// `None` when the channel cannot read the screen. The text is untrusted terminal output.
+    ///
+    /// [`HarnessAdapter`]: crate::harness::HarnessAdapter
+    fn screen_tail(&self, lines: usize) -> Result<Option<String>> {
+        let _ = lines;
+        Ok(None)
+    }
 }
 
 /// Copies text for the user (implemented by `klaub-cli`).

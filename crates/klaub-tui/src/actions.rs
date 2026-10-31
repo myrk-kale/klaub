@@ -886,6 +886,7 @@ pub(crate) fn prepare_confirm(
                 "⚠ {command} is a shell. If your agent is not the one reading the keyboard, the text lands on a shell prompt."
             ));
         }
+        lines.extend(harness_lines(app, command));
     }
     lines.extend([
         "text to paste (Klaub never presses Enter; you decide when to send it):".to_owned(),
@@ -898,6 +899,30 @@ pub(crate) fn prepare_confirm(
         action,
     }
 }
+
+/// What the adapter for the program in the pane has to say. The generic adapter says that nothing
+/// is known; an adapter that does know can warn that the program looks busy. Either way the
+/// answer only informs the confirmation, it never decides whether to paste.
+fn harness_lines(app: &App, command: &str) -> Vec<String> {
+    let adapter = app.harnesses.select(command);
+    let mut lines = vec![format!("harness: {}", sanitize_single_line(adapter.name()))];
+    if adapter.id() == "generic" {
+        return lines;
+    }
+    let screen = app
+        .agent
+        .as_ref()
+        .and_then(|channel| channel.screen_tail(HARNESS_SCREEN_LINES).ok().flatten());
+    if let Some(screen) = screen
+        && let klaub_core::harness::Readiness::Busy(reason) = adapter.readiness(&screen)
+    {
+        lines.push(format!("⚠ {}", sanitize_single_line(&reason)));
+    }
+    lines
+}
+
+/// How much of the pane's screen an adapter is shown.
+const HARNESS_SCREEN_LINES: usize = 20;
 
 fn copy_feedback(app: &mut App) {
     let Some(clipboard) = app.clipboard.clone() else {

@@ -486,6 +486,9 @@ pub struct App {
     pub should_quit: bool,
     /// When the worktree was last probed for changes.
     pub last_probe: Instant,
+    /// The adapters for the programs a paste may go to. Empty by default, which means every
+    /// program gets the generic adapter and nothing is assumed about its state.
+    pub harnesses: klaub_core::harness::HarnessRegistry,
     /// Where each tab was drawn last, so a mouse click can switch to it.
     pub tab_hits: Vec<(ratatui::layout::Rect, Mode)>,
     /// Whether the terminal reports key releases. Only then can a key be held to look at the
@@ -509,6 +512,13 @@ impl App {
             title: "Where Klaub keeps its files".to_owned(),
             text: STORAGE_NOTICE.to_owned(),
         });
+        self
+    }
+
+    /// Replaces the adapters consulted before a paste. The confirmation names the adapter it used.
+    #[must_use]
+    pub fn with_harnesses(mut self, harnesses: klaub_core::harness::HarnessRegistry) -> Self {
+        self.harnesses = harnesses;
         self
     }
 
@@ -572,6 +582,7 @@ impl App {
             quit_armed: false,
             should_quit: false,
             last_probe: Instant::now(),
+            harnesses: klaub_core::harness::HarnessRegistry::default(),
             tab_hits: Vec::new(),
             hold_supported: false,
             peek: None,

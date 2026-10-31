@@ -22,6 +22,7 @@ pub mod finding;
 pub mod flow;
 pub mod glob;
 pub mod graph;
+pub mod harness;
 pub mod ids;
 pub mod language;
 pub mod path;
