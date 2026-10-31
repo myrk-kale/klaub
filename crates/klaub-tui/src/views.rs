@@ -375,13 +375,19 @@ fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         Some(notice) => Line::from(Span::styled(fit(&clean(notice), width), theme.warn())),
         None => {
             let toggle = if view.other_version_exists {
-                "v old/new · "
+                format!("{} old/new · ", app.keymap.key_for("toggle_version"))
             } else {
-                ""
+                String::new()
             };
             Line::from(Span::styled(
                 fit(
-                    &format!("{toggle}[ ] changes · c comment · V select lines · Enter impact"),
+                    &format!(
+                        "{toggle}{} {} changes · {} comment · {} select lines · Enter impact",
+                        app.keymap.key_for("previous_change"),
+                        app.keymap.key_for("next_change"),
+                        app.keymap.key_for("comment"),
+                        app.keymap.key_for("select_lines"),
+                    ),
                     width,
                 ),
                 theme.dim(),
@@ -586,7 +592,11 @@ fn comments(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     header(
         frame,
         head,
-        &format!("Comments · {total}  (Enter opens the code, e edit, d delete drafts)"),
+        &format!(
+            "Comments · {total}  (Enter opens the code, {} edit, {} delete drafts)",
+            app.keymap.key_for("edit_comment"),
+            app.keymap.key_for("delete_comment"),
+        ),
         theme,
     );
     if total == 0 {

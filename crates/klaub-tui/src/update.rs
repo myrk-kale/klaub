@@ -26,6 +26,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
     if key.kind == KeyEventKind::Release {
         return;
     }
+    let key = translated(app, key);
     let quit_was_armed = std::mem::take(&mut app.quit_armed);
     if app.overlay.is_some() {
         overlay_key(app, key);
@@ -36,6 +37,26 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
     global_key(app, key, quit_was_armed);
+}
+
+/// Turns a moved mode-specific key (`[keys] down = "n"`) into the character the mode matches.
+///
+/// Text fields and the palette read the character as typed, so they are left alone. The delivery
+/// list of the finish panel is a list of its own and takes the movement keys.
+fn translated(app: &App, mut key: KeyEvent) -> KeyEvent {
+    let KeyCode::Char(c) = key.code else {
+        return key;
+    };
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        return key;
+    }
+    let mode = match &app.overlay {
+        None => Some(app.mode),
+        Some(Overlay::Finish(FinishStage::Deliver { .. })) => None,
+        Some(_) => return key,
+    };
+    key.code = KeyCode::Char(app.keymap.translate(mode, c));
+    key
 }
 
 /// Applies pasted text (terminal bracketed paste) to whichever field is open.

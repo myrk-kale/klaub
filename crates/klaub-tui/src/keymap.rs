@@ -1,11 +1,14 @@
 //! Which character triggers which action.
 //!
 //! The reader ships one default map and `[keys]` in the configuration can move any action in
-//! [`BINDABLE`] to another single character. Everything else is deliberately fixed: the arrow and
-//! function keys, `Esc`, `Enter`, `Tab`, the palette (`:`), quitting (`q`), and the keys that only
-//! mean something inside one mode (`j`/`k` movement, the follow-up decisions, the editor). A key a
-//! mode handles for itself wins over this map while that mode is open, so a binding that lands on
-//! one of those keys is refused when the map is built instead of being silently shadowed.
+//! [`BINDABLE`] to another single character. The keys that only mean something inside one mode
+//! (`j`/`k` movement, selecting lines, the follow-up decisions, editing a comment) are listed in
+//! [`MODAL`] and can be moved the same way: a mode reads the canonical character, and
+//! [`Keymap::translate`] turns the configured one into it before the mode sees the key. Everything
+//! else is deliberately fixed: the arrow and function keys, `Esc`, `Enter`, `Tab`, the palette
+//! (`:`), quitting (`q`), and the confirmation keys. A key a mode handles for itself wins over the
+//! global map while that mode is open, so a binding that lands on one of those keys is refused when
+//! the map is built instead of being silently shadowed.
 //!
 //! The map is validated as a whole. A typo in an action id, a key that is not one printable
 //! character, a reserved key and two actions on the same key each name the entry that caused them,
@@ -236,10 +239,135 @@ const BINDABLE: &[Bindable] = &[
     },
 ];
 
-/// Characters no binding may take. `q` quits, `:` opens the palette, and the rest are the keys the
-/// modes use for themselves (movement, the follow-up decisions, horizontal scroll, the contract
-/// inspector, the flow request).
+/// A key that only means something inside some modes, with the character the mode reads.
+struct Modal {
+    /// The id used in the configuration.
+    id: &'static str,
+    /// The character the mode's handler matches. Moving the key changes what the user presses, not
+    /// this.
+    canonical: char,
+    /// The modes the key works in. Empty means every mode, and the delivery list of the finish
+    /// panel as well.
+    modes: &'static [Mode],
+}
+
+/// Every mode-specific key `[keys]` can move.
+const MODAL: &[Modal] = &[
+    Modal {
+        id: "down",
+        canonical: 'j',
+        modes: &[],
+    },
+    Modal {
+        id: "up",
+        canonical: 'k',
+        modes: &[],
+    },
+    Modal {
+        id: "scroll_left",
+        canonical: 'h',
+        modes: &[Mode::Code],
+    },
+    Modal {
+        id: "scroll_right",
+        canonical: 'l',
+        modes: &[Mode::Code],
+    },
+    Modal {
+        id: "select_lines",
+        canonical: 'V',
+        modes: &[Mode::Code],
+    },
+    Modal {
+        id: "open_file",
+        canonical: 'o',
+        modes: &[Mode::Code],
+    },
+    Modal {
+        id: "inspect_contract",
+        canonical: 'i',
+        modes: &[Mode::Code],
+    },
+    Modal {
+        id: "pivot_impact",
+        canonical: 'p',
+        modes: &[Mode::Impact],
+    },
+    Modal {
+        id: "request_flow",
+        canonical: 'p',
+        modes: &[Mode::Flow],
+    },
+    Modal {
+        id: "edit_intent",
+        canonical: 'i',
+        modes: &[Mode::Context],
+    },
+    Modal {
+        id: "add_criterion",
+        canonical: 'a',
+        modes: &[Mode::Context],
+    },
+    Modal {
+        id: "edit_comment",
+        canonical: 'e',
+        modes: &[Mode::Comments],
+    },
+    Modal {
+        id: "delete_comment",
+        canonical: 'd',
+        modes: &[Mode::Comments],
+    },
+    Modal {
+        id: "decide_resolved",
+        canonical: 'y',
+        modes: &[Mode::Followup],
+    },
+    Modal {
+        id: "decide_partial",
+        canonical: 'p',
+        modes: &[Mode::Followup],
+    },
+    Modal {
+        id: "decide_unresolved",
+        canonical: 'u',
+        modes: &[Mode::Followup],
+    },
+    Modal {
+        id: "decide_regression",
+        canonical: 'X',
+        modes: &[Mode::Followup],
+    },
+];
+
+impl Modal {
+    /// Whether this key is live in `mode`. `None` is an overlay that is not a mode, where only the
+    /// keys that work everywhere apply.
+    fn applies(&self, mode: Option<Mode>) -> bool {
+        match mode {
+            Some(mode) => self.modes.is_empty() || self.modes.contains(&mode),
+            None => self.modes.is_empty(),
+        }
+    }
+
+    /// Whether two keys can be live at once, and so cannot share a character.
+    fn overlaps(&self, other: &Modal) -> bool {
+        self.modes.is_empty()
+            || other.modes.is_empty()
+            || self.modes.iter().any(|m| other.modes.contains(m))
+    }
+}
+
+/// Characters no binding may take. `q` quits, `:` opens the palette, space folds and toggles, `y`
+/// confirms, and the rest are the canonical characters of [`MODAL`], which a global action may not
+/// take even after the modal key moved away.
 const RESERVED: &[char] = &['q', ':', ' ', 'j', 'k', 'h', 'l', 'y', 'o', 'i', 'p', 'V'];
+
+/// Characters that mean the same in every mode and so cannot be given to a mode-specific key.
+const FIXED: &[char] = &['q', ':', ' '];
+
+/// What a released canonical character is turned into: one that no handler matches.
+const RELEASED: char = '\u{0}';
 
 /// Why a `[keys]` table was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -277,7 +405,12 @@ impl fmt::Display for KeymapError {
             Self::UnknownAction(id) => write!(
                 f,
                 "[keys] has no action called `{id}`; the known ones are: {}",
-                BINDABLE.iter().map(|b| b.id).collect::<Vec<_>>().join(", ")
+                BINDABLE
+                    .iter()
+                    .map(|b| b.id)
+                    .chain(MODAL.iter().map(|m| m.id))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             Self::NotOneCharacter { action, value } => write!(
                 f,
@@ -304,6 +437,8 @@ pub struct Keymap {
     by_char: HashMap<char, Action>,
     /// The characters an action was moved to. Actions that were not moved are absent.
     moved: HashMap<&'static str, char>,
+    /// The characters a mode-specific key was moved to. Keys that were not moved are absent.
+    modal_moved: HashMap<&'static str, char>,
 }
 
 impl Default for Keymap {
@@ -317,6 +452,7 @@ impl Default for Keymap {
         Self {
             by_char,
             moved: HashMap::new(),
+            modal_moved: HashMap::new(),
         }
     }
 }
@@ -333,28 +469,42 @@ impl Keymap {
     /// character, a reserved character, or two actions on one character.
     pub fn from_overrides(overrides: &BTreeMap<String, String>) -> Result<Self, KeymapError> {
         let mut moved: HashMap<&'static str, char> = HashMap::new();
+        let mut modal_moved: HashMap<&'static str, char> = HashMap::new();
         for (id, value) in overrides {
-            let bindable = BINDABLE
-                .iter()
-                .find(|b| b.id == id)
-                .ok_or_else(|| KeymapError::UnknownAction(id.clone()))?;
             let mut chars = value.chars();
             let key = match (chars.next(), chars.next()) {
-                (Some(c), None) if !c.is_control() && !c.is_whitespace() => c,
-                _ => {
-                    return Err(KeymapError::NotOneCharacter {
-                        action: id.clone(),
-                        value: value.clone(),
-                    });
-                }
+                (Some(c), None) if !c.is_control() && !c.is_whitespace() => Some(c),
+                _ => None,
             };
-            if RESERVED.contains(&key) {
+            let bindable = BINDABLE.iter().find(|b| b.id == id);
+            let modal = MODAL.iter().find(|m| m.id == id);
+            if bindable.is_none() && modal.is_none() {
+                return Err(KeymapError::UnknownAction(id.clone()));
+            }
+            let Some(key) = key else {
+                return Err(KeymapError::NotOneCharacter {
+                    action: id.clone(),
+                    value: value.clone(),
+                });
+            };
+            // A mode-specific key may take another mode's letter, so only the keys that are fixed
+            // everywhere are refused here; the overlap check below does the rest.
+            let taken = if modal.is_some() {
+                FIXED.contains(&key)
+            } else {
+                RESERVED.contains(&key)
+            };
+            if taken {
                 return Err(KeymapError::Reserved {
                     action: id.clone(),
                     key,
                 });
             }
-            moved.insert(bindable.id, key);
+            if let Some(bindable) = bindable {
+                moved.insert(bindable.id, key);
+            } else if let Some(modal) = modal {
+                modal_moved.insert(modal.id, key);
+            }
         }
 
         let mut by_char: HashMap<char, (Action, &'static str)> = HashMap::new();
@@ -374,12 +524,84 @@ impl Keymap {
                 by_char.insert(key, (bindable.action, bindable.id));
             }
         }
+
+        // A moved mode-specific key may not land on a global binding, nor on another key that is
+        // live in the same mode. A key that was not moved keeps its canonical character, so a
+        // moved key also may not take a character a neighbour still uses.
+        for modal in MODAL.iter().filter(|m| modal_moved.contains_key(m.id)) {
+            let key = modal_moved[modal.id];
+            if let Some((_, first)) = by_char.get(&key) {
+                return Err(KeymapError::Conflict {
+                    key,
+                    first: (*first).to_owned(),
+                    second: modal.id.to_owned(),
+                });
+            }
+            for other in MODAL
+                .iter()
+                .filter(|o| o.id != modal.id && o.overlaps(modal))
+            {
+                let theirs = modal_moved
+                    .get(other.id)
+                    .copied()
+                    .unwrap_or(other.canonical);
+                if theirs == key {
+                    return Err(KeymapError::Conflict {
+                        key,
+                        first: other.id.to_owned(),
+                        second: modal.id.to_owned(),
+                    });
+                }
+            }
+        }
         Ok(Self {
             by_char: by_char
                 .into_iter()
                 .map(|(key, (action, _))| (key, action))
                 .collect(),
             moved,
+            modal_moved,
+        })
+    }
+
+    /// The character the mode reads for what the user pressed.
+    ///
+    /// A mode-specific key that was moved answers to its new character and no longer to the old
+    /// one, which is turned into a character no handler matches. `mode` is `None` for an overlay
+    /// that is a list of its own, where only the keys that work everywhere apply.
+    pub(crate) fn translate(&self, mode: Option<Mode>, c: char) -> char {
+        if self.modal_moved.is_empty() {
+            return c;
+        }
+        for modal in MODAL.iter().filter(|m| m.applies(mode)) {
+            if self.modal_moved.get(modal.id) == Some(&c) {
+                return modal.canonical;
+            }
+        }
+        for modal in MODAL.iter().filter(|m| m.applies(mode)) {
+            if modal.canonical == c && self.modal_moved.contains_key(modal.id) {
+                return RELEASED;
+            }
+        }
+        c
+    }
+
+    /// The character to show for an action or a mode-specific key in a hint, or `?` for an id the
+    /// reader does not have.
+    pub(crate) fn key_for(&self, id: &str) -> char {
+        if let Some(modal) = MODAL.iter().find(|m| m.id == id) {
+            return self
+                .modal_moved
+                .get(modal.id)
+                .copied()
+                .unwrap_or(modal.canonical);
+        }
+        BINDABLE.iter().find(|b| b.id == id).map_or('?', |b| {
+            self.moved
+                .get(b.id)
+                .copied()
+                .or_else(|| b.defaults.first().copied())
+                .unwrap_or('?')
         })
     }
 
@@ -515,6 +737,87 @@ mod tests {
                 second: "comment".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn a_moved_mode_key_is_read_as_its_canonical_character_in_its_mode() {
+        let map = Keymap::from_overrides(&table(&[("down", "s")])).unwrap_err();
+        assert!(
+            matches!(map, KeymapError::Conflict { .. }),
+            "s is cycle_scope"
+        );
+
+        let map = Keymap::from_overrides(&table(&[("down", "z"), ("up", "Z")])).unwrap();
+        for mode in [Some(Mode::Queue), Some(Mode::Code), None] {
+            assert_eq!(map.translate(mode, 'z'), 'j');
+            assert_eq!(map.translate(mode, 'Z'), 'k');
+            assert_eq!(
+                map.translate(mode, 'j'),
+                RELEASED,
+                "the old key is released"
+            );
+        }
+    }
+
+    #[test]
+    fn a_mode_key_only_moves_in_the_modes_it_works_in() {
+        let map = Keymap::from_overrides(&table(&[("decide_resolved", "z")])).unwrap();
+        assert_eq!(map.translate(Some(Mode::Followup), 'z'), 'y');
+        assert_eq!(map.translate(Some(Mode::Followup), 'y'), RELEASED);
+        assert_eq!(map.translate(Some(Mode::Queue), 'z'), 'z');
+        assert_eq!(map.translate(Some(Mode::Queue), 'y'), 'y');
+    }
+
+    #[test]
+    fn the_same_character_in_two_modes_is_two_independent_keys() {
+        let map = Keymap::from_overrides(&table(&[("pivot_impact", "z")])).unwrap();
+        assert_eq!(map.translate(Some(Mode::Impact), 'z'), 'p');
+        assert_eq!(
+            map.translate(Some(Mode::Flow), 'p'),
+            'p',
+            "request_flow was not moved"
+        );
+        assert_eq!(map.translate(Some(Mode::Followup), 'p'), 'p');
+    }
+
+    #[test]
+    fn mode_keys_may_swap_but_not_collide() {
+        let swapped = Keymap::from_overrides(&table(&[("down", "k"), ("up", "j")])).unwrap();
+        assert_eq!(swapped.translate(Some(Mode::Queue), 'k'), 'j');
+        assert_eq!(swapped.translate(Some(Mode::Queue), 'j'), 'k');
+
+        let clash = Keymap::from_overrides(&table(&[("down", "k")])).unwrap_err();
+        assert_eq!(
+            clash,
+            KeymapError::Conflict {
+                key: 'k',
+                first: "up".to_owned(),
+                second: "down".to_owned(),
+            }
+        );
+        // The same character in modes that never overlap is fine.
+        assert!(
+            Keymap::from_overrides(&table(&[("edit_comment", "z"), ("decide_partial", "z")]))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_default_map_translates_nothing() {
+        let map = Keymap::default();
+        for c in ['j', 'k', 'y', 'p', 'z', 'X'] {
+            assert_eq!(map.translate(Some(Mode::Followup), c), c);
+        }
+    }
+
+    #[test]
+    fn hints_use_the_current_key() {
+        let map = Keymap::from_overrides(&table(&[("comment", "e"), ("down", "z")])).unwrap();
+        assert_eq!(map.key_for("comment"), 'e');
+        assert_eq!(map.key_for("down"), 'z');
+        assert_eq!(map.key_for("up"), 'k');
+        assert_eq!(map.key_for("search"), '/');
+        assert_eq!(map.key_for("no_such_id"), '?');
     }
 
     #[test]
