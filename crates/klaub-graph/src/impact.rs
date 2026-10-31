@@ -31,6 +31,34 @@ impl Default for ImpactOptions {
 }
 
 impl ProjectGraph {
+    /// Whether a chain of calls leads from `from` to `to` within `max_depth` hops.
+    ///
+    /// `None` when the graph does not know one of the symbols.
+    pub fn reaches(&self, from: &SymbolKey, to: &SymbolKey, max_depth: u32) -> Option<bool> {
+        let (start, goal) = (*self.keys.get(from)?, *self.keys.get(to)?);
+        let mut seen: HashSet<NodeIndex> = HashSet::from([start]);
+        let mut frontier = vec![start];
+        for _ in 0..max_depth {
+            let mut next = Vec::new();
+            for node in frontier {
+                for edge in self.graph.edges_directed(node, Direction::Outgoing) {
+                    let target = edge.target();
+                    if target == goal {
+                        return Some(true);
+                    }
+                    if seen.insert(target) {
+                        next.push(target);
+                    }
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            frontier = next;
+        }
+        Some(false)
+    }
+
     /// What the change at `key` can reach: callers by distance, entrypoints with their paths,
     /// callees, the structural scope and how complete the analysis is.
     ///

@@ -39,6 +39,7 @@ tree-sitter-go = "0.25"
 similar = "3.2"
 petgraph = "0.8"
 quick-xml = "0.42"
+rusqlite = { version = "0.41", features = ["bundled"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.11"
@@ -56,6 +57,8 @@ klaub-review = { path = "crates/klaub-review", version = "0.1.0" }
 klaub-context = { path = "crates/klaub-context", version = "0.1.0" }
 klaub-tests = { path = "crates/klaub-tests", version = "0.1.0" }
 klaub-flow = { path = "crates/klaub-flow", version = "0.1.0" }
+klaub-storage = { path = "crates/klaub-storage", version = "0.1.0" }
+klaub-app = { path = "crates/klaub-app", version = "0.1.0" }
 klaub-match = { path = "crates/klaub-match", version = "0.1.0" }
 klaub-parse = { path = "crates/klaub-parse", version = "0.1.0" }
 klaub-tmux = { path = "crates/klaub-tmux", version = "0.1.0" }

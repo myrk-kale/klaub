@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `klaub-storage`: atomic, advisory-locked JSON reviews (symlinked `.klaub/` refused), a SQLite parse cache that heals itself, confined readers for briefs, reports and flows, and layered configuration loading.
+- `klaub-app`: the analysis use case (parallel, cached parsing; matching; call graph; test evidence; rules; queue) and `ReviewSession` (comments with anchors, reviewed marks, brief, coverage, finishing, delivery to the agent only after confirmation, drift detection and refresh, next rounds with relocated comments, test panel, flow state, exports), plus a code view with change marks and syntax colours.
 - `klaub-graph`: call and dependency graph with per-edge origin (`resolved`/`heuristic`), ambiguity counted instead of guessed, entrypoints from the parser and from `pyproject.toml`/`package.json`, reverse impact with entrypoint paths, scope and coverage, and module cycles.
 - `klaub-rules`: explainable findings reconciled into `introduced`/`preexisting`/`removed`/`unknown`, an itemised score and the P0–P3 queue, where `P0` needs critical evidence; architecture rules (forbidden dependencies, new cycles).
 - `klaub-review`: comments, anchors with relocation and stale detection, finishing into an idempotent feedback payload, human-confirmed delivery states, follow-up decisions with history, JSON and Markdown exports.
