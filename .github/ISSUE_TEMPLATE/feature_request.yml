@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose an improvement or a new capability.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Which review problem does this solve?
+      description: Describe the situation from the reviewer's point of view, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Fit with the project principles
+      options:
+        - label: It keeps the human in charge (no automatic approval, rejection or submission).
+        - label: It works offline and without an LLM.

@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.gz binary
+*.zst binary
+Cargo.lock linguist-generated
+fixtures/** linguist-vendored
+docs/** linguist-documentation
