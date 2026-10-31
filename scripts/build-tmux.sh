@@ -117,9 +117,17 @@ log "building ncurses ${NCURSES_VERSION}"
   make install.libs install.includes >/dev/null
 )
 
-# macOS allocator: jemalloc (what tmux asks for there), or the system one. Only an experiment
-# switches it; the default is unchanged.
-malloc_choice="${KLAUB_TMUX_MALLOC:-jemalloc}"
+# macOS allocator: jemalloc, which tmux asks for there because the system calloc has been seen
+# not to zero memory, or the system allocator. On x86_64 macOS a tmux built with jemalloc 5.4 dies
+# with a segmentation fault in the forked child before it can exec the pane's command, with or
+# without jemalloc's zone allocator (observed on the macos-15-intel runner; the same source works
+# on Apple Silicon). That target therefore uses the system allocator. KLAUB_TMUX_MALLOC (jemalloc,
+# jemalloc-nozone or system) overrides the choice for experiments.
+case "${target}" in
+  x86_64-apple-darwin) default_malloc=system ;;
+  *) default_malloc=jemalloc ;;
+esac
+malloc_choice="${KLAUB_TMUX_MALLOC:-${default_malloc}}"
 tmux_flags=(--disable-utf8proc)
 if [ "$(uname -s)" = Darwin ]; then
   fetch "${UTF8PROC_URL}" "${UTF8PROC_SHA256}" "${work}/utf8proc.tar.gz"
