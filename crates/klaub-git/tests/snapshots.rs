@@ -133,10 +133,21 @@ fn klaub_data_never_enters_a_snapshot() {
     let snapshot = capture(&repo, Scope::Worktree);
     assert_eq!(paths(&snapshot), vec!["real.py"]);
 
-    // Writing more review data cannot create a new snapshot.
+    // Writing more review data cannot create a new snapshot, nor make the worktree look changed.
     let before = snapshot.id.clone();
     repo.write(".klaub/reviews/rev_2.json", "{}");
     assert_eq!(capture(&repo, Scope::Worktree).id, before);
+    let request = request(&repo, Scope::Worktree);
+    assert_eq!(
+        provider().probe(&snapshot, &request).unwrap(),
+        Drift::Unchanged
+    );
+    repo.write(".klaub/reviews/rev_3.json", "{\"more\": true}");
+    repo.write(".klaub/reviews/rev_2.json", "{\"edited\": true}");
+    assert_eq!(
+        provider().probe(&snapshot, &request).unwrap(),
+        Drift::Unchanged
+    );
 }
 
 #[test]
