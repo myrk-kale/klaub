@@ -50,7 +50,7 @@ pub struct ContractDelta {
     pub returns: Vec<String>,
     /// Side effects a parser's risk marker already recorded, named as observed.
     pub effects: Vec<String>,
-    /// Qualified names of the direct callers, capped at [`MAX_AFFECTED`].
+    /// Qualified names of the direct callers, capped at 20.
     pub affected: Vec<String>,
     /// The change's own reasons, plus a note wherever a fact could not be established.
     pub evidence: Vec<String>,
