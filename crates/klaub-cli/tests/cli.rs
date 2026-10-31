@@ -259,7 +259,7 @@ fn a_session_can_be_started_listed_and_ended() {
         .iter()
         .find(|r| r["id"] == id.as_str())
         .expect("the session is listed");
-    assert_eq!(row["state"], "running");
+    assert_eq!(row["state"], "running", "{row}");
     assert_eq!(row["command"], serde_json::json!(["sh", "-c", "sleep 120"]));
     let recorded = row["worktree"].as_str().unwrap();
     assert!(

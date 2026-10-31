@@ -42,22 +42,24 @@ fn state_label(health: Option<SessionHealth>) -> &'static str {
 }
 
 fn list(ctx: &Context, format: Format) -> Result<ExitCode> {
-    let rows: Vec<(SessionRecord, &'static str)> = ctx
+    // The error is kept so a session in an unexpected state explains itself.
+    let rows: Vec<(SessionRecord, &'static str, Option<String>)> = ctx
         .registry()
         .list()?
         .into_iter()
-        .map(|record| {
-            let state = state_label(session::health(&record).ok());
-            (record, state)
+        .map(|record| match session::health(&record) {
+            Ok(health) => (record, state_label(Some(health)), None),
+            Err(error) => (record, state_label(None), Some(error.to_string())),
         })
         .collect();
 
     match format {
         Format::Json => output::json(&json!(
             rows.iter()
-                .map(|(record, state)| json!({
+                .map(|(record, state, error)| json!({
                     "id": record.session_id,
                     "state": state,
+                    "error": error,
                     "worktree": record.worktree,
                     "command": record.agent_command,
                     "created_at": record.created_at,
@@ -70,7 +72,7 @@ fn list(ctx: &Context, format: Format) -> Result<ExitCode> {
                 "{:<18} {:<13} {:<32} COMMAND",
                 "ID", "STATE", "WORKTREE"
             ));
-            for (record, state) in &rows {
+            for (record, state, error) in &rows {
                 output::line(&format!(
                     "{:<18} {:<13} {:<32} {}",
                     record.session_id,
@@ -78,6 +80,12 @@ fn list(ctx: &Context, format: Format) -> Result<ExitCode> {
                     output::tilde(&record.worktree, ctx.home.as_deref()),
                     klaub_core::text::sanitize_single_line(&record.agent_command.join(" ")),
                 ));
+                if let Some(error) = error {
+                    output::line(&format!(
+                        "  ! {}",
+                        klaub_core::text::sanitize_single_line(error)
+                    ));
+                }
             }
         }
     }
