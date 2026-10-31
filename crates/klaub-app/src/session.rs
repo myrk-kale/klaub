@@ -24,6 +24,7 @@ use klaub_core::review::{
 };
 use klaub_core::semantic::{Confidence, SymbolRef};
 use klaub_core::snapshot::{Drift, SnapshotRequest};
+use klaub_core::symbol::Symbol;
 use klaub_core::testing::{CoverageEntry, EvidenceStatus, ReportSource, TestLink, TestResult};
 use klaub_core::text::{sanitize_terminal_text, truncate_chars};
 use klaub_core::timestamp::Timestamp;
@@ -31,7 +32,7 @@ use klaub_core::{Error, Result};
 use klaub_flow::{FlowContext, ValidatedFlow, Validation};
 use klaub_review::{Candidate, ExportContext, ReviewTarget, build_anchor_fingerprint, relocate};
 
-use crate::{Analysis, Ports, analysis};
+use crate::{Analysis, ContractDelta, Ports, analysis};
 
 const EXCERPT_CHARS: usize = 400;
 
@@ -419,6 +420,18 @@ impl ReviewSession {
             .collect()
     }
 
+    /// Remembers which unit the reader is on and saves.
+    ///
+    /// This only records the cursor: it marks nothing reviewed and takes no snapshot.
+    pub fn remember_position(&mut self, unit: &UnitId) -> Result<()> {
+        if self.review.last_unit.as_ref() == Some(unit) {
+            return Ok(());
+        }
+        self.review.last_unit = Some(unit.clone());
+        self.review.updated_at = self.now();
+        self.save()
+    }
+
     /// Marks or unmarks a unit as reviewed (an explicit human action) and saves.
     pub fn toggle_reviewed(&mut self, unit: &UnitId) -> Result<bool> {
         let now = self.now();
@@ -646,6 +659,39 @@ impl ReviewSession {
         self.analysis
             .graph
             .impact(key, &options, &self.analysis.modules)
+    }
+
+    /// The contract of one changed symbol: its declaration on both sides, the effects a parser
+    /// already recorded, and the direct callers the call graph knows.
+    ///
+    /// `None` when `unit` is not a symbol of this analysis. A file-level unit has no contract to
+    /// compare, and neither does an id the queue does not contain.
+    pub fn contract(&self, unit: &UnitId) -> Option<ContractDelta> {
+        let change = self.analysis.change_of(unit)?;
+        let entry = self.analysis.file_of(unit)?;
+        let before = Self::symbol_of(entry.analysis.before.as_deref(), change.before.as_ref());
+        let after = Self::symbol_of(entry.analysis.after.as_deref(), change.after.as_ref());
+        let impact = change
+            .after
+            .as_ref()
+            .or(change.before.as_ref())
+            .map(|side| SymbolKey::new(side.file.clone(), side.qualified_name.clone()))
+            .and_then(|key| self.impact(&key));
+        Some(crate::contract::inspect(
+            change,
+            before,
+            after,
+            impact.as_ref(),
+        ))
+    }
+
+    /// The parsed symbol a change references, when the parse and the index both exist.
+    fn symbol_of<'a>(
+        parsed: Option<&'a klaub_core::symbol::ParsedFile>,
+        side: Option<&SymbolRef>,
+    ) -> Option<&'a Symbol> {
+        let side = side?;
+        parsed?.symbols.get(side.index)
     }
 
     /// The changed unit that holds `key`, when the symbol is part of the change.

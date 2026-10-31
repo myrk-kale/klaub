@@ -71,6 +71,7 @@ pub fn new_review(target: &ReviewTarget, hex: &str, now: Timestamp) -> Review {
         brief: Brief::default(),
         comments: Vec::new(),
         reviewed_units: Vec::new(),
+        last_unit: None,
         feedback: None,
         flow: None,
     }

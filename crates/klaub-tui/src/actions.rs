@@ -24,6 +24,10 @@ pub(crate) enum Action {
     NextCritical,
     /// Mark or unmark the current unit as reviewed.
     ToggleReviewed,
+    /// Mark or unmark the current unit for a quick return. Kept only while the reader is open.
+    ToggleBookmark,
+    /// Jump to the next bookmarked unit.
+    NextBookmark,
     /// Comment on the selection.
     Comment,
     /// Start finishing the review.
@@ -42,6 +46,8 @@ pub(crate) enum Action {
     PrevChange,
     /// Show why the unit has its priority.
     Explain,
+    /// Show what changed about the current symbol's contract.
+    InspectContract,
     /// Run the associated tests (after confirmation).
     RunTests,
     /// Re-read test reports.
@@ -163,6 +169,16 @@ pub(crate) const ENTRIES: &[Entry] = &[
         key: "r",
     },
     Entry {
+        action: Action::ToggleBookmark,
+        name: "Bookmark this unit",
+        key: "m",
+    },
+    Entry {
+        action: Action::NextBookmark,
+        name: "Next bookmark",
+        key: ",",
+    },
+    Entry {
         action: Action::Comment,
         name: "Comment on selection",
         key: "c",
@@ -171,6 +187,11 @@ pub(crate) const ENTRIES: &[Entry] = &[
         action: Action::Explain,
         name: "Why this priority?",
         key: "w",
+    },
+    Entry {
+        action: Action::InspectContract,
+        name: "Inspect the contract",
+        key: "o",
     },
     Entry {
         action: Action::ToggleVersion,
@@ -307,6 +328,8 @@ pub(crate) fn perform(app: &mut App, action: Action) {
         Action::PrevUnreviewed => jump_unreviewed(app, false, false),
         Action::NextCritical => jump_unreviewed(app, true, true),
         Action::ToggleReviewed => toggle_reviewed(app),
+        Action::ToggleBookmark => toggle_bookmark(app),
+        Action::NextBookmark => next_bookmark(app),
         Action::Comment => start_comment(app),
         Action::Finish => start_finish(app),
         Action::Refresh => ask_refresh(app),
@@ -321,6 +344,10 @@ pub(crate) fn perform(app: &mut App, action: Action) {
         Action::PrevChange => jump_change(app, false),
         Action::Explain => match app.unit.clone() {
             Some(unit) => app.overlay = Some(Overlay::Explain(unit)),
+            None => app.say(StatusKind::Info, "Select a unit first."),
+        },
+        Action::InspectContract => match app.unit.clone() {
+            Some(unit) => app.overlay = Some(Overlay::Contract(unit)),
             None => app.say(StatusKind::Info, "Select a unit first."),
         },
         Action::RunTests => ask_run_tests(app),
@@ -407,7 +434,7 @@ fn refresh_queue_selection(app: &mut App) {
         );
     }
     if let Some(unit) = app.queue_selection() {
-        app.unit = Some(unit);
+        app.adopt(unit);
     }
 }
 
@@ -432,15 +459,18 @@ fn switch_mode(app: &mut App, mode: Mode) {
         }
         return;
     }
-    if matches!(mode, Mode::Impact | Mode::Tests) && app.unit.is_none() {
-        app.unit = app.queue_selection();
+    if matches!(mode, Mode::Impact | Mode::Tests)
+        && app.unit.is_none()
+        && let Some(unit) = app.queue_selection()
+    {
+        app.adopt(unit);
     }
     app.go(mode);
 }
 
 /// Makes `unit` the current one; the code view follows when it is on screen.
 pub(crate) fn focus_unit(app: &mut App, unit: &klaub_core::ids::UnitId) {
-    app.unit = Some(unit.clone());
+    app.adopt(unit.clone());
     app.select_in_queue(unit);
     match app.mode {
         Mode::Code => app.open_unit(unit, None),
@@ -491,6 +521,47 @@ fn toggle_reviewed(app: &mut App) {
     }
     let len = app.visible_queue().len();
     app.queue_view.clamp(len);
+}
+
+fn toggle_bookmark(app: &mut App) {
+    let Some(unit) = app.unit.clone().or_else(|| app.queue_selection()) else {
+        app.say(StatusKind::Info, "Select a unit first.");
+        return;
+    };
+    if let Some(position) = app.bookmarks.iter().position(|marked| marked == &unit) {
+        app.bookmarks.remove(position);
+        app.say(StatusKind::Info, "Bookmark removed.");
+    } else {
+        app.bookmarks.push(unit);
+        app.say(
+            StatusKind::Info,
+            format!("Bookmarked ({}). , jumps to the next.", app.bookmarks.len()),
+        );
+    }
+}
+
+fn next_bookmark(app: &mut App) {
+    if app.bookmarks.is_empty() {
+        app.say(
+            StatusKind::Info,
+            "No bookmarks yet. m marks the current unit.",
+        );
+        return;
+    }
+    let from = app.unit.clone().or_else(|| app.queue_selection());
+    let start = from
+        .as_ref()
+        .and_then(|unit| app.bookmarks.iter().position(|marked| marked == unit))
+        .map_or(0, |position| (position + 1) % app.bookmarks.len());
+    let target = (0..app.bookmarks.len())
+        .map(|step| &app.bookmarks[(start + step) % app.bookmarks.len()])
+        .find(|unit| app.session.analysis().item(unit).is_some())
+        .cloned();
+    match target {
+        Some(unit) if Some(&unit) != from.as_ref() => focus_unit(app, &unit),
+        Some(_) => app.say(StatusKind::Info, "Already on the only bookmark."),
+        None => app.say(StatusKind::Info, "No bookmark is still in the queue."),
+    }
 }
 
 fn start_comment(app: &mut App) {

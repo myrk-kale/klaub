@@ -166,6 +166,35 @@ fn toggle_before_after() {
 }
 
 #[test]
+fn contract_overlay_shows_the_change() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert!(
+        matches!(app.mode, klaub_tui::Mode::Code),
+        "Enter should open the unit in Code"
+    );
+
+    press(&mut app, 'o');
+    assert!(
+        matches!(app.overlay, Some(Overlay::Contract(_))),
+        "o in Code should open the contract overlay"
+    );
+    let shown = screen(&mut app, 100, 30);
+    assert!(
+        shown.contains("Contract"),
+        "the panel should be titled {shown}"
+    );
+    assert!(
+        shown.contains("lookup"),
+        "the changed symbol's signature should be on screen: {shown}"
+    );
+
+    press(&mut app, 'x');
+    assert!(app.overlay.is_none(), "any key should close the overlay");
+}
+
+#[test]
 fn comment_empty_is_rejected() {
     let repo = changed_repo();
     let mut app = reader(open(&repo));

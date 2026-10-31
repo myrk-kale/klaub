@@ -7,6 +7,7 @@
 //! Nothing drawn here comes from the repository, a comment or a document without passing through
 //! [`clean`] first, so a hostile sequence in a symbol name cannot reach the terminal.
 
+use klaub_app::ContractDelta;
 use klaub_core::finding::Priority;
 use klaub_core::review::FeedbackRecord;
 use klaub_core::snapshot::Drift;
@@ -196,7 +197,7 @@ fn hint_for(mode: Mode, filtered: bool) -> &'static str {
         }
         Mode::Structure => " j/k move · Enter open · +/- depth · c comment · r reviewed · ? help",
         Mode::Code => {
-            " j/k move · v old/new · [ ] change · c comment · V select · S symbol/file · h/l scroll"
+            " j/k move · o contract · v old/new · [ ] change · c comment · V select · S symbol/file"
         }
         Mode::Impact => " j/k move · Enter open the symbol · g back to the queue · ? help",
         Mode::Comments => " j/k move · Enter open the code · e edit · d delete a draft · ? help",
@@ -220,6 +221,7 @@ fn draw_overlay(frame: &mut Frame<'_>, body: Rect, app: &App, overlay: &Overlay,
         Overlay::Editor(editor) => draw_editor(frame, body, editor, theme),
         Overlay::Confirm(confirm) => draw_confirm(frame, body, confirm, theme),
         Overlay::Explain(unit) => draw_explain(frame, body, app, unit, theme),
+        Overlay::Contract(unit) => draw_contract(frame, body, app, unit, theme),
         Overlay::Finish(stage) => draw_finish(frame, body, stage, theme),
     }
 }
@@ -441,6 +443,121 @@ fn draw_explain(
     };
     frame.render_widget(Clear, area);
     frame.render_widget(boxed("Why this priority", lines, theme), area);
+}
+
+/// The contract of one changed symbol. Source text is cleaned before it is drawn; a fact the
+/// analysis could not establish is already the word "unknown" in the evidence.
+fn draw_contract(
+    frame: &mut Frame<'_>,
+    body: Rect,
+    app: &App,
+    unit: &klaub_core::ids::UnitId,
+    theme: Theme,
+) {
+    let area = panel(
+        body,
+        body.width.saturating_sub(4).min(78),
+        body.height.saturating_sub(2),
+    );
+    let inner = usize::from(area.width).saturating_sub(4);
+    let lines = match app.session.contract(unit) {
+        Some(delta) => contract_lines(&delta, inner, theme),
+        None => vec![Line::from(Span::styled(
+            "This unit has no symbol contract to inspect.",
+            theme.dim(),
+        ))],
+    };
+    frame.render_widget(Clear, area);
+    frame.render_widget(boxed("Contract", lines, theme), area);
+}
+
+fn contract_lines(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        labelled("change", delta.change_kind.label(), theme),
+        labelled(
+            "confidence",
+            &format!("{:.2}", delta.confidence.value()),
+            theme,
+        ),
+        labelled(
+            "before",
+            delta.before_signature.as_deref().unwrap_or("none"),
+            theme,
+        ),
+        labelled(
+            "after",
+            delta.after_signature.as_deref().unwrap_or("none"),
+            theme,
+        ),
+        labelled(
+            "visibility before",
+            delta.visibility_before.as_deref().unwrap_or("none"),
+            theme,
+        ),
+        labelled(
+            "visibility after",
+            delta.visibility_after.as_deref().unwrap_or("none"),
+            theme,
+        ),
+    ];
+    push_group(
+        &mut lines,
+        "effects",
+        &delta.effects,
+        "none recorded",
+        width,
+        theme,
+    );
+    push_group(
+        &mut lines,
+        "affected",
+        &delta.affected,
+        "none",
+        width,
+        theme,
+    );
+    push_group(
+        &mut lines,
+        "evidence",
+        &delta.evidence,
+        "none",
+        width,
+        theme,
+    );
+    lines.push(Line::from(Span::styled(
+        fit("any key closes", width),
+        theme.dim(),
+    )));
+    lines
+}
+
+/// `label  value`, with the label dimmed and the value cleaned.
+fn labelled(label: &str, value: &str, theme: Theme) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{label:<18} "), theme.dim()),
+        Span::raw(clean(value)),
+    ])
+}
+
+/// A heading plus one cleaned row per item, wrapped to the panel width.
+fn push_group(
+    lines: &mut Vec<Line<'static>>,
+    heading: &str,
+    items: &[String],
+    empty: &str,
+    width: usize,
+    theme: Theme,
+) {
+    lines.push(Line::from(Span::styled(heading.to_owned(), theme.dim())));
+    if items.is_empty() {
+        lines.push(Line::from(Span::raw(fit(&format!("  {empty}"), width))));
+        return;
+    }
+    for item in items {
+        for row in wrap(&format!("  {}", clean(item)), width.max(1)) {
+            lines.push(Line::from(Span::raw(row)));
+        }
+    }
 }
 
 fn draw_finish(frame: &mut Frame<'_>, body: Rect, stage: &FinishStage, theme: Theme) {

@@ -309,6 +309,12 @@ pub struct Review {
     /// Units the human marked as reviewed.
     #[serde(default)]
     pub reviewed_units: Vec<UnitId>,
+    /// The unit the reader was on when the review was last saved.
+    ///
+    /// Absent from reviews written before the field existed, and cleared when a new round starts
+    /// because it named a unit of the previous snapshot.
+    #[serde(default)]
+    pub last_unit: Option<UnitId>,
     /// The finished feedback, once there is one.
     pub feedback: Option<FeedbackRecord>,
     /// Status of the flow diagram when the review was last saved.

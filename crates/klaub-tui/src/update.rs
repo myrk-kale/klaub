@@ -163,6 +163,8 @@ fn key_action(c: char) -> Option<Action> {
         'P' => Action::PrevUnreviewed,
         'N' => Action::NextCritical,
         'r' => Action::ToggleReviewed,
+        'm' => Action::ToggleBookmark,
+        ',' => Action::NextBookmark,
         'c' => Action::Comment,
         'w' => Action::Explain,
         'v' => Action::ToggleVersion,
@@ -309,7 +311,7 @@ fn queue_key(app: &mut App, key: KeyEvent) -> bool {
     let len = app.visible_queue().len();
     if navigate(&mut app.queue_view, key, len) {
         if let Some(unit) = app.queue_selection() {
-            app.unit = Some(unit);
+            app.adopt(unit);
         }
         return true;
     }
@@ -328,7 +330,7 @@ fn structure_key(app: &mut App, key: KeyEvent) -> bool {
         if let Some(row) = rows.get(app.structure_view.selected)
             && let TreeKind::Unit(unit) = &row.kind
         {
-            app.unit = Some(unit.clone());
+            app.adopt(unit.clone());
         }
         return true;
     }
@@ -393,6 +395,10 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
         }
         KeyCode::Enter => {
             perform(app, Action::Mode(Mode::Impact));
+            return true;
+        }
+        KeyCode::Char('o') => {
+            perform(app, Action::InspectContract);
             return true;
         }
         _ => return false,
@@ -707,7 +713,7 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
         return;
     };
     match overlay {
-        Overlay::Help | Overlay::Explain(_) => {
+        Overlay::Help | Overlay::Explain(_) | Overlay::Contract(_) => {
             // Any key closes; the overlay stays taken.
         }
         Overlay::Palette {
@@ -746,7 +752,7 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
                 app.structure_view = Viewport::default();
                 let len = app.visible_queue().len();
                 if let Some(unit) = app.queue_selection() {
-                    app.unit = Some(unit);
+                    app.adopt(unit);
                 }
                 if app.mode != Mode::Structure {
                     app.mode = Mode::Queue;

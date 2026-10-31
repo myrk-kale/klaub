@@ -362,6 +362,8 @@ pub enum Overlay {
     Confirm(Confirm),
     /// The reasons behind a priority.
     Explain(UnitId),
+    /// What changed about one symbol's contract.
+    Contract(UnitId),
     /// Finishing the review.
     Finish(FinishStage),
 }
@@ -395,6 +397,8 @@ pub struct App {
     pub history: Vec<Mode>,
     /// The unit that Code, Impact and Tests refer to.
     pub unit: Option<UnitId>,
+    /// Units marked for a quick return. Held only while the reader is open.
+    pub(crate) bookmarks: Vec<UnitId>,
     /// Queue filters.
     pub filters: Filters,
     /// Scrolling of the queue.
@@ -458,6 +462,7 @@ impl App {
             mode: Mode::Queue,
             history: Vec::new(),
             unit: None,
+            bookmarks: Vec::new(),
             filters: Filters::default(),
             queue_view: Viewport::default(),
             structure_view: Viewport::default(),
@@ -480,7 +485,16 @@ impl App {
             should_quit: false,
             last_probe: Instant::now(),
         };
-        app.unit = app.visible_queue().first().map(|i| i.unit.id.clone());
+        app.unit = app
+            .session
+            .review()
+            .last_unit
+            .clone()
+            .filter(|unit| app.session.analysis().item(unit).is_some())
+            .or_else(|| app.visible_queue().first().map(|i| i.unit.id.clone()));
+        if let Some(unit) = app.unit.clone() {
+            app.select_in_queue(&unit);
+        }
         if has_previous_round {
             app.status = Some((
                 "Continuing a previous round: decide each carried-over comment in Follow-up (D)."
@@ -530,15 +544,36 @@ impl App {
         {
             return false;
         }
-        if !filters.search.is_empty() {
-            let needle = filters.search.to_lowercase();
-            let hay = format!("{} {}", item.unit.label, item.unit.file).to_lowercase();
-            let rules = item.findings.iter().any(|f| f.rule_id.contains(&needle));
-            if !hay.contains(&needle) && !rules {
-                return false;
-            }
+        if !filters.search.is_empty() && !self.matches_search(item) {
+            return false;
         }
         true
+    }
+
+    /// Whether the search needle occurs in the unit's label, file, rules, comments, tests or criteria.
+    fn matches_search(&self, item: &QueueItem) -> bool {
+        let needle = self.filters.search.to_lowercase();
+        let contains = |text: &str| text.to_lowercase().contains(&needle);
+        contains(&item.unit.label)
+            || contains(item.unit.file.as_str())
+            || item.findings.iter().any(|f| contains(&f.rule_id))
+            || self
+                .session
+                .comments_on(&item.unit.id)
+                .iter()
+                .any(|comment| contains(comment.comment_id.as_str()))
+            || self
+                .session
+                .test_panel(&item.unit.id)
+                .links
+                .iter()
+                .any(|link| contains(link.test.id.as_str()))
+            || self
+                .session
+                .brief()
+                .acceptance_criteria
+                .iter()
+                .any(|criterion| contains(&criterion.text))
     }
 
     /// Queue items that pass the filters, in review order.
@@ -556,6 +591,18 @@ impl App {
         self.unit
             .as_ref()
             .and_then(|u| self.session.analysis().item(u))
+    }
+
+    /// Makes `unit` the current one and remembers it for the next time the review is opened.
+    pub(crate) fn adopt(&mut self, unit: UnitId) {
+        let changed = self.unit.as_ref() != Some(&unit);
+        self.unit = Some(unit);
+        if changed && let Some(unit) = self.unit.clone() {
+            // A failed save leaves the cursor where the reader put it; the status says why.
+            if let Err(error) = self.session.remember_position(&unit) {
+                self.say(StatusKind::Error, error.to_string());
+            }
+        }
     }
 
     /// Selects the queue row of `unit` if it is visible.
@@ -701,7 +748,7 @@ impl App {
 
     /// Opens `unit` in the Code mode.
     pub fn open_unit(&mut self, unit: &UnitId, version: Option<Version>) {
-        self.unit = Some(unit.clone());
+        self.adopt(unit.clone());
         self.select_in_queue(unit);
         let fallback = self.default_version(unit);
         self.code = CodeState {
