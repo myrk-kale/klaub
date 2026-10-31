@@ -859,8 +859,8 @@ fn a_silenced_rule_leaves_the_queue_but_not_the_snapshot_and_survives_reopening(
     assert!(session.analysis().item(&unit_id).unwrap().score.total() < score_with);
     assert_eq!(session.muted_rules(), ["risk.swallowed_error"]);
 
-    // A rule nobody has seen cannot be silenced by a typo.
-    assert!(session.mute_rule("risk.swalowed_error").is_err());
+    // A rule nobody has seen cannot be silenced by mistake.
+    assert!(session.mute_rule("risk.no_such_rule").is_err());
     assert_eq!(session.muted_rules(), ["risk.swallowed_error"]);
 
     // The choice is part of the saved review.
