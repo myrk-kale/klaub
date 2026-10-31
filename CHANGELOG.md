@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `klaub-graph`: call and dependency graph with per-edge origin (`resolved`/`heuristic`), ambiguity counted instead of guessed, entrypoints from the parser and from `pyproject.toml`/`package.json`, reverse impact with entrypoint paths, scope and coverage, and module cycles.
+- `klaub-rules`: explainable findings reconciled into `introduced`/`preexisting`/`removed`/`unknown`, an itemised score and the P0–P3 queue, where `P0` needs critical evidence; architecture rules (forbidden dependencies, new cycles).
+- `klaub-review`: comments, anchors with relocation and stale detection, finishing into an idempotent feedback payload, human-confirmed delivery states, follow-up decisions with history, JSON and Markdown exports.
+- `klaub-context`: brief import (never ticks criteria for you) and human review coverage with non-blocking warnings.
+- `klaub-tests`: heuristic test association with method and confidence, JUnit and Coverage.py report import with staleness, honest evidence status, and a no-shell run request built only from configuration.
+- `klaub-flow`: strict, bounded validation of agent-written flow documents (paths, terminal sequences, snapshot freshness, divergences from the index), request prompt and an indented layout for the TUI.
 - `klaub-parse`: tree-sitter extraction of symbols, calls, imports, entrypoints and risk markers for Python, JavaScript, TypeScript/TSX, Rust and Go, behind the `SourceParser` port. Fault tolerant and depth-bounded; nested symbols never change the fingerprint of the symbol that contains them.
 - `klaub-match`: temporal symbol matching with confidence and evidence (identity, similarity within a file, moves across files) that classifies each symbol as added, removed, modified, moved, renamed, signature-changed, rewritten or format-only, explains near misses it refuses to call moves, and computes the per-line diff for the reader.
 - `klaub-git`: immutable, content-addressed snapshots through the Git CLI for the worktree, staged, unstaged, branch and commit-range scopes; rename detection, untracked and ignored-file handling, binary/oversized/symlink metadata, generated-file flags, a cheap drift probe, and project file listing and reading for call-graph building. Repositories are treated as untrusted: external diff drivers, textconv and fsmonitor never run, option-like revisions are rejected and symlinks cannot lead out of the worktree.

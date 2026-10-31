@@ -38,6 +38,7 @@ tree-sitter-rust = "0.24"
 tree-sitter-go = "0.25"
 similar = "3.2"
 petgraph = "0.8"
+quick-xml = "0.42"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.11"
@@ -51,6 +52,10 @@ klaub-core = { path = "crates/klaub-core", version = "0.1.0" }
 klaub-git = { path = "crates/klaub-git", version = "0.1.0" }
 klaub-graph = { path = "crates/klaub-graph", version = "0.1.0" }
 klaub-rules = { path = "crates/klaub-rules", version = "0.1.0" }
+klaub-review = { path = "crates/klaub-review", version = "0.1.0" }
+klaub-context = { path = "crates/klaub-context", version = "0.1.0" }
+klaub-tests = { path = "crates/klaub-tests", version = "0.1.0" }
+klaub-flow = { path = "crates/klaub-flow", version = "0.1.0" }
 klaub-match = { path = "crates/klaub-match", version = "0.1.0" }
 klaub-parse = { path = "crates/klaub-parse", version = "0.1.0" }
 klaub-tmux = { path = "crates/klaub-tmux", version = "0.1.0" }
@@ -80,6 +85,11 @@ must_use_candidate = "allow"
 too_many_lines = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
+format_push_string = "allow"
+struct_field_names = "allow"
+single_match_else = "allow"
+semicolon_if_nothing_returned = "allow"
+redundant_closure_for_method_calls = "allow"
 # `assert!(x.is_empty())` reads better in tests than `assert_eq!(x, [])`.
 assert_is_empty = "allow"
 

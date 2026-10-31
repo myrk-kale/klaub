@@ -1,0 +1,19 @@
+[package]
+name = "klaub-tests"
+description = "Klaub domain service: test association heuristics and test report import."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+klaub-core.workspace = true
+quick-xml.workspace = true
+
+[lints]
+workspace = true
