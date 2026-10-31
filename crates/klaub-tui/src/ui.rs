@@ -7,7 +7,7 @@
 //! Nothing drawn here comes from the repository, a comment or a document without passing through
 //! [`clean`] first, so a hostile sequence in a symbol name cannot reach the terminal.
 
-use klaub_app::ContractDelta;
+use klaub_app::{ContractDelta, Delta, FileContract};
 use klaub_core::finding::Priority;
 use klaub_core::review::FeedbackRecord;
 use klaub_core::snapshot::Drift;
@@ -460,15 +460,34 @@ fn draw_contract(
         body.height.saturating_sub(2),
     );
     let inner = usize::from(area.width).saturating_sub(4);
-    let lines = match app.session.contract(unit) {
-        Some(delta) => contract_lines(&delta, inner, theme),
-        None => vec![Line::from(Span::styled(
-            "This unit has no symbol contract to inspect.",
+    let lines = if let Some(delta) = app.session.contract(unit) {
+        contract_lines(&delta, inner, theme)
+    } else if let Some(file) = app.session.file_contract(unit) {
+        file_contract_lines(&file, inner, theme)
+    } else {
+        vec![Line::from(Span::styled(
+            "This unit has no contract to inspect: it is not a symbol, a migration, a dependency manifest or a settings file.",
             theme.dim(),
-        ))],
+        ))]
     };
+    let lines = clip_lines(lines, usize::from(area.height).saturating_sub(2), theme);
     frame.render_widget(Clear, area);
     frame.render_widget(boxed("Contract", lines, theme), area);
+}
+
+/// Keeps what fits the box and says how much was left out, so a short terminal never hides that
+/// there was more to read.
+fn clip_lines(mut lines: Vec<Line<'static>>, room: usize, theme: Theme) -> Vec<Line<'static>> {
+    if room == 0 || lines.len() <= room {
+        return lines;
+    }
+    let hidden = lines.len() - room + 1;
+    lines.truncate(room.saturating_sub(1));
+    lines.push(Line::from(Span::styled(
+        format!("… {hidden} more lines; make the terminal taller"),
+        theme.dim(),
+    )));
+    lines
 }
 
 fn contract_lines(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line<'static>> {
@@ -479,38 +498,76 @@ fn contract_lines(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line
             &format!("{:.2}", delta.confidence.value()),
             theme,
         ),
-        labelled(
-            "before",
-            delta.before_signature.as_deref().unwrap_or("none"),
-            theme,
-        ),
-        labelled(
-            "after",
-            delta.after_signature.as_deref().unwrap_or("none"),
-            theme,
-        ),
-        labelled(
-            "visibility before",
-            delta.visibility_before.as_deref().unwrap_or("none"),
-            theme,
-        ),
-        labelled(
-            "visibility after",
-            delta.visibility_after.as_deref().unwrap_or("none"),
-            theme,
-        ),
     ];
+    if let Some(schema) = &delta.schema {
+        lines.push(labelled("data type", schema, theme));
+    }
+    lines.push(labelled(
+        "before",
+        delta.before_signature.as_deref().unwrap_or("none"),
+        theme,
+    ));
+    lines.push(labelled(
+        "after",
+        delta.after_signature.as_deref().unwrap_or("none"),
+        theme,
+    ));
+    let parameters = Delta {
+        before: delta
+            .signature_before
+            .as_ref()
+            .map(|p| p.parameters.clone())
+            .unwrap_or_default(),
+        after: delta
+            .signature_after
+            .as_ref()
+            .map(|p| p.parameters.clone())
+            .unwrap_or_default(),
+    };
+    push_delta(&mut lines, "parameters", &parameters, width, theme);
+    let returns =
+        |parts: &Option<klaub_app::SignatureParts>| parts.as_ref().and_then(|p| p.returns.clone());
+    match (
+        returns(&delta.signature_before),
+        returns(&delta.signature_after),
+    ) {
+        (Some(old), Some(new)) if old != new => {
+            lines.push(labelled("returns", &format!("{old} -> {new}"), theme));
+        }
+        (Some(old), None) => lines.push(labelled("returns", &format!("{old} -> none"), theme)),
+        (None, Some(new)) => lines.push(labelled("returns", &format!("none -> {new}"), theme)),
+        (Some(same), Some(_)) => lines.push(labelled("returns", &same, theme)),
+        (None, None) => {}
+    }
+    if delta.visibility_before != delta.visibility_after {
+        lines.push(labelled(
+            "visibility",
+            &format!(
+                "{} -> {}",
+                delta.visibility_before.as_deref().unwrap_or("none"),
+                delta.visibility_after.as_deref().unwrap_or("none")
+            ),
+            theme,
+        ));
+    } else if let Some(same) = &delta.visibility_after {
+        lines.push(labelled("visibility", same, theme));
+    }
+    push_delta(&mut lines, "decorators", &delta.decorators, width, theme);
+    push_delta(&mut lines, "endpoints", &delta.endpoints, width, theme);
+    push_delta(&mut lines, "raises", &delta.raises, width, theme);
+    push_delta(&mut lines, "effects", &delta.effects, width, theme);
+    push_delta(&mut lines, "members", &delta.members, width, theme);
     push_group(
         &mut lines,
-        "effects",
-        &delta.effects,
-        "none recorded",
+        "reachable from",
+        &delta.reachable,
+        "no entrypoint found (absence of a path is not proof of no impact)",
         width,
         theme,
     );
     push_group(
         &mut lines,
-        "affected",
+        "direct callers",
         &delta.affected,
         "none",
         width,
@@ -529,6 +586,67 @@ fn contract_lines(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line
         theme.dim(),
     )));
     lines
+}
+
+/// A migration, a manifest or a settings file, as added, removed and changed entries.
+fn file_contract_lines(file: &FileContract, width: usize, theme: Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        labelled("file", file.path.as_str(), theme),
+        labelled("kind", file.kind.label(), theme),
+        labelled(
+            "read",
+            if file.parsed {
+                "yes"
+            } else {
+                "no, use the textual diff"
+            },
+            theme,
+        ),
+    ];
+    let marked = |sign: &str, items: &[String]| -> Vec<String> {
+        items.iter().map(|item| format!("{sign} {item}")).collect()
+    };
+    for (heading, sign, items) in [
+        ("added", "+", &file.added),
+        ("removed", "-", &file.removed),
+        ("changed", "~", &file.changed),
+    ] {
+        if !items.is_empty() {
+            push_group(&mut lines, heading, &marked(sign, items), "", width, theme);
+        }
+    }
+    push_group(&mut lines, "notes", &file.notes, "none", width, theme);
+    lines.push(Line::from(Span::styled(
+        fit("any key closes", width),
+        theme.dim(),
+    )));
+    lines
+}
+
+/// A list that changed: `+` for what appeared, `-` for what went away and a plain row for what
+/// stayed. Nothing is drawn when neither version has anything.
+fn push_delta(
+    lines: &mut Vec<Line<'static>>,
+    heading: &str,
+    delta: &Delta,
+    width: usize,
+    theme: Theme,
+) {
+    if delta.is_empty() {
+        return;
+    }
+    lines.push(Line::from(Span::styled(heading.to_owned(), theme.dim())));
+    let rows = delta
+        .added()
+        .into_iter()
+        .map(|item| ("+", item))
+        .chain(delta.removed().into_iter().map(|item| ("-", item)))
+        .chain(delta.kept().into_iter().map(|item| (" ", item)));
+    for (sign, item) in rows {
+        for row in wrap(&format!("  {sign} {}", clean(item)), width.max(1)) {
+            lines.push(Line::from(Span::raw(row)));
+        }
+    }
 }
 
 /// `label  value`, with the label dimmed and the value cleaned.

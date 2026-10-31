@@ -24,7 +24,6 @@ use klaub_core::review::{
 };
 use klaub_core::semantic::{Confidence, SymbolRef};
 use klaub_core::snapshot::{Drift, SnapshotRequest};
-use klaub_core::symbol::Symbol;
 use klaub_core::testing::{CoverageEntry, EvidenceStatus, ReportSource, TestLink, TestResult};
 use klaub_core::text::{sanitize_terminal_text, truncate_chars};
 use klaub_core::timestamp::Timestamp;
@@ -669,8 +668,8 @@ impl ReviewSession {
     pub fn contract(&self, unit: &UnitId) -> Option<ContractDelta> {
         let change = self.analysis.change_of(unit)?;
         let entry = self.analysis.file_of(unit)?;
-        let before = Self::symbol_of(entry.analysis.before.as_deref(), change.before.as_ref());
-        let after = Self::symbol_of(entry.analysis.after.as_deref(), change.after.as_ref());
+        let before = Self::view_of(entry.analysis.before.as_deref(), change.before.as_ref());
+        let after = Self::view_of(entry.analysis.after.as_deref(), change.after.as_ref());
         let impact = change
             .after
             .as_ref()
@@ -685,13 +684,34 @@ impl ReviewSession {
         ))
     }
 
+    /// What changed in a non-code file (a migration, a dependency manifest, a settings file).
+    ///
+    /// `None` when `unit` is a symbol or the file is not one of those kinds.
+    pub fn file_contract(&self, unit: &UnitId) -> Option<crate::file_contract::FileContract> {
+        let info = self.analysis.units.get(unit)?;
+        if info.change_index.is_some() {
+            return None;
+        }
+        let change = self.analysis.snapshot.files.get(info.file_index)?;
+        crate::file_contract::inspect_file(
+            change.path.as_str(),
+            change.before_text().map(AsRef::as_ref),
+            change.after_text().map(AsRef::as_ref),
+        )
+    }
+
     /// The parsed symbol a change references, when the parse and the index both exist.
-    fn symbol_of<'a>(
+    fn view_of<'a>(
         parsed: Option<&'a klaub_core::symbol::ParsedFile>,
         side: Option<&SymbolRef>,
-    ) -> Option<&'a Symbol> {
+    ) -> Option<crate::contract::SymbolView<'a>> {
         let side = side?;
-        parsed?.symbols.get(side.index)
+        let file = parsed?;
+        file.symbols.get(side.index)?;
+        Some(crate::contract::SymbolView {
+            file,
+            index: side.index,
+        })
     }
 
     /// The changed unit that holds `key`, when the symbol is part of the change.
