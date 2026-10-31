@@ -6,11 +6,11 @@ use anyhow::{Context as _, Result};
 use klaub_core::ids::ReviewId;
 use klaub_core::ports::ReviewRepository;
 use klaub_core::review::Review;
-use klaub_review::export_markdown;
+use klaub_review::{export_markdown, export_sarif};
 use klaub_storage::JsonReviewRepository;
 use serde_json::json;
 
-use crate::cli::{Format, ReviewsCommand};
+use crate::cli::{ExportFormat, Format, ReviewsCommand};
 use crate::context::Context;
 use crate::output;
 
@@ -73,11 +73,12 @@ fn show(ctx: &Context, id: &str, format: Format) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn export(ctx: &Context, id: &str, format: Format) -> Result<ExitCode> {
+fn export(ctx: &Context, id: &str, format: ExportFormat) -> Result<ExitCode> {
     let review = load_review(ctx, id)?;
     match format {
-        Format::Json => print_document(&review)?,
-        Format::Text => output::line(export_markdown(&review).trim_end()),
+        ExportFormat::Json => print_document(&review)?,
+        ExportFormat::Markdown => output::line(export_markdown(&review).trim_end()),
+        ExportFormat::Sarif => output::json(&export_sarif(&review))?,
     }
     Ok(ExitCode::SUCCESS)
 }
