@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
@@ -51,20 +51,20 @@ unicode-width = "0.2"
 clap_complete = "4.6"
 
 # Workspace-internal crates.
-klaub-core = { path = "crates/klaub-core", version = "0.3.0" }
-klaub-git = { path = "crates/klaub-git", version = "0.3.0" }
-klaub-graph = { path = "crates/klaub-graph", version = "0.3.0" }
-klaub-rules = { path = "crates/klaub-rules", version = "0.3.0" }
-klaub-review = { path = "crates/klaub-review", version = "0.3.0" }
-klaub-context = { path = "crates/klaub-context", version = "0.3.0" }
-klaub-tests = { path = "crates/klaub-tests", version = "0.3.0" }
-klaub-flow = { path = "crates/klaub-flow", version = "0.3.0" }
-klaub-storage = { path = "crates/klaub-storage", version = "0.3.0" }
-klaub-app = { path = "crates/klaub-app", version = "0.3.0" }
-klaub-match = { path = "crates/klaub-match", version = "0.3.0" }
-klaub-parse = { path = "crates/klaub-parse", version = "0.3.0" }
-klaub-tmux = { path = "crates/klaub-tmux", version = "0.3.0" }
-klaub-tui = { path = "crates/klaub-tui", version = "0.3.0" }
+klaub-core = { path = "crates/klaub-core", version = "0.3.1" }
+klaub-git = { path = "crates/klaub-git", version = "0.3.1" }
+klaub-graph = { path = "crates/klaub-graph", version = "0.3.1" }
+klaub-rules = { path = "crates/klaub-rules", version = "0.3.1" }
+klaub-review = { path = "crates/klaub-review", version = "0.3.1" }
+klaub-context = { path = "crates/klaub-context", version = "0.3.1" }
+klaub-tests = { path = "crates/klaub-tests", version = "0.3.1" }
+klaub-flow = { path = "crates/klaub-flow", version = "0.3.1" }
+klaub-storage = { path = "crates/klaub-storage", version = "0.3.1" }
+klaub-app = { path = "crates/klaub-app", version = "0.3.1" }
+klaub-match = { path = "crates/klaub-match", version = "0.3.1" }
+klaub-parse = { path = "crates/klaub-parse", version = "0.3.1" }
+klaub-tmux = { path = "crates/klaub-tmux", version = "0.3.1" }
+klaub-tui = { path = "crates/klaub-tui", version = "0.3.1" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

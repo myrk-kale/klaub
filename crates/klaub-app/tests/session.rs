@@ -1071,3 +1071,80 @@ fn a_changed_java_method_is_reviewed_with_its_contract_callers_and_tests() {
         "{links:?}"
     );
 }
+
+// ---- a worktree that changes while it is being analysed ---------------------------------------
+
+/// A Git provider whose worktree always reads as changed since the snapshot, which is what an
+/// agent editing files during the analysis looks like to the check that follows it.
+struct EditedWhileReading(GitSnapshotProvider);
+
+impl SnapshotProvider for EditedWhileReading {
+    fn discover(&self, path: &Path) -> klaub_core::Result<klaub_core::snapshot::WorktreeIdentity> {
+        self.0.discover(path)
+    }
+
+    fn capture(
+        &self,
+        request: &SnapshotRequest,
+    ) -> klaub_core::Result<klaub_core::snapshot::Snapshot> {
+        self.0.capture(request)
+    }
+
+    fn list_project_files(
+        &self,
+        snapshot: &klaub_core::snapshot::Snapshot,
+    ) -> klaub_core::Result<Vec<klaub_core::path::RepoPath>> {
+        self.0.list_project_files(snapshot)
+    }
+
+    fn read_project_file(
+        &self,
+        snapshot: &klaub_core::snapshot::Snapshot,
+        path: &klaub_core::path::RepoPath,
+    ) -> klaub_core::Result<Option<Arc<str>>> {
+        self.0.read_project_file(snapshot, path)
+    }
+
+    fn probe(
+        &self,
+        _snapshot: &klaub_core::snapshot::Snapshot,
+        _request: &SnapshotRequest,
+    ) -> klaub_core::Result<Drift> {
+        Ok(Drift::Changed)
+    }
+}
+
+#[test]
+fn a_change_made_while_the_analysis_ran_is_reported_as_drift_from_the_start() {
+    let repo = project();
+    edit(&repo);
+    let config = Config::default();
+    let mut ports = ports(&repo, &config);
+    ports.snapshots = Arc::new(EditedWhileReading(GitSnapshotProvider::new(Arc::new(
+        FixedClock::default(),
+    ))));
+    let session = ReviewSession::open(
+        ports,
+        SnapshotRequest::worktree(repo.path()),
+        &config,
+        &OpenOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        session.drift(),
+        Drift::Changed,
+        "the first screen already says the worktree moved"
+    );
+    assert!(
+        session
+            .warnings_before_finish()
+            .iter()
+            .any(|w| w.contains("worktree changed")),
+        "{:?}",
+        session.warnings_before_finish()
+    );
+
+    // And an untouched worktree starts clean.
+    let clean = open(&repo, &config, &OpenOptions::default());
+    assert_eq!(clean.drift(), Drift::Unchanged);
+}

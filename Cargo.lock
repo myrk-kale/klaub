@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "klaub"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -982,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-app"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-context",
  "klaub-core",
@@ -1003,14 +1003,14 @@ dependencies = [
 
 [[package]]
 name = "klaub-context"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
 ]
 
 [[package]]
 name = "klaub-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "blake3",
  "proptest",
@@ -1023,7 +1023,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-flow"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "serde_json",
@@ -1031,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-git"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "blake3",
  "klaub-core",
@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-graph"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "klaub-parse",
@@ -1052,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-match"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "klaub-parse",
@@ -1062,7 +1062,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-parse"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "proptest",
@@ -1077,7 +1077,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-review"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "serde_json",
@@ -1085,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-rules"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "klaub-graph",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-storage"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "rusqlite",
@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-tests"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-core",
  "quick-xml",
@@ -1114,7 +1114,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-tmux"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "flate2",
  "klaub-core",
@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "klaub-tui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "klaub-app",
  "klaub-core",
