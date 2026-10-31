@@ -112,6 +112,10 @@ fn tmux_check(ctx: &Context) -> Check {
                     "{} (explicit path, not verified)",
                     output::tilde(&tmux.path, ctx.home.as_deref())
                 ),
+                TmuxSource::System => format!(
+                    "{} (found on PATH, not verified)",
+                    output::tilde(&tmux.path, ctx.home.as_deref())
+                ),
             };
             check(
                 "tmux",

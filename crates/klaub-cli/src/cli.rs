@@ -46,9 +46,6 @@ pub(crate) enum Command {
     /// Inspect the flow diagram of a change.
     #[command(subcommand)]
     Flow(FlowCommand),
-    /// Install a packaged skill into a coding agent's configuration.
-    #[command(subcommand)]
-    Skills(SkillsCommand),
     /// Inspect and control wrapped sessions.
     #[command(subcommand)]
     Session(SessionCommand),
@@ -282,39 +279,6 @@ pub(crate) enum FlowCommand {
     },
     /// Print the instruction that asks an agent for a flow diagram. Prints only; it sends nothing.
     Prompt,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum SkillsCommand {
-    /// Install a packaged skill into an agent's configuration directory.
-    Install {
-        /// Which skill to install.
-        skill: SkillName,
-        /// The agent whose configuration receives the skill.
-        #[arg(long, value_enum)]
-        harness: Harness,
-        /// Replace a skill the user already customised.
-        #[arg(long)]
-        force: bool,
-    },
-}
-
-/// Skills shipped with Klaub.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum SkillName {
-    /// The skill that writes a flow diagram of a change.
-    Flow,
-    /// The skill that turns review comments into agent instructions.
-    Feedback,
-}
-
-/// Agents a skill can be installed for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(crate) enum Harness {
-    /// Codex (`$CODEX_HOME/skills`, or `~/.codex/skills`).
-    Codex,
-    /// Claude Code (`~/.claude/skills`).
-    Claude,
 }
 
 #[cfg(test)]

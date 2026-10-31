@@ -8,7 +8,6 @@ mod flow;
 mod review;
 mod reviews;
 mod session;
-mod skills;
 mod tests;
 mod version;
 mod worktree;
@@ -42,6 +41,5 @@ pub(crate) fn dispatch(cli: Cli) -> Result<ExitCode> {
         Command::Feedback(args) => feedback::run(&Context::from_process(cli.tmux_path)?, &args),
         Command::Tests(command) => tests::run(&Context::from_process(cli.tmux_path)?, command),
         Command::Flow(command) => flow::run(&Context::from_process(cli.tmux_path)?, command),
-        Command::Skills(command) => skills::run(&command),
     }
 }

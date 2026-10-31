@@ -953,28 +953,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "klaub-app"
-version = "0.2.0"
-dependencies = [
- "klaub-context",
- "klaub-core",
- "klaub-flow",
- "klaub-git",
- "klaub-graph",
- "klaub-match",
- "klaub-parse",
- "klaub-review",
- "klaub-rules",
- "klaub-storage",
- "klaub-tests",
- "serde_json",
- "tempfile",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "klaub-cli"
+name = "klaub"
 version = "0.2.0"
 dependencies = [
  "anyhow",
@@ -999,6 +978,27 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "klaub-app"
+version = "0.2.0"
+dependencies = [
+ "klaub-context",
+ "klaub-core",
+ "klaub-flow",
+ "klaub-git",
+ "klaub-graph",
+ "klaub-match",
+ "klaub-parse",
+ "klaub-review",
+ "klaub-rules",
+ "klaub-storage",
+ "klaub-tests",
+ "serde_json",
+ "tempfile",
+ "toml",
+ "tracing",
 ]
 
 [[package]]

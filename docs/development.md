@@ -22,8 +22,12 @@ Development builds do not embed tmux. Point Klaub at one explicitly:
 
 ```shell
 export KLAUB_TMUX_PATH="$(command -v tmux)"
-cargo run -p klaub-cli -- doctor
+cargo run -p klaub -- doctor
 ```
+
+### Installing from crates.io
+
+`cargo install klaub --locked` builds Klaub from the published crates. That build embeds no tmux, so Klaub uses the one you name with `--tmux-path` or `KLAUB_TMUX_PATH`, or else the first `tmux` (3.2 or newer) on `PATH`, and `klaub doctor` says which one and that it is not verified. `klaub review` does not need tmux at all; `klaub wrap` and `klaub session` do.
 
 ### Embedded tmux
 
@@ -33,7 +37,7 @@ Release builds embed a hash-verified tmux. To produce one locally, run `scripts/
 
 ```shell
 export KLAUB_TMUX_PATH="$(command -v tmux)"
-cargo build -p klaub-cli
+cargo build -p klaub
 target/debug/klaub wrap -- sh        # any interactive program works as a stand-in agent
 # Ctrl+B R  review window   Ctrl+B A  back to the agent   Ctrl+B d  detach
 target/debug/klaub session list
@@ -58,7 +62,7 @@ Set `KLAUB_STATE_DIR`, `KLAUB_CACHE_DIR` and `KLAUB_CONFIG_DIR` to keep experime
 2. Add an in-memory fake next to the tests that need it.
 3. Implement the adapter in its own crate, depending only on `klaub-core`.
 4. Wire it in `klaub-cli`'s composition root.
-5. Run `cargo test -p klaub-cli --test architecture` to confirm the dependency rules still hold.
+5. Run `cargo test -p klaub --test architecture` to confirm the dependency rules still hold.
 
 ## Fixtures
 
@@ -77,7 +81,7 @@ CI drives a real terminal multiplexer, real Git repositories and the real parser
 - With `[ui] mouse = true`: the wheel scrolls, and a click on a tab, a row and a code line does what it says.
 - Over SSH: `klaub doctor` says so and the reader works ([ssh.md](ssh.md)).
 - On a project of your own, the time to the first queue feels right ([benchmarks.md](benchmarks.md)).
-- With the `klaub-flow` skill installed (`klaub skills install flow --harness codex`): ask for a diagram, wait, press `L`, and navigate it.
+- With the `klaub-flow` skill installed (`npx skills add myrk-kale/klaub --skill klaub-flow`): ask the agent for a diagram, wait, press `L`, and navigate it.
 
 ## Releases
 

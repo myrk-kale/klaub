@@ -58,7 +58,7 @@ flowchart LR
     CLI --> Driven
 ```
 
-Dependencies point inward. Adapters depend on `klaub-core` for the port they implement and on nothing else in the workspace; they never depend on each other. `klaub-cli` is the only crate that sees every adapter, because wiring them is its job.
+Dependencies point inward. Adapters depend on `klaub-core` for the port they implement and on nothing else in the workspace; they never depend on each other. The binary crate, `klaub` (the directory `crates/klaub-cli`), is the only crate that sees every adapter, because wiring them is its job.
 
 ## Crates
 
@@ -78,7 +78,7 @@ Dependencies point inward. Adapters depend on `klaub-core` for the port they imp
 | `klaub-storage` | Driven adapter | Review repository (atomic JSON), analysis cache (SQLite), flow repository, configuration loading. |
 | `klaub-tmux` | Driven adapter | Embedded and verified tmux runtime, one private server per session, pane identity, single-line bracketed paste. |
 | `klaub-tui` | Driving adapter | Ratatui application: Elm-style model, pure `update`, rendering. |
-| `klaub-cli` | Driving adapter + composition root | `clap` commands, wiring of adapters to ports, process-level concerns (logging, exit codes). |
+| `klaub` (in `crates/klaub-cli`) | Driving adapter + composition root | `clap` commands, wiring of adapters to ports, process-level concerns (logging, exit codes). |
 
 ## Ports
 

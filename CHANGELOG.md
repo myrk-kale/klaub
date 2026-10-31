@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`cargo install klaub`.** Every crate of the workspace is published to crates.io when a release is tagged, through Trusted Publishing, and the binary package is now called `klaub`. A build without the bundled tmux uses the one on `PATH` and says so in `klaub doctor`. CI packages the whole workspace on every pull request.
+- The two skills install with the Vercel skills CLI: `npx skills add myrk-kale/klaub`. CI checks that the CLI finds both.
+
+### Changed
+
+- The `klaub-cli` package is now `klaub` (the library keeps the name `klaub_cli`). Use `-p klaub` where you used `-p klaub-cli`.
+- The crate keywords no longer name the implementation.
+
+### Removed
+
+- `klaub skills install` and its `--harness` and `--force` options. Use `npx skills add myrk-kale/klaub`, which also covers agents beyond Codex and Claude Code.
+
+### Fixed
+
+- The `klaub-feedback` skill named a command that does not exist (`klaub feedback show`); it is `klaub feedback <review-id>`.
+
 ## [0.2.0] - 2026-10-31
 
 ### Added

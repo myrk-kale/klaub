@@ -11,7 +11,7 @@ repository = "https://github.com/myrk-kale/klaub"
 homepage = "https://github.com/myrk-kale/klaub"
 documentation = "https://github.com/myrk-kale/klaub/tree/main/docs"
 authors = ["The Klaub contributors"]
-keywords = ["code-review", "tui", "tmux", "tree-sitter", "git"]
+keywords = ["code-review", "ai-agents", "git", "tree-sitter", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]

@@ -1,0 +1,51 @@
+name: crates.io
+
+# Publishes every crate of the workspace for a released tag, using crates.io Trusted Publishing:
+# GitHub's OIDC token is exchanged for a short-lived crates.io token, so no long-lived secret is
+# stored. Each crate must list this repository and this workflow file (crates.yml) as a trusted
+# publisher in its crates.io settings. The release workflow dispatches it, because Trusted
+# Publishing needs the workflow to run as its own run, not as a reusable one.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (for example v0.3.0)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish the workspace
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check that the tag matches the workspace version
+        id: version
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "klaub") | .version')"
+          test "v${version}" = "${{ inputs.tag }}" || { echo "tag ${{ inputs.tag }} does not match version ${version}" >&2; exit 1; }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      # Authenticate first, even when the version is already published, so a manual run against
+      # an existing tag still proves the Trusted Publishing setup.
+      - name: Authenticate with crates.io (OIDC)
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish (skips if this version is already on crates.io)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if curl -fsS -A "klaub-release (github.com/myrk-kale/klaub)" \
+               "https://crates.io/api/v1/crates/klaub/${VERSION}" >/dev/null 2>&1; then
+            echo "klaub ${VERSION} is already published"
+            exit 0
+          fi
+          # One command publishes the crates in dependency order and waits for each to be
+          # available before the next one needs it.
+          cargo publish --workspace --locked
