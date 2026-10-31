@@ -91,7 +91,7 @@ pub struct FlowFile {
 /// Reads flow documents (implemented by `klaub-storage`).
 pub trait FlowRepository: Send + Sync {
     /// The relative path where the flow of a snapshot is expected.
-    fn expected_path(&self, snapshot: &SnapshotId) -> RepoPath;
+    fn expected_path(&self, snapshot: &SnapshotId) -> Result<RepoPath>;
 
     /// Reads the flow file of a snapshot.
     ///
