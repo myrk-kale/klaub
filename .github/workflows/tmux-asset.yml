@@ -9,7 +9,8 @@ on:
     paths:
       - scripts/build-tmux.sh
       - .github/workflows/tmux-asset.yml
-      - crates/klaub-tmux/**
+      - src/adapters/tmux/**
+      - build.rs
   workflow_call:
   workflow_dispatch:
 
@@ -73,7 +74,7 @@ jobs:
         with:
           name: tmux-${{ matrix.target }}
           path: assets/tmux/${{ matrix.target }}
-      - run: cargo build --release --locked -p klaub
+      - run: cargo build --release --locked
       - name: Smoke test with the embedded tmux
         shell: bash
         run: |

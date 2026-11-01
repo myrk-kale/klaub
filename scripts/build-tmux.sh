@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Builds a self-contained tmux for one target and writes the asset that
-# crates/klaub-tmux/build.rs embeds into the klaub binary:
+# build.rs embeds into the klaub binary:
 #
 #   assets/tmux/<target>/tmux.gz           gzip-compressed, stripped executable
 #   assets/tmux/<target>/manifest.json     tmux version, target and SHA-256 of the executable

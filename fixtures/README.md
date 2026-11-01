@@ -5,10 +5,10 @@ files a reviewer would hand to Klaub are plain files you can open.
 
 | Folder | What it holds | Read by |
 | --- | --- | --- |
-| `flows/` | Flow documents of the kind the `klaub-flow` skill writes: one that is current, one written for another snapshot, one whose symbol does not exist, and four that must be rejected (malformed JSON, a path that escapes the worktree, terminal control characters in a note, an unknown schema version). | `crates/klaub-flow/tests/fixtures.rs` |
-| `reports/` | A JUnit XML report with one failing test and a Coverage.py XML report. | `crates/klaub-tests/tests/fixtures.rs` |
+| `flows/` | Flow documents of the kind the `klaub-flow` skill writes: one that is current, one written for another snapshot, one whose symbol does not exist, and four that must be rejected (malformed JSON, a path that escapes the worktree, terminal control characters in a note, an unknown schema version). | `tests/flow_fixtures.rs` |
+| `reports/` | A JUnit XML report with one failing test and a Coverage.py XML report. | `tests/test_evidence_fixtures.rs` |
 
-Repositories used by the other tests are built on the fly by `klaub_git::testing::TempRepo`, because
+Repositories used by the other tests are built on the fly by `klaub::adapters::git::testing::TempRepo`, because
 a Git repository cannot live inside another one as plain files.
 
 File names say what is expected: `current*`, `stale*`, `symbol-missing*` and `invalid-*`.

@@ -1,22 +1,22 @@
 # Benchmarks
 
-Two harnesses time the pipeline against Klaub's latency targets: 2 s to open a small or medium review, 100 ms for a key press in a list or tree, 50 ms for the before/after toggle, 3 s to refresh. They are in the workspace and they run on a **synthetic corpus**, so what they report is the shape of Klaub's work on a repository of a given size, on one machine. Neither number is a promise about your project, and the targets are engineering hypotheses to be measured, not promises. Nothing is enforced: a target that is missed is printed as `over`, not turned into a failing test, because the figure depends on the machine.
+Two harnesses time the pipeline against Klaub's latency targets: 2 s to open a small or medium review, 100 ms for a key press in a list or tree, 50 ms for the before/after toggle, 3 s to refresh. They are in the repository (`benches/`) and they run on a **synthetic corpus**, so what they report is the shape of Klaub's work on a repository of a given size, on one machine. Neither number is a promise about your project, and the targets are engineering hypotheses to be measured, not promises. Nothing is enforced: a target that is missed is printed as `over`, not turned into a failing test, because the figure depends on the machine.
 
 ## Latency
 
 ```
-cargo bench -p klaub-app --bench latency        # analysis: first queue, toggle, refresh
-cargo bench -p klaub-tui --bench ui             # the reader: one key press plus its frame
-KLAUB_BENCH_SIZES=small,medium,large cargo bench -p klaub-app --bench latency
+cargo bench --bench latency        # analysis: first queue, toggle, refresh
+cargo bench --bench ui             # the reader: one key press plus its frame
+KLAUB_BENCH_SIZES=small,medium,large cargo bench --bench latency
 ```
 
-Both are plain `harness = false` programs that print a table of p50, p95 and max, with the target next to each row and whether the p95 is within it. The `klaub-app` harness builds a Git repository of Python files whose functions call the next one and a function in the next file, commits it, rewrites a share of the files, and times:
+Both are plain `harness = false` programs that print a table of p50, p95 and max, with the target next to each row and whether the p95 is within it. The `latency` harness builds a Git repository of Python files whose functions call the next one and a function in the next file, commits it, rewrites a share of the files, and times:
 
 - the first queue with a cold parse cache and with a warm one (the time to open a review);
 - the work behind the before/after toggle, for every unit in both directions;
 - a new snapshot after a one-file edit (`R`), with the other parses cached.
 
-The `klaub-tui` harness drives the real reader over 200 files with 60 changed, draws into a 120×40 `TestBackend`, and times a key press plus the frame it causes while moving in the queue, moving in the structure tree and toggling before/after.
+The `ui` harness drives the real reader over 200 files with 60 changed, draws into a 120×40 `TestBackend`, and times a key press plus the frame it causes while moving in the queue, moving in the structure tree and toggling before/after.
 
 ### One run
 
@@ -41,11 +41,11 @@ Apple M4, macOS 26.2, Rust 1.99.1, release profile, synthetic corpus, 2026-10-31
 
 ### Real repositories
 
-`KLAUB_BENCH_REPO` points the same `klaub-app` harness at real repositories (a comma-separated list of paths), and `KLAUB_BENCH_BASE` names the revision to compare `HEAD` against (default `HEAD~30`). The repository is cloned into a temporary directory first, so nothing is written into yours, and the review is the branch scope, which is read-only: there is no refresh row, because that needs an edit.
+`KLAUB_BENCH_REPO` points the same `latency` harness at real repositories (a comma-separated list of paths), and `KLAUB_BENCH_BASE` names the revision to compare `HEAD` against (default `HEAD~30`). The repository is cloned into a temporary directory first, so nothing is written into yours, and the review is the branch scope, which is read-only: there is no refresh row, because that needs an edit.
 
 ```
 KLAUB_BENCH_REPO=~/src/flask,~/src/django KLAUB_BENCH_BASE=HEAD~60 \
-  cargo bench -p klaub-app --bench latency
+  cargo bench --bench latency
 ```
 
 One run, same machine as above (Apple M4, macOS 26.2, Rust 1.99.1, release profile, 2026-10-31). Each repository was cloned with `--depth 80` and compared `HEAD~60` against `HEAD`. Times are milliseconds. The commits are the ones the clones had on that day, so the run can be repeated on the same inputs.
@@ -69,7 +69,7 @@ Django has seven thousand files, which is not the "small or medium review" the 2
 
 The first run of this harness on these four repositories found three defects that the synthetic corpus could not, and they are fixed in the same change:
 
-- **A crash on tokio.** A function that moved from one file to another made the analysis index the wrong file's symbol table and panic with an out-of-bounds index. On a small repository the same bug did not crash; it quietly gave the contract and the "before" code of the wrong symbol. Both sides of a symbol reference are now read from the file the reference names, and the "before" code of a moved symbol is shown from the file it left (`a_symbol_moved_to_another_file_*` in `crates/klaub-app/tests/session.rs`).
+- **A crash on tokio.** A function that moved from one file to another made the analysis index the wrong file's symbol table and panic with an out-of-bounds index. On a small repository the same bug did not crash; it quietly gave the contract and the "before" code of the wrong symbol. Both sides of a symbol reference are now read from the file the reference names, and the "before" code of a moved symbol is shown from the file it left (`a_symbol_moved_to_another_file_*` in `tests/session.rs`).
 - **One `git` process per project file.** Reviewing a branch or a range of commits read every project file with its own `git cat-file`. Reading them in batches took tokio from 3.1 s to 0.46 s and vue core from 2.9 s to 1.1 s. The default scope, the worktree, reads from disk and was not affected.
 - **A quadratic test association.** Linking tests to changed symbols compared every changed symbol with every test case, repeating a per-file import check each time. It now checks a file's imports once per target and file. Together with the batch read, this took Django from 20 s to 2.1 s.
 
@@ -82,7 +82,7 @@ The first run of this harness on these four repositories found three defects tha
 
 ## What is measured by test, and how
 
-Four figures are measured by test, not by benchmark. Each one is an assertion against a Git repository whose correct answer is known, so a regression fails the test instead of quietly moving a number. They live in [`crates/klaub-app/tests/metrics.rs`](../crates/klaub-app/tests/metrics.rs).
+Four figures are measured by test, not by benchmark. Each one is an assertion against a Git repository whose correct answer is known, so a regression fails the test instead of quietly moving a number. They live in [`tests/metrics.rs`](../tests/metrics.rs).
 
 | Metric | Test | What it asserts |
 | --- | --- | --- |
@@ -94,9 +94,9 @@ Four figures are measured by test, not by benchmark. Each one is an assertion ag
 Run them with:
 
 ```
-cargo test -p klaub-app --features klaub-git/testing --test metrics
+cargo test --test metrics
 ```
 
 ## Matching thresholds
 
-Symbol matching treats a score of `0.85` or above as a strong match and `0.65` or above as a probable one (`STRONG_MATCH` and `PROBABLE_MATCH` in `crates/klaub-core/src/semantic.rs`, exposed as `analysis.match_strong_threshold` and `analysis.match_probable_threshold`). They have not been tuned. The only evidence for them is the fixture above, which is four functions in one file, and that is too small to justify changing either value.
+Symbol matching treats a score of `0.85` or above as a strong match and `0.65` or above as a probable one (`STRONG_MATCH` and `PROBABLE_MATCH` in `src/domain/semantic.rs`, exposed as `analysis.match_strong_threshold` and `analysis.match_probable_threshold`). They have not been tuned. The only evidence for them is the fixture above, which is four functions in one file, and that is too small to justify changing either value.

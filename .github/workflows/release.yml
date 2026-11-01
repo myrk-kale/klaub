@@ -50,9 +50,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "klaub") | .version')"
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
           if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "tag $GITHUB_REF_NAME does not match the workspace version $version" >&2
+            echo "tag $GITHUB_REF_NAME does not match the crate version $version" >&2
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -61,7 +61,7 @@ jobs:
           name: tmux-${{ matrix.target }}
           path: assets/tmux/${{ matrix.target }}
       - name: Build
-        run: cargo build --release --locked -p klaub
+        run: cargo build --release --locked
       - name: Package
         shell: bash
         env:

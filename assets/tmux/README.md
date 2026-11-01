@@ -1,6 +1,6 @@
 # Embedded tmux assets
 
-`crates/klaub-tmux/build.rs` looks for `assets/tmux/<target-triple>/` while compiling.
+`build.rs` looks for `assets/tmux/<target-triple>/` while compiling.
 When it contains `tmux.gz` and `manifest.json`, the executable is compiled into `klaub`
 (the `klaub_embedded_tmux` cfg) and verified against `manifest.json` before every use.
 

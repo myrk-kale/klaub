@@ -22,7 +22,7 @@ Klaub runs on a developer's machine, next to a coding agent, over repositories t
 ## Controls
 
 - **No shell.** Subprocesses (`git`, `tmux`, test commands) are spawned with argument arrays. Test selections are validated and never start with `-`.
-- **Terminal injection.** All text that reaches the screen or a pane passes through `klaub_core::text::sanitize_terminal_text`, which removes C0/C1 controls, ANSI CSI and OSC sequences and bidirectional override characters.
+- **Terminal injection.** All text that reaches the screen or a pane passes through `domain::text::sanitize_terminal_text`, which removes C0/C1 controls, ANSI CSI and OSC sequences and bidirectional override characters.
 - **Pane identity.** The agent pane is recorded by tmux pane id and process id. Before pasting, Klaub re-checks that the pane exists, is not dead and still has the recorded process. Otherwise it offers *Copy feedback* or *Show file*.
 - **No automatic submission.** Klaub never sends `Enter` and never clears the composer.
 - **Private tmux server.** Dedicated socket label, empty user configuration, verified private binary. Klaub never runs `kill-server` against a socket it does not own.

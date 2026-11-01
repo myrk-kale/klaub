@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Klaub is a single crate.** The fifteen workspace crates are modules of one `klaub` package (`domain`, `services`, `app`, `adapters`, `tui`, `cli`), the way the layers were already drawn. The direction of the dependencies between them is no longer enforced by the compiler, so `tests/architecture.rs` now reads the sources and fails when a layer names one it must not, when something other than `cli` names an adapter, or when `domain`, `services` or `app` reach for the file system, processes or the environment. Publishing to crates.io becomes one crate and one trusted publisher instead of fifteen.
+- The library is now called `klaub` (it was `klaub_cli`), and `cargo build`, `cargo test` and `cargo bench --bench latency` need no `-p`.
+- Crash reports name the source file relative to the package (`src/app/session.rs:10`), also when Klaub was built from crates.io.
+
 ## [0.3.1] - 2026-10-31
 
 ### Fixed
