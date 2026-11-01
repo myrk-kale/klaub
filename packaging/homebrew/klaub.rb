@@ -6,9 +6,8 @@
 # The sha256 values are the digests of the v0.3.1 release assets.
 
 class Klaub < Formula
-  desc "Semantic code reviewer for humans that wraps any coding agent"
+  desc "Terminal code reviewer for the human reading AI-written code"
   homepage "https://github.com/myrk-kale/klaub"
-  version "0.3.1"
   license "MIT"
 
   on_macos do

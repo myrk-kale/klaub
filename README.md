@@ -24,6 +24,7 @@ Klaub helps you review code written by AI coding agents such as Claude Code, Cod
 
 <p align="center">
   <a href="#quickstart-install-klaub-and-the-skills">Quickstart</a> |
+  <a href="#install">Install</a> |
   <a href="#the-skills-help-your-agent-work-with-your-review">Skills</a> |
   <a href="#keyboard-shortcuts">Shortcuts</a> |
   <a href="#faq">FAQ</a> |
@@ -36,33 +37,44 @@ Klaub helps you review code written by AI coding agents such as Claude Code, Cod
 
 ## Quickstart: install Klaub and the skills
 
-Three steps take you from nothing to a review: install Klaub, install the skills for your agent, and open the reviewer in a repository where an agent changed files.
+Three steps take you from nothing to a review. Each one is a single command.
 
-```shell
-# 1. Install Klaub (pick one)
-brew tap myrk-kale/klaub && brew install klaub      # macOS and Linux with Homebrew
-curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
-cargo install --git https://github.com/myrk-kale/klaub klaub --locked   # any platform with a Rust toolchain
+### 1. Install Klaub
 
-# 2. Install the skills for your agent (Claude Code, Codex and the others the skills CLI supports)
+```sh
+brew install myrk-kale/klaub/klaub
+```
+
+This works on macOS and on Linux. Without Homebrew, the [Install](#install) section has a script, Cargo and plain archives.
+
+### 2. Install the skills for your agent
+
+```sh
 npx skills add myrk-kale/klaub
+```
 
-# 3. Review what an agent changed
+The [skills CLI](https://github.com/vercel-labs/skills) asks which skills and which agents to install them for, such as Claude Code and Codex. [The skills](#the-skills-help-your-agent-work-with-your-review) explains what each one does. Klaub works without them, so you can add them later.
+
+### 3. Review what an agent changed
+
+```sh
 cd my-project
 klaub review
 ```
 
-Run `klaub doctor` to check that Git, your terminal and the grammars are in order. To install only one skill for chosen agents, use `npx skills add myrk-kale/klaub --skill klaub-feedback --agent claude-code codex`, and add `--list` to see what the repository offers.
+Klaub opens the reviewer on what changed since `HEAD`. The riskiest change is first.
 
-To keep the agent and the reviewer side by side, start the agent through Klaub:
+### Keep the agent beside the reviewer
 
-```shell
+To work with the agent and the reviewer side by side, start the agent through Klaub:
+
+```sh
 klaub wrap codex                 # or: klaub wrap -- claude --model <model>
 ```
 
-Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Ctrl+B` then `R` to open the reviewer, `Ctrl+B` then `A` to go back to the agent, and `Ctrl+B` then `D` to leave the session running in the background. `klaub session attach` brings it back. Installing with `cargo` builds Klaub without the bundled session runtime, so `klaub wrap` needs one on your `PATH`; `klaub review` works without it. The [development guide](docs/development.md) has the details.
+Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Ctrl+B` then `R` to open the reviewer, `Ctrl+B` then `A` to go back to the agent, and `Ctrl+B` then `D` to leave the session running in the background. `klaub session attach` brings it back.
 
-Your first review takes six steps:
+### Your first review in six keys
 
 1. Open the queue with `klaub review`. The riskiest change is first.
 2. Press `w` to see why it has that priority.
@@ -72,6 +84,101 @@ Your first review takes six steps:
 6. Press `F` to finish. Klaub saves the comments and prepares one short instruction for the agent.
 
 Press `?` at any time for the key list.
+
+## Install
+
+Klaub runs on macOS (Apple silicon and Intel) and on Linux (x86_64 and aarch64), and it needs Git on your `PATH`. Windows is not supported yet. Pick one of the ways below.
+
+### Homebrew
+
+On macOS and on Linux with [Homebrew](https://brew.sh):
+
+```sh
+brew install myrk-kale/klaub/klaub
+```
+
+Update with `brew upgrade klaub` and remove with `brew uninstall klaub`.
+
+### Install script
+
+Without Homebrew, the install script picks the release archive for your system, checks its SHA-256 and puts the binary in `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
+```
+
+Set `KLAUB_VERSION` to install a specific version and `KLAUB_INSTALL_DIR` to put the binary somewhere else. The variables go on the `sh` side of the pipe:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh \
+  | KLAUB_VERSION=0.3.1 KLAUB_INSTALL_DIR=/usr/local/bin sh
+```
+
+The script tells you when the install directory is not on your `PATH`.
+
+### Cargo
+
+With a Rust toolchain (1.90 or newer), from crates.io:
+
+```sh
+cargo install klaub --locked
+```
+
+Or straight from the repository:
+
+```sh
+cargo install --git https://github.com/myrk-kale/klaub klaub --locked
+```
+
+A build from source does not include the session runtime that `klaub wrap` uses. It looks for one on your `PATH`, and `klaub doctor` says which one it found. `klaub review` does not need it. The [development guide](docs/development.md) has the details.
+
+### Release archive
+
+Or download the archive for your system from the [releases page](https://github.com/myrk-kale/klaub/releases), check it against its `.sha256` file and unpack it:
+
+| System | Archive |
+| --- | --- |
+| macOS, Apple silicon | `klaub-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS, Intel | `klaub-<version>-x86_64-apple-darwin.tar.gz` |
+| Linux, x86_64 | `klaub-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux, aarch64 | `klaub-<version>-aarch64-unknown-linux-gnu.tar.gz` |
+
+```sh
+shasum -a 256 -c klaub-0.3.1-aarch64-apple-darwin.tar.gz.sha256     # sha256sum -c on Linux
+tar -xzf klaub-0.3.1-aarch64-apple-darwin.tar.gz
+install -m 0755 klaub-0.3.1-aarch64-apple-darwin/klaub ~/.local/bin/klaub
+```
+
+The archive holds the `klaub` binary, the license, the changelog and the notices of the third-party components that ship inside it. The Linux archives are built against glibc, so on a distribution that uses musl, such as Alpine, install with Cargo instead.
+
+Each archive also has a build provenance attestation. With the [GitHub CLI](https://cli.github.com) you can check that it was built from this repository:
+
+```sh
+gh attestation verify klaub-0.3.1-aarch64-apple-darwin.tar.gz --repo myrk-kale/klaub
+```
+
+### Check the installation
+
+```sh
+klaub --version
+klaub doctor
+```
+
+`klaub --version` prints the version. `klaub doctor` checks Git, your terminal, the grammars, the cache and the directories Klaub uses, and says what to fix.
+
+### Install the skills
+
+The skills need Node.js, because the [skills CLI](https://github.com/vercel-labs/skills) runs through `npx`.
+
+```sh
+npx skills add myrk-kale/klaub                       # choose the skills and the agents
+npx skills add myrk-kale/klaub --list                # only list what the repository offers
+npx skills add myrk-kale/klaub --skill klaub-feedback --agent claude-code codex
+```
+
+### Update and uninstall
+
+Update with `brew upgrade klaub`, by running the install script again, or with `cargo install klaub --locked --force`. To uninstall, run `brew uninstall klaub`, delete `~/.local/bin/klaub`, or run `cargo uninstall klaub`. If you want, also remove the `.klaub/` folders in your repositories and Klaub's own state and cache directories, which `klaub doctor` prints. The skills are removed with the skills CLI (`npx skills --help` lists its commands).
 
 ## Agents write the code. A person still signs for it.
 
@@ -289,7 +396,7 @@ Never. Putting text in the agent's input always shows you the destination and th
 
 ### How do I install the Klaub skills?
 
-Run `npx skills add myrk-kale/klaub`, choose the skills and the agents, and confirm. The command uses the [skills CLI](https://github.com/vercel-labs/skills). Add `--skill klaub-feedback --agent claude-code codex` to skip the questions.
+Run `npx skills add myrk-kale/klaub`, choose the skills and the agents, and confirm. Add `--skill klaub-feedback --agent claude-code codex` to skip the questions. See [Install the skills](#install-the-skills).
 
 ### Which AI agents does it work with?
 
@@ -333,7 +440,7 @@ On a Django checkout with 7,000 files, opening a review of a 266 file change tak
 
 ### How do I uninstall it?
 
-Remove the binary (`brew uninstall klaub`, or delete `~/.local/bin/klaub`). If you want, also remove the `.klaub/` folders in your repositories and Klaub's own state and cache directories, which `klaub doctor` prints. The skills are removed with the skills CLI (`npx skills --help` lists its commands).
+Run `brew uninstall klaub`, delete `~/.local/bin/klaub`, or run `cargo uninstall klaub`, depending on how you installed it. [Update and uninstall](#update-and-uninstall) also covers the files Klaub leaves in your repositories and the skills.
 
 ## Resources
 
