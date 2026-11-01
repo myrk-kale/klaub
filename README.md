@@ -18,6 +18,7 @@ Klaub helps you review code written by AI coding agents such as Claude Code, Cod
 <p align="center">
   <a href="https://github.com/myrk-kale/klaub/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/myrk-kale/klaub/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/myrk-kale/klaub/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/myrk-kale/klaub"></a>
+  <a href="https://crates.io/crates/klaub"><img alt="crates.io" src="https://img.shields.io/crates/v/klaub.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-linux%20%7C%20macOS-lightgrey.svg">
 </p>
@@ -111,7 +112,7 @@ Set `KLAUB_VERSION` to install a specific version and `KLAUB_INSTALL_DIR` to put
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh \
-  | KLAUB_VERSION=0.3.1 KLAUB_INSTALL_DIR=/usr/local/bin sh
+  | KLAUB_VERSION=0.4.0 KLAUB_INSTALL_DIR=/usr/local/bin sh
 ```
 
 The script tells you when the install directory is not on your `PATH`.
@@ -144,9 +145,9 @@ Or download the archive for your system from the [releases page](https://github.
 | Linux, aarch64 | `klaub-<version>-aarch64-unknown-linux-gnu.tar.gz` |
 
 ```sh
-shasum -a 256 -c klaub-0.3.1-aarch64-apple-darwin.tar.gz.sha256     # sha256sum -c on Linux
-tar -xzf klaub-0.3.1-aarch64-apple-darwin.tar.gz
-install -m 0755 klaub-0.3.1-aarch64-apple-darwin/klaub ~/.local/bin/klaub
+shasum -a 256 -c klaub-0.4.0-aarch64-apple-darwin.tar.gz.sha256     # sha256sum -c on Linux
+tar -xzf klaub-0.4.0-aarch64-apple-darwin.tar.gz
+install -m 0755 klaub-0.4.0-aarch64-apple-darwin/klaub ~/.local/bin/klaub
 ```
 
 The archive holds the `klaub` binary, the license, the changelog and the notices of the third-party components that ship inside it. The Linux archives are built against glibc, so on a distribution that uses musl, such as Alpine, install with Cargo instead.
@@ -154,7 +155,7 @@ The archive holds the `klaub` binary, the license, the changelog and the notices
 Each archive also has a build provenance attestation. With the [GitHub CLI](https://cli.github.com) you can check that it was built from this repository:
 
 ```sh
-gh attestation verify klaub-0.3.1-aarch64-apple-darwin.tar.gz --repo myrk-kale/klaub
+gh attestation verify klaub-0.4.0-aarch64-apple-darwin.tar.gz --repo myrk-kale/klaub
 ```
 
 ### Check the installation

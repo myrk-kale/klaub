@@ -1,6 +1,6 @@
 [package]
 name = "klaub"
-description = "Klaub: a terminal code reviewer for AI coding agents. Review changes by function, ranked by risk, offline and with no LLM."
+description = "Klaub: a terminal code reviewer for the human reading AI-written code. Review changes by function, ranked by risk, offline and with no LLM."
 version = "0.4.0"
 edition = "2024"
 rust-version = "1.90"
