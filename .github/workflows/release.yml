@@ -131,8 +131,8 @@ jobs:
 
   crates:
     name: Dispatch the crates.io publish
-    # Off until every crate has a Trusted Publisher on crates.io (see RELEASING.md). Set the
-    # repository variable CRATES_IO_PUBLISH to true to turn it on.
+    # Runs when the repository variable CRATES_IO_PUBLISH is true. The crates.io Trusted Publisher
+    # for this repository and crates.yml is set up (see RELEASING.md).
     if: github.event_name == 'push' && vars.CRATES_IO_PUBLISH == 'true'
     needs: publish
     runs-on: ubuntu-latest
@@ -143,3 +143,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run crates.yml -R "$GITHUB_REPOSITORY" -f tag="$GITHUB_REF_NAME"
+
+  homebrew:
+    name: Update the Homebrew tap
+    # Runs when the repository variable HOMEBREW_TAP_PUBLISH is true, which needs the deploy key
+    # secret to exist (see RELEASING.md). Pre-releases (a tag with a dash) are not published.
+    if: github.event_name == 'push' && vars.HOMEBREW_TAP_PUBLISH == 'true' && !contains(github.ref_name, '-')
+    needs: publish
+    uses: ./.github/workflows/homebrew.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}

@@ -17,13 +17,19 @@ Releases are produced by the [`release` workflow](.github/workflows/release.yml)
 3. Packages `klaub-<version>-<target>.tar.gz` containing the binary, `LICENSE`, `THIRD-PARTY-NOTICES.md` (tmux, libevent, ncurses), and a `.sha256` file.
 4. Generates build-provenance attestations for every archive.
 5. Creates the GitHub release with notes extracted from the changelog.
-6. Dispatches the `crates.io` workflow, which publishes the crate.
+6. Dispatches the `crates.io` workflow, which publishes the crate, and the `Homebrew` workflow, which updates the formula in the tap. Each runs only when its repository variable is `true` (see below).
 
 A dry run is available from the *Actions* tab (`workflow_dispatch`, input `dry_run=true`); it builds and uploads artifacts without publishing.
 
 ## Targets
 
 Linux x86_64 and aarch64 (glibc baseline of the runner image) and macOS arm64 and x86_64.
+
+## Homebrew tap
+
+`brew install myrk-kale/tap/klaub` installs from `myrk-kale/homebrew-tap`. `.github/workflows/homebrew.yml` renders `Formula/klaub.rb` with `packaging/render-formula.sh` from the checksums of the release archives, audits and tests it with `brew`, and pushes it to the tap. Run it by hand for an existing tag with `gh workflow run homebrew.yml -f tag=vX.Y.Z`.
+
+The release workflow calls it when the repository variable `HOMEBREW_TAP_PUBLISH` is `true`. One-time setup: create a key pair with `ssh-keygen -t ed25519 -N "" -f key`, add `key.pub` as a deploy key with write access on `myrk-kale/homebrew-tap` (`gh repo deploy-key add key.pub -R myrk-kale/homebrew-tap --allow-write`), store `key` as the secret `HOMEBREW_TAP_DEPLOY_KEY` (`gh secret set HOMEBREW_TAP_DEPLOY_KEY -R myrk-kale/klaub < key`), delete both files and run `gh variable set HOMEBREW_TAP_PUBLISH --body true`. The deploy key can write to the tap and nowhere else.
 
 ## Publishing to crates.io
 
