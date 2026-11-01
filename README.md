@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/myrk-kale/klaub/main/assets/logo-dark.png">
+    <img alt="Klaub: a terminal code reviewer for AI coding agents" src="https://raw.githubusercontent.com/myrk-kale/klaub/main/assets/logo-light.png" width="420">
+  </picture>
+</p>
+
 # Klaub: a code reviewer for AI coding agents
 
 Klaub is a free, open-source terminal tool for reviewing code that an AI coding agent wrote. It works with Codex CLI, Claude Code, Aider or any interactive program. It shows each change by function and class instead of by line, ranks the changes by risk, shows who calls them, and lets you send comments back to the agent. It runs offline, uses no LLM, and never presses Enter in your agent for you.

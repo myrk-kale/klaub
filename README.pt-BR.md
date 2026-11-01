@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/myrk-kale/klaub/main/assets/logo-dark.png">
+    <img alt="Klaub: um revisor de código no terminal para agentes de código com IA" src="https://raw.githubusercontent.com/myrk-kale/klaub/main/assets/logo-light.png" width="420">
+  </picture>
+</p>
+
 # Klaub: um revisor de código para agentes de IA
 
 O Klaub é uma ferramenta gratuita e de código aberto, para o terminal, que revisa código escrito por um agente de IA. Funciona com Codex CLI, Claude Code, Aider ou qualquer programa interativo. Mostra cada mudança por função e classe em vez de por linha, ordena as mudanças por risco, mostra quem as chama e deixa você devolver comentários ao agente. Roda offline, não usa LLM e nunca aperta Enter no seu agente por você.
