@@ -1,6 +1,19 @@
-# Klaub: a code reviewer for AI coding agents
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/myrk-kale/klaub/main/assets/logo-dark.png">
+    <img alt="Klaub: a terminal code reviewer for AI coding agents" src="https://raw.githubusercontent.com/myrk-kale/klaub/main/assets/logo-light.png" width="420">
+  </picture>
+</p>
 
-Klaub is a free, open-source terminal tool for reviewing code that an AI coding agent wrote. It works with Codex CLI, Claude Code, Aider or any interactive program. It shows each change by function and class instead of by line, ranks the changes by risk, shows who calls them, and lets you send comments back to the agent. It runs offline, uses no LLM, and never presses Enter in your agent for you.
+# Klaub: review AI-written code as a human
+
+> **In short**
+>
+> - Klaub is a free, open-source terminal tool for the person who has to review what AI coding agents wrote.
+> - It shows each change by function, ranks the changes by risk and says why, and traces who calls them.
+> - It runs offline, uses no LLM, and never approves, rejects or fixes anything. You decide.
+
+Klaub helps you review code written by AI coding agents such as Claude Code, Codex CLI and Aider, or any change in a Git repository. It reads the code the way the language does, so you review functions and classes instead of hunks. The queue puts the riskiest change first and shows the evidence for that order. Comments you write go back to the agent as one short instruction, and you press Enter.
 
 <p align="center">
   <a href="https://github.com/myrk-kale/klaub/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/myrk-kale/klaub/actions/workflows/ci.yml/badge.svg"></a>
@@ -10,31 +23,36 @@ Klaub is a free, open-source terminal tool for reviewing code that an AI coding 
 </p>
 
 <p align="center">
-  <a href="README.pt-BR.md">Português</a> ·
-  <a href="#quickstart">Quickstart</a> ·
-  <a href="#keyboard-shortcuts">Shortcuts</a> ·
-  <a href="#faq">FAQ</a> ·
+  <a href="#quickstart-install-klaub-and-the-skills">Quickstart</a> |
+  <a href="#the-skills-help-your-agent-work-with-your-review">Skills</a> |
+  <a href="#keyboard-shortcuts">Shortcuts</a> |
+  <a href="#faq">FAQ</a> |
   <a href="#resources">Docs</a>
 </p>
 
 <p align="center">
-  <img src="docs/media/klaub-review.gif" alt="Klaub reviewing a change in the terminal: a ranked queue, the reason for each priority, the old and new code, the contract view, the callers up to a route, and a comment on the exact line" width="860">
+  <img src="docs/media/klaub-review.gif" alt="Reviewing AI-written code with Klaub in the terminal: a queue ranked by risk, the reason for each priority, the old and new code, the contract view, the callers up to a route, and a comment on the exact line" width="860">
 </p>
 
-## Quickstart
+## Quickstart: install Klaub and the skills
 
-Install Klaub, go to a Git repository where an agent has changed files, and open the reviewer.
+Three steps take you from nothing to a review: install Klaub, install the skills for your agent, and open the reviewer in a repository where an agent changed files.
 
 ```shell
+# 1. Install Klaub (pick one)
 brew tap myrk-kale/klaub && brew install klaub      # macOS and Linux with Homebrew
-# or
 curl -fsSL https://raw.githubusercontent.com/myrk-kale/klaub/main/scripts/install.sh | sh
-# or
 cargo install --git https://github.com/myrk-kale/klaub klaub --locked   # any platform with a Rust toolchain
 
+# 2. Install the skills for your agent (Claude Code, Codex and the others the skills CLI supports)
+npx skills add myrk-kale/klaub
+
+# 3. Review what an agent changed
 cd my-project
-klaub review                                        # review what changed since HEAD
+klaub review
 ```
+
+Run `klaub doctor` to check that Git, your terminal and the grammars are in order. To install only one skill for chosen agents, use `npx skills add myrk-kale/klaub --skill klaub-feedback --agent claude-code codex`, and add `--list` to see what the repository offers.
 
 To keep the agent and the reviewer side by side, start the agent through Klaub:
 
@@ -42,7 +60,7 @@ To keep the agent and the reviewer side by side, start the agent through Klaub:
 klaub wrap codex                 # or: klaub wrap -- claude --model <model>
 ```
 
-Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Ctrl+B` then `R` to open the reviewer, `Ctrl+B` then `A` to go back to the agent, and `Ctrl+B` then `D` to leave the session running in the background. `klaub session attach` brings it back.
+Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Ctrl+B` then `R` to open the reviewer, `Ctrl+B` then `A` to go back to the agent, and `Ctrl+B` then `D` to leave the session running in the background. `klaub session attach` brings it back. Installing with `cargo` builds Klaub without the bundled session runtime, so `klaub wrap` needs one on your `PATH`; `klaub review` works without it. The [development guide](docs/development.md) has the details.
 
 Your first review takes six steps:
 
@@ -55,67 +73,68 @@ Your first review takes six steps:
 
 Press `?` at any time for the key list.
 
-### Install the agent skills
+## Agents write the code. A person still signs for it.
 
-Klaub ships two skills for your coding agent: `klaub-flow` writes a flow diagram of a change, and `klaub-feedback` makes the agent address the comments of a finished review. They install with the [skills CLI](https://github.com/vercel-labs/skills) and work with Claude Code, Codex and the other agents it supports.
+Klaub exists because reading agent output is now a large part of a developer's day, and the tools for it were built for something else. Its answer is a better lens for the person, not another model to judge the first one.
 
-```shell
-npx skills add myrk-kale/klaub                     # choose the skills and the agents interactively
-npx skills add myrk-kale/klaub --skill klaub-flow --agent claude-code codex
-```
+The numbers point at the gap. In [Sonar's 2026 State of Code survey](https://www.sonarsource.com/blog/state-of-code-developer-survey-report-the-current-reality-of-ai-coding/) of more than 1,100 developers, 96% said they do not fully trust AI-generated code, and only 48% said they always verify it before committing. 38% said reviewing AI code takes more effort than reviewing a colleague's. Developers reported that 42% of the code they commit is AI-generated or assisted. Sonar sells code verification and [The Register noted the possible bias](https://www.theregister.com/2026/01/09/devs_ai_code/), and the figures are self-reported, so read them as a signal and not as a measurement.
 
-Installing with `cargo` builds Klaub without the bundled session runtime, so `klaub wrap` needs one to be installed on your `PATH`. The [development guide](docs/development.md) has the details, and `klaub review` works without it.
+A common answer today is to ask a second model to review the first one's diff, as in [this write-up of Codex reviewing every Claude diff](https://zackproser.com/blog/codex-reviews-claudes-diffs). It can catch real problems. The same write-up treats the result as advisory, because a reviewing model can be wrong too. You still have to read the code to know which finding to believe.
 
-## Why Klaub
+Klaub takes the other route. It does not try to understand your code better than you do. It makes the code quicker to read and says where to look first, with the evidence on screen: a changed public contract, an entrypoint that reaches the function, a sensitive area, a missing test. The analysis is deterministic, so the same change gives the same queue, and every score can be taken apart. Nothing in Klaub acts for you. It does not approve, reject, submit or fix.
 
-A line diff is a poor way to read what an agent wrote. A new file has no hunks, a rewritten function lines up badly, and nothing tells you which public contract changed or who depends on it. Klaub reads the code the way the language does, so the review follows the code's structure.
+## A line diff is the wrong unit for agent output
 
-- You see functions, classes and methods, not lines. A new file is shown whole, and a rewritten function is shown in full with the old and the new version in the same place.
-- The queue is ordered by evidence. Each priority from P0 to P3 comes from an itemised score, and each finding says whether the change introduced it, it was already there, or it was removed.
-- You see the impact. Klaub follows the calls upward from the changed function to the routes, commands and `main` functions that can reach it, and labels every edge as resolved, heuristic or unresolved.
-- Your feedback reaches the agent. Comments are saved in the repository as versioned JSON, and Klaub can put a one-line instruction in the agent's input. You press Enter.
-- Everything is local. There is no account, no API key, no telemetry and no network access. The same code gives the same review every time.
-- You stay in charge. Klaub never approves, rejects or fixes code. It helps you answer what changed, what it can affect, what evidence exists and what you have not looked at yet.
+Klaub shows functions, classes and methods, because that is the unit an agent changes and the unit you reason about. A new file is shown whole. A rewritten function appears in full with the old and the new version in the same place. A function that moved to another file is followed there instead of showing up as one deletion and one addition.
 
-## What you get
+Each symbol is classified as added, removed, modified, moved, renamed, signature changed, rewritten or format only, with a confidence and the evidence for it. When Klaub is not sure two functions are the same one, it says so and keeps them apart instead of guessing.
 
-### A review queue ranked by risk
+Files in other languages are listed, shown whole and compared as text, and Klaub tells you that no semantic analysis was done for them.
+
+## The queue tells you where to spend your attention
 
 Every changed function, class and file is a unit in the queue, ordered P0 to P3. Press `w` on a unit to see the points that put it there: a changed contract, an entrypoint that reaches it, a sensitive area such as `auth`, a risk finding, a missing test. A sensitive word alone never produces a P0.
 
-Klaub classifies each symbol as added, removed, modified, moved, renamed, signature changed, rewritten or format only. It follows a function that moved to another file. Findings are marked introduced, pre-existing, removed or unknown, so you can tell new problems from old ones.
+Findings are marked introduced, pre-existing, removed or unknown, so you can tell a new problem from one that was already there. The risks Klaub looks for are swallowed errors, queries built from dynamic text, secrets written in code, I/O inside loops, dynamic code execution, shell execution, unsafe blocks and disabled certificate checks. It also checks architecture rules you define, such as forbidden dependencies and new import cycles.
 
-The risk findings Klaub looks for are swallowed errors, queries built from dynamic text, secrets written in code, I/O inside loops, dynamic code execution, shell execution, unsafe blocks and disabled certificate checks. It also checks architecture rules you define, such as forbidden dependencies and new import cycles. If a finding is a false positive, press `w`, then the finding's number, and Klaub silences that rule for the review.
+If a finding is a false positive, press `w`, then the finding's number, and Klaub silences that rule for the review. The priority is a heuristic that orders your reading. It is not a verdict on severity, and a P3 can still matter.
 
-### Old and new code in the same place
+## Read a change the way it works
 
 The current version fills the screen. Press `v` to swap it for the previous version in the same viewport, and `[` and `]` to jump between changed regions. Press `o` to open the unit inside its whole file. In a terminal that reports key releases, `[ui] hold_to_peek` lets you hold `B` to look at the old version and release it to come back.
 
-### The contract of a change
+Press `i` to see the contract: what a caller would notice. That means parameters and return type, decorators and annotations, the routes the symbol serves, the exceptions it raises or declares, its observable effects, and the public members of a type, each shown as added and removed lines. The same key works on migrations (SQL, Alembic, Django, Rails), dependency manifests and settings files, and it never shows secret values.
 
-Press `i` to see what a caller would notice: parameters and return type, decorators and annotations, the routes the symbol serves, the exceptions it raises or declares, its observable effects, and the public members of a type. Each is shown as added and removed lines. The same key works on migrations (SQL, Alembic, Django, Rails), dependency manifests and settings files, and it never shows secret values.
+Press `4` to see the impact: the callers of the changed function, the functions it calls and the entrypoints that can reach it, with the path and the confidence of each hop. Every edge is labeled resolved, heuristic or unresolved, because a missing path is never evidence that nothing depends on the code. You can open any hop and pivot the view on it.
 
-### Impact you can follow
+## Your comments reach the agent, and you press Enter
 
-Press `4` to see the callers of the changed function, the functions it calls, and the entrypoints that can reach it, with the path and the confidence of each hop. You can open any of them and pivot the view on it.
+Comments are anchored to a symbol and a version, and they follow the symbol when lines move. If the commented code disappears, the comment is marked stale instead of landing on the wrong function. They are saved in the repository as versioned JSON.
 
-### Comments and the feedback loop
+When you finish, Klaub freezes the comments into a feedback file and offers to put one short instruction in the agent's input, to copy it, or to show the file. It shows the destination and the exact text first, and it sends one line as a bracketed paste, so it can never be read as a submission. You press Enter yourself.
 
-Comments are anchored to a symbol and a version, and they follow the symbol when lines move. If the commented code disappears, the comment is marked stale instead of landing on the wrong function. When you finish, Klaub freezes the comments into a feedback file and offers to prepare a single-line instruction in the agent's input, to copy it, or to show the file. In the next round the previous comments come back, and you decide for each one whether it was resolved, partly resolved, unresolved or a regression.
+In the next round the previous comments come back, and you decide for each one whether it was resolved, partly resolved, unresolved or a regression. The agent does not get to decide that.
 
-`klaub review --wait` lets an agent run the reviewer itself and wait for you. It exits with 0 when you finish the review and 3 when you close it as a draft, and with `--format json` it prints the review and nothing else.
+For automation, `klaub review --wait` lets a script open the reviewer and wait for you. It exits with 0 when you finish the review and 3 when you close it as a draft, and with `--format json` it prints the review and nothing else. `klaub reviews export` writes a review as JSON, Markdown or SARIF 2.1.0, so comments can go to code scanning tools.
 
-### Tests, coverage and context
+## The skills help your agent work with your review
 
-Klaub links changed symbols to the tests that probably exercise them and says how it knows (a reference, a name, a file). It reads JUnit and Coverage.py reports and tells you when they are older than the change. `X` runs your configured test command after showing it and asking. A coverage view tracks which units you have not reviewed yet. You can import a brief with `--brief FILE` and tick its acceptance criteria yourself.
+Klaub ships two skills for your coding agent. They exist so that the agent cooperates with a review you run, not to hand the review to the agent. They install with the [skills CLI](https://github.com/vercel-labs/skills), as shown in the quickstart, and work with Claude Code, Codex and the other agents that CLI supports.
 
-### Flow diagrams
+| Skill | What it makes your agent do | Where it ends |
+| --- | --- | --- |
+| `klaub-feedback` | Address the comments of a finished review one `comment_id` at a time, change the code each comment points at, and not merge, drop or invent comments. | You decide whether each comment was resolved. |
+| `klaub-flow` | Write a flow diagram of the change under review as JSON, check it with `klaub flow validate`, and not edit application code. | Klaub validates it against the snapshot and you navigate it down to the real code. |
 
-Ask the agent for a diagram of the change with `p` in the Flow view. The agent writes it as JSON with the packaged `klaub-flow` skill, Klaub validates it against the snapshot, and you navigate the steps down to the real code. A diagram that is stale, malformed or points outside the repository is refused.
+Without the skills, the agent still receives your comments as text. With them it knows the format, the order of work and the limits of its role.
 
-### Exports and automation
+The flow diagram is the visible one. Press `p` in the Flow view to ask your agent for it, then `L` to reload it. A diagram that is stale, malformed or points outside the repository is refused, and what the agent claims is treated as a hypothesis: where the index disagrees (a step whose symbol does not exist) the difference is shown.
 
-`klaub reviews export` writes a review as JSON, Markdown or SARIF 2.1.0, so comments can go to code scanning tools. `klaub feedback` prints the feedback of a finished review. The `klaub-flow` and `klaub-feedback` skills install with `npx skills add myrk-kale/klaub`.
+## Tests, coverage and what you have not looked at
+
+Klaub links changed symbols to the tests that probably exercise them and says how it knows (a reference, a name, a file). It reads JUnit and Coverage.py reports and tells you when they are older than the change. `X` runs your configured test command after showing it and asking, and it never runs anything on its own.
+
+A coverage view tracks which units you have not reviewed yet, and `n` jumps to the next one. You can import a brief with `--brief FILE` and tick its acceptance criteria yourself. Opening a file, running tests or having no alerts never counts as reviewed.
 
 ## Supported languages
 
@@ -128,7 +147,7 @@ Ask the agent for a diagram of the change with `p` in the Flow view. The agent w
 | Go | `.go` | Functions, methods, structs, interfaces, packages, `error` returns, routes, `main` |
 | Java | `.java` | Classes, interfaces, enums, records, methods, annotations, `throws`, Spring and JAX-RS routes, JUnit tests |
 
-Files in other languages are listed, shown whole and compared as text, and Klaub says that no semantic analysis was done for them. Adding a language is a documented, step by step change: see [adding a language](docs/adding-a-language.md).
+Adding a language is a documented, step by step change: see [adding a language](docs/adding-a-language.md).
 
 ## Keyboard shortcuts
 
@@ -229,27 +248,48 @@ An optional mouse mode (`[ui] mouse = true`) adds wheel scrolling and clicks on 
 | `klaub crashes list\|show` | Read crash reports saved on this machine. Nothing is ever sent |
 | `klaub completions SHELL` | Print a shell completion script |
 
+## How it compares with other ways to review agent code
+
+Klaub does not replace the other ways. It covers the part they leave to your eyes.
+
+| Approach | What you read | Who judges | Where it falls short |
+| --- | --- | --- | --- |
+| The diff in the agent's own output | A line diff, in the order the agent made the edits | You, or the agent grading itself | No ranking, no callers, and a long session scrolls away |
+| A pull request on a hosting site | A line diff, after you push | You and your teammates, with the bots you configured | The code leaves your machine before the first read, and the loop with the agent is slow |
+| A second AI model as reviewer | The model's findings on the diff | A model, with you confirming each finding | Findings are probabilistic and can be wrong, so you still read the code |
+| Klaub | Functions and classes, ranked, with callers and contracts | You, with the evidence on screen | It applies fixed rules, so it finds what the rules and the call graph can show, not every bug |
+
+You can combine them. A second model's findings and Klaub's queue answer different questions, and tests answer a third.
+
 ## FAQ
 
 ### What is Klaub?
 
-Klaub is a terminal application that reviews code changes by function and class. It was built for reading what AI coding agents write, but it reviews any Git change.
+Klaub is a terminal application that helps a person review code changes by function and class, ranked by risk. It was built for reading what AI coding agents write, and it reviews any Git change.
+
+### Who is Klaub for?
+
+It is for the developer, tech lead or reviewer who has to read and sign off what an agent produced. It is not built for agents. The two skills let an agent cooperate with your review, and every decision stays with you.
 
 ### How do I review the code that Claude Code or Codex wrote?
 
 Run `klaub wrap claude` or `klaub wrap codex` in your repository, let the agent work, then press `Ctrl+B` and `R`. You can also run `klaub review` in a second terminal at any time. When you finish, Klaub can prepare your comments in the agent's input so the agent can address them.
 
+### Why does Klaub not use an LLM?
+
+A reviewer you cannot explain is hard to trust, and a second model is one more thing to check. Klaub parses your code, matches symbols across versions, builds a call graph and applies fixed rules, so the same change gives the same queue and every score has a reason. The trade is honest: it cannot find a bug that needs understanding what the code is for.
+
 ### Does Klaub send my code anywhere?
 
 No. Klaub makes no network requests, has no telemetry and needs no account. Comments and reviews are files under `.klaub/` in your repository, and crash reports stay on your machine.
 
-### Does Klaub use an LLM?
-
-No. The analysis is deterministic: it parses your code, matches symbols across versions, builds a call graph and applies fixed rules. The same change gives the same queue, and every score can be explained.
-
 ### Will Klaub press Enter or submit anything in my agent?
 
 Never. Putting text in the agent's input always shows you the destination and the exact text first, and it sends one line as a bracketed paste, so it cannot be read as a submission. You press Enter yourself.
+
+### How do I install the Klaub skills?
+
+Run `npx skills add myrk-kale/klaub`, choose the skills and the agents, and confirm. The command uses the [skills CLI](https://github.com/vercel-labs/skills). Add `--skill klaub-feedback --agent claude-code codex` to skip the questions.
 
 ### Which AI agents does it work with?
 
@@ -293,14 +333,14 @@ On a Django checkout with 7,000 files, opening a review of a 266 file change tak
 
 ### How do I uninstall it?
 
-Remove the binary (`brew uninstall klaub`, or delete `~/.local/bin/klaub`). If you want, also remove the `.klaub/` folders in your repositories and Klaub's own state and cache directories, which `klaub doctor` prints.
+Remove the binary (`brew uninstall klaub`, or delete `~/.local/bin/klaub`). If you want, also remove the `.klaub/` folders in your repositories and Klaub's own state and cache directories, which `klaub doctor` prints. The skills are removed with the skills CLI (`npx skills --help` lists its commands).
 
 ## Resources
 
 | | |
 | --- | --- |
 | [Configuration](docs/configuration.md) | Every `.klaub.toml` section, and how to move keys |
-| [Architecture](docs/architecture.md) | How Klaub is built: crates, ports, data flow, the terminal layer |
+| [Architecture](docs/architecture.md) | How Klaub is built: layers, ports, data flow, the terminal layer |
 | [Security model](docs/security.md) | Threats, controls and explicit limits |
 | [Using Klaub over SSH](docs/ssh.md) | What works and what the clipboard cannot do |
 | [Benchmarks](docs/benchmarks.md) | Latency on synthetic and real repositories |
@@ -315,4 +355,4 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and rea
 
 ## License
 
-[MIT](LICENSE). The third-party components that ship inside releases keep their own licenses, listed in `THIRD-PARTY-NOTICES.md` in every release archive.
+[MIT](LICENSE). The third-party components that ship inside releases keep their own licenses, listed in `THIRD-PARTY-NOTICES.md` in every release archive. Maintained by [myrk-kale](https://github.com/myrk-kale).
