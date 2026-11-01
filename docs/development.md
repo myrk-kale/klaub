@@ -10,7 +10,7 @@
 
 ```shell
 just ci          # fmt check, clippy, tests, docs, cargo-deny, typos
-just test        # cargo test --workspace
+just test        # cargo test --all-features
 just run review  # run the CLI from source
 ```
 
@@ -22,12 +22,12 @@ Development builds do not embed tmux. Point Klaub at one explicitly:
 
 ```shell
 export KLAUB_TMUX_PATH="$(command -v tmux)"
-cargo run -p klaub -- doctor
+cargo run -- doctor
 ```
 
 ### Installing from crates.io
 
-`cargo install --git https://github.com/myrk-kale/klaub klaub --locked` builds Klaub from the repository (the crates are not on crates.io yet; once they are, `cargo install klaub --locked` does the same). That build embeds no tmux, so Klaub uses the one you name with `--tmux-path` or `KLAUB_TMUX_PATH`, or else the first `tmux` (3.2 or newer) on `PATH`, and `klaub doctor` says which one and that it is not verified. `klaub review` does not need tmux at all; `klaub wrap` and `klaub session` do.
+`cargo install --git https://github.com/myrk-kale/klaub klaub --locked` builds Klaub from the repository (the crate is not on crates.io yet; once it is, `cargo install klaub --locked` does the same). That build embeds no tmux, so Klaub uses the one you name with `--tmux-path` or `KLAUB_TMUX_PATH`, or else the first `tmux` (3.2 or newer) on `PATH`, and `klaub doctor` says which one and that it is not verified. `klaub review` does not need tmux at all; `klaub wrap` and `klaub session` do.
 
 ### Embedded tmux
 
@@ -37,7 +37,7 @@ Release builds embed a hash-verified tmux. To produce one locally, run `scripts/
 
 ```shell
 export KLAUB_TMUX_PATH="$(command -v tmux)"
-cargo build -p klaub
+cargo build
 target/debug/klaub wrap -- sh        # any interactive program works as a stand-in agent
 # Ctrl+B R  review window   Ctrl+B A  back to the agent   Ctrl+B d  detach
 target/debug/klaub session list
@@ -48,25 +48,25 @@ Set `KLAUB_STATE_DIR`, `KLAUB_CACHE_DIR` and `KLAUB_CONFIG_DIR` to keep experime
 
 ## Conventions
 
-- **Commits and PR titles** follow [Conventional Commits](https://www.conventionalcommits.org/): `feat(tui): ...`, `fix(git): ...`. Scopes are crate names without the `klaub-` prefix.
+- **Commits and PR titles** follow [Conventional Commits](https://www.conventionalcommits.org/): `feat(tui): ...`, `fix(git): ...`. Scopes are the module names: `tui`, `git`, `rules`, `cli`.
 - **Branches**: `feat/...`, `fix/...`, `docs/...`, `chore/...`; merged through pull requests.
-- **Errors**: library crates return `klaub_core::Result`; only `klaub-cli` uses `anyhow`.
-- **No panics in library code**: `unwrap` and `expect` are linted outside tests. Prefer `?` and explicit error variants.
-- **No `println!` in libraries**; use `tracing`. The CLI writes results to stdout and everything else to stderr. `--format json` prints JSON only on stdout.
-- **Untrusted input**: file names, source code, comments and flow documents are untrusted. Strip terminal control sequences before rendering or pasting (`klaub_core::text`), validate paths with `RepoPath`, and pass subprocess arguments as arrays, never through a shell.
+- **Errors**: everything below `cli` returns `domain::Result`; only `cli` uses `anyhow`.
+- **No panics outside tests**: `unwrap` and `expect` are linted outside tests. Prefer `?` and explicit error variants.
+- **No `println!` outside `cli`**; use `tracing`. The CLI writes results to stdout and everything else to stderr. `--format json` prints JSON only on stdout.
+- **Untrusted input**: file names, source code, comments and flow documents are untrusted. Strip terminal control sequences before rendering or pasting (`domain::text`), validate paths with `RepoPath`, and pass subprocess arguments as arrays, never through a shell.
 - **Documentation**: every public item has a doc comment; `cargo doc` runs with warnings denied.
 
 ## Adding a port or an adapter
 
-1. Define the trait and the value types it exchanges in `klaub-core::ports`; keep it free of adapter vocabulary.
+1. Define the trait and the value types it exchanges in `domain::ports`; keep it free of adapter vocabulary.
 2. Add an in-memory fake next to the tests that need it.
-3. Implement the adapter in its own crate, depending only on `klaub-core`.
-4. Wire it in `klaub-cli`'s composition root.
-5. Run `cargo test -p klaub --test architecture` to confirm the dependency rules still hold.
+3. Implement the adapter in its own module under `src/adapters/`, naming only `domain`.
+4. Wire it in `cli`, the composition root.
+5. Run `cargo test --test architecture` to confirm the dependency rules still hold.
 
 ## Fixtures
 
-Tests that need a repository build one on the fly with the helpers in `klaub-git`'s test support, so no `.git` directories are committed. Static source samples used by parser and matcher tests live under `fixtures/`.
+Tests that need a repository build one on the fly with the helpers in `adapters::git::testing` (behind the `testing` feature, which the tests enable themselves), so no `.git` directories are committed. Static source samples used by parser and matcher tests live under `fixtures/`.
 
 ## Checks that need a person
 

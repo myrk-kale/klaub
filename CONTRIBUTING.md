@@ -32,7 +32,7 @@ For anything larger than a fix, open an issue or a discussion first so we can ag
 2. **Uncertainty is shown, not hidden.** Add a confidence or an `unknown` rather than guessing.
 3. **Offline and deterministic.** No network, no LLM in the engine.
 4. **Untrusted input.** Source code, file names, comments and flow documents can contain terminal escape sequences or hostile paths.
-5. **The core stays pure.** If a change needs I/O in `klaub-core` or a domain-service crate, it belongs behind a port.
+5. **The core stays pure.** If a change needs I/O in `domain`, `services` or `app`, it belongs behind a port. `tests/architecture.rs` fails if it creeps in.
 
 ### Changing a rule or a threshold
 

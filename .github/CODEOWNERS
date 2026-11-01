@@ -1,4 +1,4 @@
 # Default owner for everything. Narrow this down as maintainers join.
 *                       @myrk-kale
 /.github/               @myrk-kale
-/crates/klaub-tmux/     @myrk-kale
+/src/adapters/tmux/     @myrk-kale

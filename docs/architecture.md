@@ -16,97 +16,100 @@ Klaub is written in Rust (stable, minimum version 1.90). The pieces that matter 
 Klaub follows the **hexagonal (ports and adapters) architecture**. The business of the product, which is understanding what changed, ranking it and recording a human's feedback, sits in the middle and knows nothing about Git, tree-sitter, SQLite, tmux or terminals. Everything that touches the outside world is an adapter that plugs into a port (a Rust trait) owned by the core.
 
 
-## Layers
+## One crate, layers by convention
+
+Klaub is a single crate, `klaub`, with a library and a binary. The layers are modules under `src/`, and the direction of the dependencies between them is kept by a test instead of by the compiler: `tests/architecture.rs` reads the sources and fails CI when a layer names something it must not. A split into several crates would add a publication order and a manifest per piece, and nothing here is reused as a library, so the boundary is cheap to keep in the open.
 
 ```mermaid
 flowchart LR
-    subgraph Driving["Driving adapters (call the application)"]
-        CLI["klaub-cli<br/>commands, composition root"]
-        TUI["klaub-tui<br/>Ratatui reader"]
+    subgraph Driving["Driving (call the application)"]
+        CLI["cli<br/>commands, composition root"]
+        TUI["tui<br/>interactive reader"]
     end
 
     subgraph Hexagon["The hexagon"]
-        APP["klaub-app<br/>use cases"]
-        subgraph Domain["Domain services (pure)"]
-            MATCH["klaub-match"]
-            GRAPH["klaub-graph"]
-            RULES["klaub-rules"]
-            TESTS["klaub-tests"]
-            CTX["klaub-context"]
-            FLOW["klaub-flow"]
-            REVIEW["klaub-review"]
+        APP["app<br/>use cases"]
+        subgraph Services["services (pure)"]
+            MATCH["matching"]
+            GRAPH["graph"]
+            RULES["rules"]
+            TESTS["test_evidence"]
+            CTX["context"]
+            FLOW["flow"]
+            REVIEW["review"]
         end
-        CORE["klaub-core<br/>domain model + ports"]
+        DOMAIN["domain<br/>model + ports"]
     end
 
-    subgraph Driven["Driven adapters (implement the ports)"]
-        GIT["klaub-git<br/>Git CLI"]
-        PARSE["klaub-parse<br/>tree-sitter"]
-        STORE["klaub-storage<br/>JSON files, SQLite, config"]
-        TMUX["klaub-tmux<br/>embedded tmux"]
+    subgraph Driven["adapters (implement the ports)"]
+        GIT["git"]
+        PARSE["parse<br/>tree-sitter"]
+        STORE["storage<br/>JSON files, SQLite, config"]
+        TMUX["tmux<br/>embedded tmux"]
     end
 
     CLI --> APP
     TUI --> APP
-    APP --> Domain
-    Domain --> CORE
-    APP --> CORE
-    GIT -. implements .-> CORE
-    PARSE -. implements .-> CORE
-    STORE -. implements .-> CORE
-    TMUX -. implements .-> CORE
+    APP --> Services
+    Services --> DOMAIN
+    APP --> DOMAIN
+    GIT -. implements .-> DOMAIN
+    PARSE -. implements .-> DOMAIN
+    STORE -. implements .-> DOMAIN
+    TMUX -. implements .-> DOMAIN
     CLI --> Driven
 ```
 
-Dependencies point inward. Adapters depend on `klaub-core` for the port they implement and on nothing else in the workspace; they never depend on each other. The binary crate, `klaub` (the directory `crates/klaub-cli`), is the only crate that sees every adapter, because wiring them is its job.
+Dependencies point inward. An adapter names `domain` for the port it implements and nothing else; adapters never name each other. Only `cli` sees every adapter, because wiring them is its job. A service names `domain`, and `rules` also names `graph`.
 
-## Crates
+## Modules
 
-| Crate | Layer | Responsibility |
+| Module | Layer | Responsibility |
 | --- | --- | --- |
-| `klaub-core` | Domain | Domain model (snapshots, symbols, changes, findings, reviews), configuration schema, the **ports**, text sanitisation. No I/O. |
-| `klaub-match` | Domain service | Temporal symbol matching (`before ↔ after`) with confidence and evidence; move, rename and rewrite detection. |
-| `klaub-graph` | Domain service | Call and dependency graph, entrypoint detection, reverse traversal and impact scope. |
-| `klaub-rules` | Domain service | Evidence-based rules evaluated on base and target, the `introduced / preexisting / removed / unknown` delta, scoring and the P0–P3 queue. |
-| `klaub-tests` | Domain service | Test association heuristics, JUnit and Coverage.py report import, staleness. |
-| `klaub-context` | Domain service | Review brief, acceptance criteria, human review coverage. |
-| `klaub-flow` | Domain service | Flow document schema, validation, `current / missing / invalid / stale` status, prompt text. |
-| `klaub-review` | Domain service | Comments, anchors and relocation, state machine, follow-up decisions, feedback payload. |
-| `klaub-app` | Application | Use cases that orchestrate ports and domain services into an analysis and a review session. |
-| `klaub-git` | Driven adapter | `SnapshotProvider` and workspace reading through the Git CLI. |
-| `klaub-parse` | Driven adapter | `SourceParser` with tree-sitter grammars. |
-| `klaub-storage` | Driven adapter | Review repository (atomic JSON), analysis cache (SQLite), flow repository, configuration loading. |
-| `klaub-tmux` | Driven adapter | Embedded and verified tmux runtime, one private server per session, pane identity, single-line bracketed paste. |
-| `klaub-tui` | Driving adapter | Ratatui application: Elm-style model, pure `update`, rendering. |
-| `klaub` (in `crates/klaub-cli`) | Driving adapter + composition root | `clap` commands, wiring of adapters to ports, process-level concerns (logging, exit codes). |
+| `domain` | Domain | Domain model (snapshots, symbols, changes, findings, reviews), configuration schema, the **ports** (`domain::ports`), text sanitisation. No I/O. |
+| `services::matching` | Domain service | Temporal symbol matching (`before ↔ after`) with confidence and evidence; move, rename and rewrite detection. |
+| `services::graph` | Domain service | Call and dependency graph, entrypoint detection, reverse traversal and impact scope. |
+| `services::rules` | Domain service | Evidence-based rules evaluated on base and target, the `introduced / preexisting / removed / unknown` delta, scoring and the P0–P3 queue. |
+| `services::test_evidence` | Domain service | Test association heuristics, JUnit and Coverage.py report import, staleness. |
+| `services::context` | Domain service | Review brief, acceptance criteria, human review coverage. |
+| `services::flow` | Domain service | Flow document schema, validation, `current / missing / invalid / stale` status, prompt text. |
+| `services::review` | Domain service | Comments, anchors and relocation, state machine, follow-up decisions, feedback payload. |
+| `app` | Application | Use cases that orchestrate ports and services into an analysis and a review session. |
+| `adapters::git` | Driven adapter | `SnapshotProvider` and workspace reading through the Git CLI. |
+| `adapters::parse` | Driven adapter | `SourceParser` with tree-sitter grammars. |
+| `adapters::storage` | Driven adapter | Review repository (atomic JSON), analysis cache (SQLite), flow repository, configuration loading. |
+| `adapters::tmux` | Driven adapter | Embedded and verified tmux runtime, one private server per session, pane identity, single-line bracketed paste. |
+| `adapters` (`process`, `system`) | Driven adapter | The user's test command, the clipboard, the clock and random identifiers. |
+| `tui` | Driving adapter | Ratatui application: Elm-style model, pure `update`, rendering. |
+| `cli` | Driving adapter + composition root | `clap` commands, wiring of adapters to ports, process-level concerns (logging, exit codes). |
 
 ## Ports
 
-Ports live in `klaub-core::ports`. Each has an in-memory fake in tests.
+Ports live in `domain::ports`. Each has an in-memory fake in tests.
 
 | Port | Purpose | Production adapter |
 | --- | --- | --- |
-| `SnapshotProvider` | Capture an immutable snapshot, read project files, probe for drift | `klaub-git` |
-| `SourceParser` | Symbols, calls, imports, entrypoint hints, highlight spans | `klaub-parse` |
-| `ReviewRepository` | Persist and load reviews and feedback | `klaub-storage` |
-| `FlowRepository` | Read flow documents by snapshot id | `klaub-storage` |
-| `AnalysisCache` | Derived-data cache keyed by content hash and parser version | `klaub-storage` |
-| `ConfigSource` | Load project and user configuration | `klaub-storage` |
-| `AgentChannel` | Describe the agent pane and paste text into it | `klaub-tmux` |
-| `Clipboard` | Copy text for the user | `klaub-cli` |
-| `TestRunner` | Run the user-configured test command after confirmation | `klaub-cli` |
-| `Clock`, `IdGenerator` | Time and identifiers, replaceable for deterministic tests | `klaub-cli` |
+| `SnapshotProvider` | Capture an immutable snapshot, read project files, probe for drift | `adapters::git` |
+| `SourceParser` | Symbols, calls, imports, entrypoint hints, highlight spans | `adapters::parse` |
+| `ReviewRepository` | Persist and load reviews and feedback | `adapters::storage` |
+| `FlowRepository` | Read flow documents by snapshot id | `adapters::storage` |
+| `AnalysisCache` | Derived-data cache keyed by content hash and parser version | `adapters::storage` |
+| `ConfigSource` | Load project and user configuration | `adapters::storage` |
+| `AgentChannel` | Describe the agent pane and paste text into it | `adapters::tmux` |
+| `Clipboard` | Copy text for the user | `adapters::process` |
+| `TestRunner` | Run the user-configured test command after confirmation | `adapters::process` |
+| `Clock`, `IdGenerator` | Time and identifiers, replaceable for deterministic tests | `adapters::system` |
 
 ### Extension point for harness adapters
 
-`klaub_core::harness` holds the `HarnessAdapter` trait, the `GenericHarness` fallback and a `HarnessRegistry` that picks an adapter by the name of the program in the agent pane. An adapter can say whether a program looks ready or busy and whether text was submitted, and the reader shows what it says in the paste confirmation. It is deliberately **not** relied on: with only the generic adapter, which knows nothing, the flow is the universal "bracketed paste, no `Enter`" contract. No Codex or Claude Code adapter ships; the specification waits for a readiness contract and an acceptance per harness.
+`domain::harness` holds the `HarnessAdapter` trait, the `GenericHarness` fallback and a `HarnessRegistry` that picks an adapter by the name of the program in the agent pane. An adapter can say whether a program looks ready or busy and whether text was submitted, and the reader shows what it says in the paste confirmation. It is deliberately **not** relied on: with only the generic adapter, which knows nothing, the flow is the universal "bracketed paste, no `Enter`" contract. No Codex or Claude Code adapter ships; the specification waits for a readiness contract and an acceptance per harness.
 
 ## How a review is produced
 
 ```mermaid
 sequenceDiagram
-    participant UI as klaub-tui / klaub-cli
-    participant App as klaub-app
+    participant UI as tui / cli
+    participant App as app
     participant Git as SnapshotProvider
     participant Parse as SourceParser
     participant Dom as Domain services
@@ -130,14 +133,14 @@ The snapshot is immutable for the lifetime of a reading session. A background pr
 
 ## Failure model
 
-Errors are values (`klaub_core::Error`). A parser that fails on a file degrades that file to textual review with an explicit notice. A failed rule never aborts an analysis. Comments are written before anything else happens, so a crash loses nothing that was confirmed on disk.
+Errors are values (`domain::Error`). A parser that fails on a file degrades that file to textual review with an explicit notice. A failed rule never aborts an analysis. Comments are written before anything else happens, so a crash loses nothing that was confirmed on disk.
 
 ## Testing strategy
 
 | Level | Where | What it proves |
 | --- | --- | --- |
-| Unit | each crate's `src` | Pure logic with plain values; property tests for matching and anchors |
-| Fixtures | `fixtures/`, crate `tests/` | Real throwaway Git repositories and source files with known expected results |
-| Integration | `klaub-tmux/tests`, `klaub-cli/tests` | A real tmux server on a private socket, bracketed paste, session survival |
-| UI | `klaub-tui` | Pure `update` tests and `TestBackend` render snapshots at several terminal sizes |
-| Architecture | `klaub-cli/tests/architecture.rs` | Dependency direction and I/O-free core are enforced |
+| Unit | `#[cfg(test)]` modules next to the code | Pure logic with plain values; property tests for matching and anchors |
+| Fixtures | `fixtures/`, `tests/` | Real throwaway Git repositories and source files with known expected results |
+| Integration | `tests/wrapper.rs`, `tests/cli.rs` | A real tmux server on a private socket, bracketed paste, session survival, the binary end to end |
+| UI | `src/tui` and `tests/reader.rs` | Pure `update` tests and `TestBackend` render snapshots at several terminal sizes |
+| Architecture | `tests/architecture.rs` | The direction of the dependencies between layers, adapters named only by `cli`, and no I/O in `domain`, `services` and `app` |

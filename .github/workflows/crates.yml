@@ -1,8 +1,8 @@
 name: crates.io
 
-# Publishes every crate of the workspace for a released tag, using crates.io Trusted Publishing:
+# Publishes the `klaub` crate for a released tag, using crates.io Trusted Publishing:
 # GitHub's OIDC token is exchanged for a short-lived crates.io token, so no long-lived secret is
-# stored. Each crate must list this repository and this workflow file (crates.yml) as a trusted
+# stored. The crate must list this repository and this workflow file (crates.yml) as a trusted
 # publisher in its crates.io settings. The release workflow dispatches it, because Trusted
 # Publishing needs the workflow to run as its own run, not as a reusable one.
 on:
@@ -18,17 +18,17 @@ permissions:
 
 jobs:
   publish:
-    name: Publish the workspace
+    name: Publish the crate
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
-      - name: Check that the tag matches the workspace version
+      - name: Check that the tag matches the crate version
         id: version
         run: |
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "klaub") | .version')"
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
           test "v${version}" = "${{ inputs.tag }}" || { echo "tag ${{ inputs.tag }} does not match version ${version}" >&2; exit 1; }
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       # Authenticate first, even when the version is already published, so a manual run against
@@ -46,6 +46,4 @@ jobs:
             echo "klaub ${VERSION} is already published"
             exit 0
           fi
-          # One command publishes the crates in dependency order and waits for each to be
-          # available before the next one needs it.
-          cargo publish --workspace --locked
+          cargo publish --locked

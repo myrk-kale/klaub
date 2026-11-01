@@ -267,39 +267,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "camino"
-version = "1.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
-name = "cargo-platform"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87a0c0e6148f11f01f32650a2ea02d532b2ad4e81d8bd41e6e565b5adc5e6082"
-dependencies = [
- "serde",
- "serde_core",
-]
-
-[[package]]
-name = "cargo_metadata"
-version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef987d17b0a113becdd19d3d0022d04d7ef41f9efe4f3fb63ac44ba61df3ade9"
-dependencies = [
- "camino",
- "cargo-platform",
- "semver",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -958,114 +925,27 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
- "cargo_metadata",
+ "blake3",
  "clap",
  "clap_complete",
- "klaub-app",
- "klaub-core",
- "klaub-flow",
- "klaub-git",
- "klaub-parse",
- "klaub-review",
- "klaub-storage",
- "klaub-tmux",
- "klaub-tui",
+ "flate2",
+ "klaub",
+ "petgraph",
  "predicates",
- "serde",
- "serde_json",
- "tempfile",
- "time",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "klaub-app"
-version = "0.3.1"
-dependencies = [
- "klaub-context",
- "klaub-core",
- "klaub-flow",
- "klaub-git",
- "klaub-graph",
- "klaub-match",
- "klaub-parse",
- "klaub-review",
- "klaub-rules",
- "klaub-storage",
- "klaub-tests",
- "serde_json",
- "tempfile",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "klaub-context"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
-]
-
-[[package]]
-name = "klaub-core"
-version = "0.3.1"
-dependencies = [
- "blake3",
  "proptest",
+ "quick-xml",
+ "ratatui",
+ "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "similar",
+ "tempfile",
  "thiserror 2.0.21",
  "time",
  "toml",
-]
-
-[[package]]
-name = "klaub-flow"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "serde_json",
-]
-
-[[package]]
-name = "klaub-git"
-version = "0.3.1"
-dependencies = [
- "blake3",
- "klaub-core",
- "tempfile",
  "tracing",
-]
-
-[[package]]
-name = "klaub-graph"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "klaub-parse",
- "petgraph",
- "serde_json",
- "toml",
-]
-
-[[package]]
-name = "klaub-match"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "klaub-parse",
- "proptest",
- "similar",
-]
-
-[[package]]
-name = "klaub-parse"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "proptest",
+ "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-go",
  "tree-sitter-java",
@@ -1073,72 +953,8 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
-]
-
-[[package]]
-name = "klaub-review"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "serde_json",
-]
-
-[[package]]
-name = "klaub-rules"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "klaub-graph",
- "klaub-match",
- "klaub-parse",
-]
-
-[[package]]
-name = "klaub-storage"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "rusqlite",
- "serde_json",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "klaub-tests"
-version = "0.3.1"
-dependencies = [
- "klaub-core",
- "quick-xml",
-]
-
-[[package]]
-name = "klaub-tmux"
-version = "0.3.1"
-dependencies = [
- "flate2",
- "klaub-core",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "klaub-tui"
-version = "0.3.1"
-dependencies = [
- "klaub-app",
- "klaub-core",
- "klaub-git",
- "klaub-parse",
- "klaub-storage",
- "ratatui",
- "serde_json",
- "tempfile",
- "tracing",
  "unicode-width",
+ "uuid",
 ]
 
 [[package]]
@@ -1965,10 +1781,6 @@ name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
-dependencies = [
- "serde",
- "serde_core",
-]
 
 [[package]]
 name = "serde"

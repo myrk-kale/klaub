@@ -7,7 +7,7 @@ Klaub reads two optional TOML files and merges them, the project's over the user
 
 Tables merge key by key. A scalar or an array in the project file replaces the user's value. An unknown key, a wrong type or a value out of range is an error that names the file, the line and the column. Nothing is ever written to either file by Klaub.
 
-Every key has a default, so an empty file (or none) is valid. The schema lives in [`crates/klaub-core/src/config.rs`](../crates/klaub-core/src/config.rs); this page is the tour.
+Every key has a default, so an empty file (or none) is valid. The schema lives in [`src/domain/config.rs`](../src/domain/config.rs); this page is the tour.
 
 ## `[review]`
 
