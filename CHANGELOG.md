@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-01
+
+### Added
+
+- **Klaub is on crates.io.** `cargo install klaub --locked` builds it from the registry. A build from source has no bundled session runtime, so `klaub wrap` looks for one on `PATH` (`klaub review` does not need it).
+- **A logo.** An ASCII mark in light and dark, a banner and a social preview image, rendered from `assets/logo.txt` by `scripts/render-logo.py`.
+
 ### Changed
+
+- **A README for the person who reviews.** It now opens with what Klaub is for, a three-step quickstart (install Klaub, install the skills, review), a full install section (Homebrew, the install script and its variables, Cargo, release archives with checksum and provenance checks, update and uninstall), a comparison with other ways to review agent code and a FAQ. The Portuguese README is gone.
 
 - **Klaub is a single crate.** The fifteen workspace crates are modules of one `klaub` package (`domain`, `services`, `app`, `adapters`, `tui`, `cli`), the way the layers were already drawn. The direction of the dependencies between them is no longer enforced by the compiler, so `tests/architecture.rs` now reads the sources and fails when a layer names one it must not, when something other than `cli` names an adapter, or when `domain`, `services` or `app` reach for the file system, processes or the environment. Publishing to crates.io becomes one crate and one trusted publisher instead of fifteen.
 - The library is now called `klaub` (it was `klaub_cli`), and `cargo build`, `cargo test` and `cargo bench --bench latency` need no `-p`.
