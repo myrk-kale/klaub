@@ -1,14 +1,14 @@
 # Homebrew formula for Klaub.
 #
-# This file is meant to live in the tap repository myrk-kale/homebrew-klaub, at Formula/klaub.rb,
-# so that `brew tap myrk-kale/klaub && brew install klaub` works on macOS and on Linux.
+# This file lives in the shared tap myrk-kale/homebrew-tap, at Formula/klaub.rb, so that
+# `brew install myrk-kale/tap/klaub` works on macOS and on Linux. The older tap
+# myrk-kale/homebrew-klaub keeps a copy for people who already added it.
 #
 # The sha256 values are the digests of the v0.3.1 release assets.
 
 class Klaub < Formula
-  desc "Semantic code reviewer for humans that wraps any coding agent"
+  desc "Terminal code reviewer for the human reading AI-written code"
   homepage "https://github.com/myrk-kale/klaub"
-  version "0.3.1"
   license "MIT"
 
   on_macos do
