@@ -17,7 +17,6 @@ Klaub is a free, open-source terminal tool for reviewing code that an AI coding 
 </p>
 
 <p align="center">
-  <a href="README.pt-BR.md">Português</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#keyboard-shortcuts">Shortcuts</a> ·
   <a href="#faq">FAQ</a> ·

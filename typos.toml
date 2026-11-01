@@ -4,4 +4,4 @@ Ratatui = "Ratatui"
 ratatui = "ratatui"
 
 [files]
-extend-exclude = ["README.pt-BR.md", "Cargo.lock", "fixtures/**"]
+extend-exclude = ["Cargo.lock", "fixtures/**"]
