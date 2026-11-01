@@ -42,7 +42,7 @@ Three steps take you from nothing to a review. Each one is a single command.
 ### 1. Install Klaub
 
 ```sh
-brew install myrk-kale/klaub/klaub
+brew install myrk-kale/tap/klaub
 ```
 
 This works on macOS and on Linux. Without Homebrew, the [Install](#install) section has a script, Cargo and plain archives.
@@ -94,7 +94,7 @@ Klaub runs on macOS (Apple silicon and Intel) and on Linux (x86_64 and aarch64),
 On macOS and on Linux with [Homebrew](https://brew.sh):
 
 ```sh
-brew install myrk-kale/klaub/klaub
+brew install myrk-kale/tap/klaub
 ```
 
 Update with `brew upgrade klaub` and remove with `brew uninstall klaub`.
