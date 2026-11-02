@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - scripts/build-tmux.sh
+      - scripts/test-tmux-interactive.py
       - .github/workflows/tmux-asset.yml
       - src/adapters/tmux/**
       - build.rs
@@ -99,5 +100,12 @@ jobs:
             echo "extracted tmux is world-writable" >&2
             exit 1
           fi
+      - name: Interactive test with the embedded tmux
+        # A full-screen program in a window and window switches, as Klaub's Ctrl+B R / Ctrl+B A do.
+        # The smoke test above cannot see a server that dies under that load.
+        run: |
+          gunzip -c assets/tmux/${{ matrix.target }}/tmux.gz > "$RUNNER_TEMP/tmux"
+          chmod +x "$RUNNER_TEMP/tmux"
+          python3 scripts/test-tmux-interactive.py "$RUNNER_TEMP/tmux" 30
       - name: Dynamic dependencies of the embedded tmux
         run: cat assets/tmux/${{ matrix.target }}/dependencies.txt
