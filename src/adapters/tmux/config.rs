@@ -97,9 +97,9 @@ pub fn configuration(spec: &SessionConfig<'_>) -> Result<Vec<Vec<String>>> {
             "set-option",
             "-g",
             "status-right",
-            " Prefix+R review  Prefix+A agent  Prefix+? help ",
+            " Prefix+R review  Prefix+A agent  Prefix+Q quit  Prefix+? help ",
         ]),
-        command(&["set-option", "-g", "status-right-length", "64"]),
+        command(&["set-option", "-g", "status-right-length", "80"]),
         command(&[
             "set-option",
             "-g",
