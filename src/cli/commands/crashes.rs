@@ -5,6 +5,8 @@ use std::process::ExitCode;
 use anyhow::{Result, bail};
 use serde_json::json;
 
+use crate::domain::i18n::cli as t;
+
 use crate::cli::args::{CrashesCommand, Format};
 use crate::cli::context::Context;
 use crate::cli::{crash, output};
@@ -17,7 +19,9 @@ pub(super) fn run(command: CrashesCommand) -> Result<ExitCode> {
             let names = crash::list(&dir);
             match args.format {
                 Format::Json => output::json(&json!({ "reports": names }))?,
-                Format::Text if names.is_empty() => output::line("No crash reports."),
+                Format::Text if names.is_empty() => {
+                    output::line(t::crashes_none_listed(ctx.locale))
+                }
                 Format::Text => {
                     for name in &names {
                         output::line(name);
@@ -28,14 +32,12 @@ pub(super) fn run(command: CrashesCommand) -> Result<ExitCode> {
         CrashesCommand::Show { name } => {
             let names = crash::list(&dir);
             let Some(chosen) = name.or_else(|| names.last().cloned()) else {
-                bail!("there are no crash reports");
+                bail!("{}", t::crashes_none(ctx.locale));
             };
             let Some(text) = crash::read(&dir, &chosen) else {
-                bail!("there is no crash report called {chosen}; `klaub crashes list` shows them");
+                bail!("{}", t::crashes_unknown(ctx.locale, &chosen));
             };
-            output::error_line(
-                "Read this before you share it: it holds the panic message, which can quote the data that caused it.",
-            );
+            output::error_line(t::crashes_read_first(ctx.locale));
             output::line(text.trim_end());
         }
     }

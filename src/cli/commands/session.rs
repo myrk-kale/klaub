@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use crate::adapters::tmux::registry::SessionRecord;
 use crate::adapters::tmux::session::{self, FocusTarget as Target, SessionHealth};
+use crate::domain::i18n::{Locale, cli as t};
 use crate::domain::ids::SessionId;
 use anyhow::{Context as _, Result, bail};
 use serde_json::json;
@@ -21,14 +22,14 @@ pub(super) fn run(ctx: &Context, command: SessionCommand) -> Result<ExitCode> {
     }
 }
 
-fn parse_id(raw: &str) -> Result<SessionId> {
+fn parse_id(raw: &str, locale: Locale) -> Result<SessionId> {
     let raw = raw.trim();
     let id = if raw.starts_with(SessionId::PREFIX) {
         raw.to_owned()
     } else {
         format!("{}{raw}", SessionId::PREFIX)
     };
-    SessionId::parse(id).with_context(|| format!("{raw:?} is not a session id"))
+    SessionId::parse(id).with_context(|| t::session_not_an_id(locale, raw))
 }
 
 fn state_label(health: Option<SessionHealth>) -> &'static str {
@@ -66,7 +67,7 @@ fn list(ctx: &Context, format: Format) -> Result<ExitCode> {
                 }))
                 .collect::<Vec<_>>()
         ))?,
-        Format::Text if rows.is_empty() => output::line("no sessions"),
+        Format::Text if rows.is_empty() => output::line(t::sessions_none(ctx.locale)),
         Format::Text => {
             output::line(&format!(
                 "{:<18} {:<13} {:<32} COMMAND",
@@ -95,7 +96,7 @@ fn list(ctx: &Context, format: Format) -> Result<ExitCode> {
 fn attach(ctx: &Context, id: Option<&str>) -> Result<ExitCode> {
     let registry = ctx.registry();
     let record = if let Some(raw) = id {
-        registry.load(&parse_id(raw)?)?
+        registry.load(&parse_id(raw, ctx.locale)?)?
     } else {
         let mut running: Vec<SessionRecord> = registry
             .list()?
@@ -108,23 +109,25 @@ fn attach(ctx: &Context, id: Option<&str>) -> Result<ExitCode> {
             })
             .collect();
         match running.len() {
-            0 => bail!("no running sessions; start one with `klaub wrap <command>`"),
+            0 => bail!("{}", t::session_attach_none(ctx.locale)),
             1 => running.remove(0),
             _ => bail!(
-                "several sessions are running ({}); pass one of them to `klaub session attach <id>`",
-                running
-                    .iter()
-                    .map(|r| r.session_id.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "{}",
+                t::session_several(
+                    ctx.locale,
+                    &running
+                        .iter()
+                        .map(|r| r.session_id.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             ),
         }
     };
     if session::health(&record)? == SessionHealth::ServerDown {
         bail!(
-            "session {} has ended; its record can be removed with `klaub session kill {}`",
-            record.session_id,
-            record.session_id
+            "{}",
+            t::session_ended(ctx.locale, record.session_id.as_ref())
         );
     }
     Err(session::client_for(&record)
@@ -134,33 +137,37 @@ fn attach(ctx: &Context, id: Option<&str>) -> Result<ExitCode> {
 
 fn kill(ctx: &Context, raw: &str, yes: bool) -> Result<ExitCode> {
     let registry = ctx.registry();
-    let record = registry.load(&parse_id(raw)?)?;
+    let record = registry.load(&parse_id(raw, ctx.locale)?)?;
     if !yes {
         if !std::io::stdin().is_terminal() {
-            bail!("refusing to end a session without confirmation; pass --yes");
+            bail!("{}", t::session_kill_needs_yes(ctx.locale));
         }
         let _ = write!(
             std::io::stderr(),
-            "End session {} and the agent running in it (`{}`)? [y/N] ",
-            record.session_id,
-            crate::domain::text::sanitize_single_line(&record.agent_command.join(" "))
+            "{}",
+            t::session_kill_prompt(
+                ctx.locale,
+                record.session_id.as_ref(),
+                &crate::domain::text::sanitize_single_line(&record.agent_command.join(" ")),
+                t::yes_no_prompt(ctx.locale),
+            )
         );
         let _ = std::io::stderr().flush();
         let mut answer = String::new();
         std::io::stdin().lock().read_line(&mut answer)?;
-        if !matches!(answer.trim(), "y" | "Y" | "yes") {
-            output::line("cancelled");
+        if !output::is_yes(ctx.locale, &answer) {
+            output::line(t::cancelled(ctx.locale));
             return Ok(ExitCode::FAILURE);
         }
     }
     session::kill(&registry, &record)?;
-    output::line(&format!("ended session {}", record.session_id));
+    output::line(&t::session_killed(ctx.locale, record.session_id.as_ref()));
     Ok(ExitCode::SUCCESS)
 }
 
 fn focus(ctx: &Context, raw: &str, target: FocusTarget) -> Result<ExitCode> {
     let registry = ctx.registry();
-    let mut record = registry.load(&parse_id(raw)?)?;
+    let mut record = registry.load(&parse_id(raw, ctx.locale)?)?;
     let exe = std::env::current_exe()?;
     let review_command = vec![
         exe.to_string_lossy().into_owned(),
@@ -179,7 +186,7 @@ fn focus(ctx: &Context, raw: &str, target: FocusTarget) -> Result<ExitCode> {
 fn reap(ctx: &Context, raw: &str) -> Result<ExitCode> {
     let registry = ctx.registry();
     // A record that is already gone means there is nothing left to reap.
-    let Ok(record) = registry.load(&parse_id(raw)?) else {
+    let Ok(record) = registry.load(&parse_id(raw, ctx.locale)?) else {
         return Ok(ExitCode::SUCCESS);
     };
     session::reap(&registry, &record)?;

@@ -17,6 +17,7 @@ use crate::adapters::storage::{
 };
 use crate::adapters::tmux::channel::TmuxAgentChannel;
 use crate::app::{OpenOptions, Ports, ReviewSession};
+use crate::domain::i18n::{Locale, cli as t};
 use crate::domain::ids::SessionId;
 use crate::domain::ports::{AgentChannel, Clipboard, ConfigSource};
 use crate::domain::snapshot::{Scope, SnapshotRequest};
@@ -36,21 +37,21 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
     let target = resolve_target(ctx, args)?;
 
     if !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "the reviewer is interactive and needs a terminal; run it in your terminal or through `klaub wrap`"
-        );
+        anyhow::bail!("{}", t::review_needs_terminal(ctx.locale));
     }
     let config_source = FsConfigSource::new(Some(ctx.dirs.user_config_file()));
-    let config = config_source.load(&target.worktree).with_context(|| {
-        format!(
-            "cannot load configuration for {}",
-            target.worktree.display()
-        )
+    let mut config = config_source.load(&target.worktree).with_context(|| {
+        t::cannot_load_configuration(ctx.locale, &target.worktree.display().to_string())
     })?;
+
+    // The project may name a language of its own; otherwise the process-wide choice stands. The
+    // reader only ever sees a concrete language, never `auto`.
+    let locale = config.ui.language.locale().unwrap_or(ctx.locale);
+    config.ui.language = locale.into();
 
     crate::tui::Keymap::from_overrides(&config.keys)
         .map_err(|error| anyhow::anyhow!("{error}"))
-        .context("the [keys] table in the configuration is not valid")?;
+        .context(t::keys_table_invalid(locale))?;
 
     let clock = Arc::new(SystemClock);
     let ports = Ports {
@@ -90,7 +91,7 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
     };
     let first_review_here = !target.worktree.join(".klaub").exists();
     let session = ReviewSession::open(ports, request, &config, &options)
-        .with_context(|| format!("cannot open a review of {}", target.worktree.display()))?;
+        .with_context(|| t::cannot_open_review(locale, &target.worktree.display().to_string()))?;
 
     let clipboard: Option<Arc<dyn Clipboard>> = Some(Arc::new(ClipboardCopy));
     let mut app = App::new(session, parser, target.agent, clipboard);
@@ -99,7 +100,7 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
     }
     let app = crate::tui::run(app)?;
     if args.wait {
-        return report_wait(&app.session, args.format);
+        return report_wait(&app.session, args.format, locale);
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -109,7 +110,7 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
 /// A finished review exits 0 and a draft exits 3, so a caller can tell "the human gave feedback"
 /// from "the human closed the reader" without reading the output. With `--format json` standard
 /// output holds the review export and nothing else; the explanation goes to standard error.
-fn report_wait(session: &ReviewSession, format: Format) -> Result<ExitCode> {
+fn report_wait(session: &ReviewSession, format: Format, locale: Locale) -> Result<ExitCode> {
     let outcome = session.outcome();
     let code = if outcome.finished() {
         ExitCode::SUCCESS
@@ -118,16 +119,19 @@ fn report_wait(session: &ReviewSession, format: Format) -> Result<ExitCode> {
     };
     match format {
         Format::Json => output::json(&session.export_json())?,
-        Format::Text if outcome.finished() => output::line(&format!(
-            "review {} finished: {} comment(s). Feedback: {}",
-            outcome.review_id, outcome.comments, outcome.file
+        Format::Text if outcome.finished() => output::line(&t::review_finished(
+            locale,
+            outcome.review_id.as_str(),
+            outcome.comments,
+            &outcome.file,
         )),
         Format::Text => {}
     }
     if !outcome.finished() {
-        output::error_line(&format!(
-            "the review was closed without being finished; the draft ({} comment(s)) is in {}",
-            outcome.comments, outcome.file
+        output::error_line(&t::review_closed_unfinished(
+            locale,
+            outcome.comments,
+            &outcome.file,
         ));
     }
     Ok(code)
@@ -149,11 +153,11 @@ fn resolve_target(ctx: &Context, args: &ReviewArgs) -> Result<ReviewTarget> {
             worktree: env::find_worktree_root(&cwd).unwrap_or(cwd),
         });
     };
-    let id = SessionId::parse(raw).context("invalid --session value")?;
+    let id = SessionId::parse(raw).context(t::invalid_session_value(ctx.locale))?;
     let record = ctx
         .registry()
         .load(&id)
-        .with_context(|| format!("cannot load session {id}"))?;
+        .with_context(|| t::cannot_load_session(ctx.locale, id.as_str()))?;
     let channel: Arc<dyn AgentChannel> = Arc::new(TmuxAgentChannel::new(record.clone()));
     Ok(ReviewTarget {
         session_id: Some(id),

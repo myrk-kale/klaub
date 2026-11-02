@@ -3,7 +3,9 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use crate::domain::config::Config;
 use crate::domain::dirs::AppDirs;
+use crate::domain::i18n::Locale;
 
 /// A lookup of environment variables, replaceable in tests.
 pub(crate) type Lookup<'a> = &'a dyn Fn(&str) -> Option<OsString>;
@@ -57,6 +59,29 @@ pub(crate) fn resolve_dirs(get: Lookup<'_>) -> anyhow::Result<AppDirs> {
             .join("klaub"),
     };
     Ok(AppDirs::new(cache, state, config))
+}
+
+/// The language the command line speaks.
+///
+/// `ui.language` in the user configuration wins when it names a language. Otherwise `KLAUB_LANG`
+/// and the POSIX locale variables decide, and English is the fallback. The project configuration
+/// is not consulted here: this runs before any worktree is looked at. `klaub review` refines the
+/// answer with it.
+pub(crate) fn resolve_locale(get: Lookup<'_>, user_config: Option<&Path>) -> Locale {
+    let configured = user_config
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| Config::parse("user configuration", &text).ok())
+        .and_then(|config| config.ui.language.locale());
+    configured
+        .or_else(|| Locale::detect(&|key| get(key).and_then(|value| value.into_string().ok())))
+        .unwrap_or_default()
+}
+
+/// The language of this process, from the real environment.
+pub(crate) fn process_locale() -> Locale {
+    let get = |key: &str| std::env::var_os(key);
+    let config = resolve_dirs(&get).ok().map(|dirs| dirs.user_config_file());
+    resolve_locale(&get, config.as_deref())
 }
 
 /// Walks up from `start` to the directory that contains `.git` (a directory or a file, as in linked worktrees).
@@ -126,6 +151,34 @@ mod tests {
         let dirs =
             resolve_dirs(&lookup(&[("HOME", "/h"), ("XDG_CONFIG_HOME", "relative")])).unwrap();
         assert_eq!(dirs.config, Path::new("/h/.config/klaub"));
+    }
+
+    #[test]
+    fn the_language_comes_from_the_user_config_then_the_environment_then_english() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = temp.path().join("config.toml");
+        let missing = temp.path().join("absent.toml");
+
+        // Nothing says anything: English.
+        assert_eq!(resolve_locale(&lookup(&[]), None), Locale::En);
+        // The environment decides when the configuration is silent or absent.
+        let env = lookup(&[("LANG", "en_US.UTF-8")]);
+        assert_eq!(resolve_locale(&env, Some(&missing)), Locale::En);
+
+        // `auto` and a broken file both leave the decision to the environment.
+        std::fs::write(&config, "[ui]\nlanguage = \"auto\"\n").unwrap();
+        assert_eq!(resolve_locale(&env, Some(&config)), Locale::En);
+        std::fs::write(&config, "this is not toml").unwrap();
+        assert_eq!(resolve_locale(&env, Some(&config)), Locale::En);
+
+        // A language named in the configuration wins over the environment.
+        for locale in Locale::ALL {
+            std::fs::write(&config, format!("[ui]\nlanguage = \"{}\"\n", locale.code())).unwrap();
+            assert_eq!(
+                resolve_locale(&lookup(&[("KLAUB_LANG", "xx")]), Some(&config)),
+                locale
+            );
+        }
     }
 
     #[test]

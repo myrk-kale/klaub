@@ -63,6 +63,7 @@ impl Sandbox {
             .env("KLAUB_CACHE_DIR", self.root.path().join("cache"))
             .env("KLAUB_STATE_DIR", self.root.path().join("state"))
             .env("KLAUB_CONFIG_DIR", self.root.path().join("config"))
+            .env("KLAUB_LANG", "en")
             .env_remove("TMUX")
             .env_remove("KLAUB_SESSION")
             .env_remove("KLAUB_LOG")

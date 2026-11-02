@@ -19,13 +19,13 @@ use anyhow::Result;
 
 use crate::cli::args::{Cli, Command};
 use crate::cli::context::Context;
-use crate::cli::logging;
+use crate::cli::{env, logging};
 
 /// Runs the parsed command line.
 pub(crate) fn dispatch(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Completions { shell } => Ok(completions::run(shell)),
-        Command::Version(args) => version::run(args.format),
+        Command::Version(args) => version::run(args.format, env::process_locale()),
         Command::Doctor(args) => doctor::run(cli.tmux_path, args.format),
         Command::Crashes(command) => crashes::run(command),
         Command::Wrap(args) => {

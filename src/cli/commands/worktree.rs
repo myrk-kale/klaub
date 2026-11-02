@@ -13,6 +13,7 @@ use crate::adapters::storage::{
 };
 use crate::app::{OpenOptions, Ports, ReviewSession};
 use crate::domain::config::Config;
+use crate::domain::i18n::cli as t;
 use crate::domain::ids::ReviewId;
 use crate::domain::ports::{ConfigSource, ReviewRepository, SnapshotProvider};
 use crate::domain::snapshot::SnapshotRequest;
@@ -32,11 +33,11 @@ pub(super) struct Worktree {
 
 /// Locates the worktree and loads its configuration.
 pub(super) fn load(ctx: &Context) -> Result<Worktree> {
-    let cwd = std::env::current_dir().context("cannot read the current directory")?;
+    let cwd = std::env::current_dir().context(t::cannot_read_cwd(ctx.locale))?;
     let root = env::find_worktree_root(&cwd).unwrap_or(cwd);
     let config = FsConfigSource::new(Some(ctx.dirs.user_config_file()))
         .load(&root)
-        .with_context(|| format!("cannot load configuration for {}", root.display()))?;
+        .with_context(|| t::cannot_load_configuration(ctx.locale, &root.display().to_string()))?;
     Ok(Worktree { root, config })
 }
 
@@ -55,11 +56,12 @@ pub(super) fn open_session(ctx: &Context) -> Result<ReviewSession> {
 /// answering for different code, and it is checked before any session is opened, so nothing is
 /// written for the state that was not asked about.
 pub(super) fn open_session_of_review(ctx: &Context, id: &str) -> Result<ReviewSession> {
-    let review_id = ReviewId::parse(id).context("invalid review id")?;
+    let l = ctx.locale;
+    let review_id = ReviewId::parse(id).context(t::invalid_review_id(l))?;
     let loaded = load(ctx)?;
     let stored = JsonReviewRepository::new(&loaded.root)
         .load(&review_id)
-        .with_context(|| format!("cannot load review {review_id}"))?;
+        .with_context(|| t::cannot_load_review(l, review_id.as_str()))?;
     let request = SnapshotRequest {
         scope: stored.scope.clone(),
         base: stored.base.clone(),
@@ -67,13 +69,9 @@ pub(super) fn open_session_of_review(ctx: &Context, id: &str) -> Result<ReviewSe
     };
     let current = GitSnapshotProvider::new(Arc::new(SystemClock))
         .capture(&request)
-        .with_context(|| format!("cannot read the worktree to compare it with {review_id}"))?;
+        .with_context(|| t::cannot_read_worktree_to_compare(l, review_id.as_str()))?;
     if current.id != stored.snapshot_id {
-        bail!(
-            "review {review_id} was made for an earlier state of this worktree and the files have \
-             changed since. Open the current review with `klaub review`, or find it with \
-             `klaub reviews list`"
-        );
+        bail!("{}", t::review_made_for_earlier(l, review_id.as_str()));
     }
     open_with(ctx, &loaded, request)
 }
@@ -102,5 +100,5 @@ fn open_with(ctx: &Context, loaded: &Worktree, request: SnapshotRequest) -> Resu
         brief_file: None,
     };
     ReviewSession::open(ports, request, &loaded.config, &options)
-        .with_context(|| format!("cannot open a review of {}", loaded.root.display()))
+        .with_context(|| t::cannot_open_review(ctx.locale, &loaded.root.display().to_string()))
 }

@@ -795,6 +795,22 @@ missing_prompt = "confirm"
     }
 
     #[test]
+    fn the_language_defaults_to_auto_and_every_language_can_be_named() {
+        assert_eq!(Config::default().ui.language, Language::Auto);
+        assert_eq!(Language::Auto.locale(), None);
+        assert_eq!(Language::Auto.locale_or_default(), Locale::En);
+        for locale in Locale::ALL {
+            let config =
+                Config::parse("x", &format!("[ui]\nlanguage = \"{}\"\n", locale.code())).unwrap();
+            assert_eq!(config.ui.language.locale(), Some(locale));
+            assert_eq!(Language::from(locale).locale(), Some(locale));
+        }
+        let auto = Config::parse("x", "[ui]\nlanguage = \"auto\"\n").unwrap();
+        assert_eq!(auto.ui.language, Language::Auto);
+        assert!(Config::parse("x", "[ui]\nlanguage = \"klingon\"\n").is_err());
+    }
+
+    #[test]
     fn cycling_themes_wraps_around() {
         let mut theme = Theme::ALL[0];
         for _ in 0..Theme::ALL.len() {
