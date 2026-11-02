@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use crate::adapters::tmux::binary::{self, ResolvedTmux};
 use crate::adapters::tmux::registry::SessionRegistry;
 use crate::domain::dirs::AppDirs;
+use crate::domain::i18n::Locale;
 use crate::domain::ports::{Clock, IdGenerator};
 use anyhow::Result;
 
@@ -15,6 +16,8 @@ use crate::cli::env;
 pub(crate) struct Context {
     pub(crate) dirs: AppDirs,
     pub(crate) home: Option<PathBuf>,
+    /// The language of every message meant for the person at the terminal.
+    pub(crate) locale: Locale,
     tmux_path: Option<PathBuf>,
     pub(crate) clock: Box<dyn Clock>,
     pub(crate) ids: Box<dyn IdGenerator>,
@@ -24,9 +27,12 @@ impl Context {
     /// Builds the context from the process environment.
     pub(crate) fn from_process(tmux_path: Option<PathBuf>) -> Result<Self> {
         let get = |key: &str| std::env::var_os(key);
+        let dirs = env::resolve_dirs(&get)?;
+        let locale = env::resolve_locale(&get, Some(&dirs.user_config_file()));
         Ok(Self {
-            dirs: env::resolve_dirs(&get)?,
+            dirs,
             home: env::home(&get),
+            locale,
             tmux_path,
             clock: Box::new(SystemClock),
             ids: Box::new(RandomIds),

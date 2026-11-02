@@ -2,6 +2,7 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use crate::adapters::tmux::session::{LaunchSpec, client_for, launch};
+use crate::domain::i18n::cli as t;
 use crate::domain::ids::SessionId;
 use anyhow::{Result, bail};
 
@@ -11,15 +12,12 @@ use crate::cli::{env, output};
 
 pub(super) fn run(ctx: &Context, args: &WrapArgs) -> Result<ExitCode> {
     if std::env::var_os("TMUX").is_some() {
-        bail!(
-            "klaub wrap cannot run inside tmux: nested sessions are not supported. \
-Detach from tmux first (or open a plain terminal) and run it again. `klaub review` works inside tmux."
-        );
+        bail!("{}", t::wrap_inside_tmux(ctx.locale));
     }
 
     let cwd = std::env::current_dir()?.canonicalize()?;
     let worktree = env::find_worktree_root(&cwd).unwrap_or_else(|| {
-        output::warn_line("not inside a Git repository; the reviewer needs one to compare changes");
+        output::warn_line(t::wrap_not_git(ctx.locale));
         cwd
     });
 
@@ -48,11 +46,9 @@ Detach from tmux first (or open a plain terminal) and run it again. `klaub revie
     )?;
 
     if args.detach || !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
-        output::line(&format!("started session {}", record.session_id));
-        output::line(&format!(
-            "attach with: klaub session attach {}",
-            record.session_id
-        ));
+        let id = record.session_id.to_string();
+        output::line(&t::session_started(ctx.locale, &id));
+        output::line(&t::session_attach_with(ctx.locale, &id));
         return Ok(ExitCode::SUCCESS);
     }
 

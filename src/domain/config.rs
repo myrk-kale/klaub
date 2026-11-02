@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::domain::error::{Error, Result};
+use crate::domain::i18n::Locale;
 use crate::domain::semantic::{MatchThresholds, PROBABLE_MATCH, STRONG_MATCH};
 
 /// Which comparison `klaub review` makes by default.
@@ -142,12 +143,61 @@ impl Theme {
     }
 }
 
+/// The language of the interface (`ui.language`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    /// Follow `KLAUB_LANG` and the system locale, and fall back to English.
+    #[default]
+    Auto,
+    /// English.
+    En,
+    /// Portuguese (Brazil).
+    Pt,
+    /// Spanish.
+    Es,
+}
+
+impl Language {
+    /// The language this setting names, or `None` for `auto`.
+    #[must_use]
+    pub const fn locale(self) -> Option<Locale> {
+        match self {
+            Self::Auto => None,
+            Self::En => Some(Locale::En),
+            Self::Pt => Some(Locale::Pt),
+            Self::Es => Some(Locale::Es),
+        }
+    }
+
+    /// What the reader should speak: the setting itself, or English while it is still `auto`.
+    ///
+    /// The command line replaces `auto` with the detected language before it opens a review (see
+    /// `From<Locale>`), so `auto` only survives here in tests.
+    #[must_use]
+    pub fn locale_or_default(self) -> Locale {
+        self.locale().unwrap_or_default()
+    }
+}
+
+impl From<Locale> for Language {
+    fn from(locale: Locale) -> Self {
+        match locale {
+            Locale::En => Self::En,
+            Locale::Pt => Self::Pt,
+            Locale::Es => Self::Es,
+        }
+    }
+}
+
 /// `[ui]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiConfig {
     /// Colour theme.
     pub theme: Theme,
+    /// Language of the interface.
+    pub language: Language,
     /// Show key hints in the status bar.
     pub show_hints: bool,
     /// Let the mouse scroll, select and switch tabs. Off by default: capturing the mouse stops the
@@ -162,6 +212,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             theme: Theme::Dark,
+            language: Language::Auto,
             show_hints: true,
             mouse: false,
             hold_to_peek: false,
@@ -749,6 +800,22 @@ missing_prompt = "confirm"
             assert!(!theme.title().is_empty());
         }
         assert!(Config::parse("x", "[ui]\ntheme = \"solarized\"\n").is_err());
+    }
+
+    #[test]
+    fn the_language_defaults_to_auto_and_every_language_can_be_named() {
+        assert_eq!(Config::default().ui.language, Language::Auto);
+        assert_eq!(Language::Auto.locale(), None);
+        assert_eq!(Language::Auto.locale_or_default(), Locale::En);
+        for locale in Locale::ALL {
+            let config =
+                Config::parse("x", &format!("[ui]\nlanguage = \"{}\"\n", locale.code())).unwrap();
+            assert_eq!(config.ui.language.locale(), Some(locale));
+            assert_eq!(Language::from(locale).locale(), Some(locale));
+        }
+        let auto = Config::parse("x", "[ui]\nlanguage = \"auto\"\n").unwrap();
+        assert_eq!(auto.ui.language, Language::Auto);
+        assert!(Config::parse("x", "[ui]\nlanguage = \"klingon\"\n").is_err());
     }
 
     #[test]

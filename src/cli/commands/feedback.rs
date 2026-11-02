@@ -3,6 +3,7 @@
 use std::process::ExitCode;
 
 use crate::adapters::storage::JsonReviewRepository;
+use crate::domain::i18n::cli as t;
 use crate::domain::ids::ReviewId;
 use crate::domain::ports::ReviewRepository;
 use crate::domain::review::{FeedbackRecord, ReviewStatus};
@@ -16,13 +17,13 @@ use crate::cli::output;
 use super::worktree;
 
 pub(super) fn run(ctx: &Context, args: &FeedbackArgs) -> Result<ExitCode> {
-    let review_id = ReviewId::parse(&args.id).context("invalid review id")?;
+    let review_id = ReviewId::parse(&args.id).context(t::invalid_review_id(ctx.locale))?;
     let loaded = worktree::load(ctx)?;
     let review = JsonReviewRepository::new(&loaded.root)
         .load(&review_id)
-        .with_context(|| format!("cannot load review {review_id}"))?;
+        .with_context(|| t::cannot_load_review(ctx.locale, review_id.as_str()))?;
     let Some(feedback) = feedback_of(review.status, review.feedback) else {
-        bail!("review {review_id} is not finished; it has no feedback yet");
+        bail!("{}", t::review_not_finished(ctx.locale, review_id.as_str()));
     };
     match args.format {
         Format::Json => output::json(&json!({

@@ -3,6 +3,7 @@
 use std::process::ExitCode;
 
 use crate::adapters::storage::JsonReviewRepository;
+use crate::domain::i18n::{Locale, cli as t, tui};
 use crate::domain::ids::ReviewId;
 use crate::domain::ports::ReviewRepository;
 use crate::domain::review::Review;
@@ -51,12 +52,12 @@ fn list(ctx: &Context, format: Format) -> Result<ExitCode> {
         }
         Format::Text => {
             for review in &reviews {
-                output::line(&format!(
-                    "{}  {:<9}  {:>4} comments  updated {}",
-                    review.review_id,
-                    status_label(review.status),
+                output::line(&t::review_listing(
+                    ctx.locale,
+                    review.review_id.as_str(),
+                    status_label(review.status, ctx.locale),
                     review.comment_count,
-                    review.updated_at
+                    &review.updated_at.to_string(),
                 ));
             }
         }
@@ -68,7 +69,7 @@ fn show(ctx: &Context, id: &str, format: Format) -> Result<ExitCode> {
     let review = load_review(ctx, id)?;
     match format {
         Format::Json => print_document(&review)?,
-        Format::Text => print_summary(&review),
+        Format::Text => print_summary(&review, ctx.locale),
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -84,11 +85,11 @@ fn export(ctx: &Context, id: &str, format: ExportFormat) -> Result<ExitCode> {
 }
 
 fn load_review(ctx: &Context, id: &str) -> Result<Review> {
-    let review_id = ReviewId::parse(id).context("invalid review id")?;
+    let review_id = ReviewId::parse(id).context(t::invalid_review_id(ctx.locale))?;
     let (_, repository) = repository(ctx)?;
     repository
         .load(&review_id)
-        .with_context(|| format!("cannot load review {review_id}"))
+        .with_context(|| t::cannot_load_review(ctx.locale, review_id.as_str()))
 }
 
 fn print_document(review: &Review) -> Result<()> {
@@ -96,12 +97,12 @@ fn print_document(review: &Review) -> Result<()> {
     output::json(&document)
 }
 
-fn print_summary(review: &Review) {
-    output::line(&format!(
-        "{}  {}  {} comments",
-        review.review_id,
-        status_label(review.status),
-        review.comments.len()
+fn print_summary(review: &Review, locale: Locale) {
+    output::line(&t::review_summary(
+        locale,
+        review.review_id.as_str(),
+        status_label(review.status, locale),
+        review.comments.len(),
     ));
     for comment in &review.comments {
         output::line(&format!(
@@ -113,12 +114,12 @@ fn print_summary(review: &Review) {
     }
 }
 
-fn status_label(status: crate::domain::review::ReviewStatus) -> &'static str {
+fn status_label(status: crate::domain::review::ReviewStatus, locale: Locale) -> &'static str {
     match status {
-        crate::domain::review::ReviewStatus::Draft => "draft",
-        crate::domain::review::ReviewStatus::Finished => "finished",
-        crate::domain::review::ReviewStatus::Prepared => "prepared",
-        crate::domain::review::ReviewStatus::Submitted => "submitted",
+        crate::domain::review::ReviewStatus::Draft => tui::review_draft(locale),
+        crate::domain::review::ReviewStatus::Finished => tui::review_finished(locale),
+        crate::domain::review::ReviewStatus::Prepared => tui::review_prepared(locale),
+        crate::domain::review::ReviewStatus::Submitted => tui::review_submitted(locale),
     }
 }
 

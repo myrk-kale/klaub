@@ -9,12 +9,13 @@ mod commands;
 mod context;
 mod crash;
 mod env;
+mod help;
 mod logging;
 mod output;
 
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 
 use crate::cli::args::Cli;
 
@@ -37,7 +38,8 @@ fn install_crash_reports() {
 /// Errors are printed to standard error as `error: <message>`; usage errors use clap's
 /// exit code 2.
 pub fn run() -> ExitCode {
-    let cli = Cli::parse();
+    let matches = help::localized(Cli::command(), env::process_locale()).get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     install_crash_reports();
     match commands::dispatch(cli) {
         Ok(code) => code,

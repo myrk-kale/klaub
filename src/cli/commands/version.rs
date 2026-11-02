@@ -4,10 +4,12 @@ use crate::adapters::tmux::binary::embedded_manifest;
 use anyhow::Result;
 use serde_json::json;
 
+use crate::domain::i18n::{Locale, cli as t};
+
 use crate::cli::args::Format;
 use crate::cli::output;
 
-pub(super) fn run(format: Format) -> Result<ExitCode> {
+pub(super) fn run(format: Format, locale: Locale) -> Result<ExitCode> {
     let version = env!("CARGO_PKG_VERSION");
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -23,12 +25,12 @@ pub(super) fn run(format: Format) -> Result<ExitCode> {
         Format::Text => {
             output::line(&format!("klaub {version} ({os} {arch})"));
             match tmux {
-                Some(m) => output::line(&format!(
-                    "embedded tmux {} (sha256 {})",
-                    m.tmux_version,
-                    &m.sha256[..12]
+                Some(m) => output::line(&t::version_embedded_tmux(
+                    locale,
+                    &m.tmux_version,
+                    &m.sha256[..12],
                 )),
-                None => output::line("embedded tmux: none (uses tmux from PATH, or --tmux-path)"),
+                None => output::line(t::version_no_embedded_tmux(locale)),
             }
         }
     }

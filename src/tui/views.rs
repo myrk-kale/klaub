@@ -4,8 +4,9 @@
 use std::collections::HashSet;
 
 use crate::app::CodeLine;
-use crate::domain::finding::{QueueItem, Temporal};
+use crate::domain::finding::QueueItem;
 use crate::domain::flow::FlowState;
+use crate::domain::i18n::tui as t;
 use crate::domain::review::{CommentStatus, CriterionStatus, FollowupStatus, Version};
 use crate::domain::semantic::LineMark;
 use crate::domain::testing::EvidenceStatus;
@@ -64,21 +65,22 @@ fn comment_status_style(status: CommentStatus, theme: Theme) -> Style {
 
 fn queue(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let total = app.session.analysis().queue.len();
     let visible = app.visible_queue().len();
     let summary = if app.filters.any() {
-        format!(" · filter: {}", app.filters.summary())
+        t::queue_filter_summary(l, &app.filters.summary(l))
     } else {
         String::new()
     };
-    let title = format!("Queue · {visible} of {total} unit(s){summary}");
+    let title = t::queue_title(l, visible, total, &summary);
 
     if visible == 0 {
         let body = panel(frame, area, &title, "", theme);
         let text = if total == 0 {
-            "Nothing changed relative to the base: there is nothing to review."
+            t::queue_nothing_changed(l)
         } else {
-            "No unit matches the filters. x clears them."
+            t::queue_no_match(l)
         };
         empty_state(frame, body, text, theme);
         return;
@@ -102,7 +104,7 @@ fn queue(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .collect();
     draw_list(frame, list_inner, &mut app.queue_view, rows, theme);
     if let Some(detail) = detail_area {
-        let inner = panel(frame, detail, "Details", "", theme);
+        let inner = panel(frame, detail, t::queue_details(l), "", theme);
         let selected = app
             .queue_selection()
             .and_then(|u| app.session.analysis().item(&u));
@@ -118,6 +120,7 @@ fn queue(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn queue_row(app: &App, item: &QueueItem, width: usize) -> Line<'static> {
     let theme = app.theme;
+    let l = app.locale;
     let reviewed = app.session.review().is_reviewed(&item.unit.id);
     let comments = app.session.comments_on(&item.unit.id).len();
     // One column for the selection bar, then the check, the priority chip and a space.
@@ -125,7 +128,11 @@ fn queue_row(app: &App, item: &QueueItem, width: usize) -> Line<'static> {
     let label_w = (rest * 32 / 100).max(12);
     let kind_w = 10;
     let narrow = width < 64;
-    let tags: Vec<&str> = item.tags.iter().map(|t| t.label()).collect();
+    let tags: Vec<&str> = item
+        .tags
+        .iter()
+        .map(|tag| labels::queue_tag(l, *tag))
+        .collect();
     let tags_w = if narrow { 0 } else { (rest * 22 / 100).max(8) };
     let file_w = rest.saturating_sub(label_w + kind_w + tags_w + 3);
     let label_style = if reviewed { theme.dim() } else { theme.text() };
@@ -135,7 +142,7 @@ fn queue_row(app: &App, item: &QueueItem, width: usize) -> Line<'static> {
         Span::raw(" "),
         Span::styled(pad(&clean(&item.unit.label), label_w), label_style),
         Span::styled(
-            format!(" {}", pad(item.change.label(), kind_w)),
+            format!(" {}", pad(labels::change_kind(l, item.change), kind_w)),
             theme.dim(),
         ),
     ];
@@ -158,27 +165,21 @@ fn queue_row(app: &App, item: &QueueItem, width: usize) -> Line<'static> {
 /// The reasons behind a priority, one line each.
 pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Line<'static>> {
     let theme = app.theme;
+    let l = app.locale;
     let mut lines = vec![Line::from(vec![
         chip_span(item.priority.label(), theme.priority_chip(item.priority)),
         Span::styled(
-            format!(
-                " score {} · {}",
-                item.score.total(),
-                clean(&item.unit.label)
-            ),
+            t::explain_score(l, item.score.total(), &clean(&item.unit.label)),
             theme.strong(),
         ),
     ])];
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "Why this priority",
-        theme.accent(),
-    )));
+    lines.push(Line::from(Span::styled(t::explain_why(l), theme.accent())));
     for part in item.score.parts.iter().filter(|p| p.points != 0) {
         let text = format!(
             "{:+} {} — {}",
             part.points,
-            part.component.label(),
+            labels::score_component(l, part.component),
             clean(&part.reason)
         );
         for (i, chunk) in wrap(&text, width).into_iter().enumerate() {
@@ -203,20 +204,18 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
     }
     if item.score.parts.iter().all(|p| p.points == 0) {
         lines.push(Line::from(Span::styled(
-            "  no contributing factor",
+            t::explain_no_factor(l),
             theme.dim(),
         )));
     }
     if !item.findings.is_empty() {
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("Findings", theme.accent())));
+        lines.push(Line::from(Span::styled(
+            t::explain_findings(l),
+            theme.accent(),
+        )));
         for (number, finding) in item.findings.iter().enumerate() {
-            let temporal = match finding.temporal {
-                Temporal::Introduced => "introduced",
-                Temporal::Preexisting => "preexisting",
-                Temporal::Removed => "removed",
-                Temporal::Unknown => "unknown origin",
-            };
+            let temporal = labels::temporal(l, finding.temporal);
             let text = format!(
                 "{} [{temporal}] {} ({})",
                 if number < 9 {
@@ -247,17 +246,14 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
     }
     if !item.findings.is_empty() {
         lines.push(Line::from(Span::styled(
-            "A false positive? Press the finding's number to silence its rule for this review.",
+            t::explain_false_positive(l),
             theme.dim(),
         )));
     }
     if !app.session.muted_rules().is_empty() {
         lines.push(Line::from(Span::styled(
             fit(
-                &format!(
-                    "Silenced here: {}",
-                    clean(&app.session.muted_rules().join(", "))
-                ),
+                &t::explain_silenced(l, &clean(&app.session.muted_rules().join(", "))),
                 width,
             ),
             theme.dim(),
@@ -265,11 +261,7 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
     }
     if let Some(scope) = item.scope {
         lines.push(Line::from(Span::styled(
-            format!(
-                "Reach: {} · {} entrypoint(s)",
-                scope.label(),
-                item.entrypoints
-            ),
+            t::explain_reach(l, labels::reach(l, scope), item.entrypoints),
             theme.dim(),
         )));
     }
@@ -280,21 +272,17 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
 
 fn structure(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let body = panel(
         frame,
         area,
-        "Structure",
-        "modules → files → symbols (+ / - to open or close levels)",
+        t::mode_structure(l),
+        t::structure_hint(l),
         theme,
     );
     let tree = app.tree_rows();
     if tree.is_empty() {
-        empty_state(
-            frame,
-            body,
-            "Nothing to show with the current filters.",
-            theme,
-        );
+        empty_state(frame, body, t::structure_empty(l), theme);
         return;
     }
     let width = usize::from(body.width);
@@ -350,29 +338,25 @@ fn structure(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let Some(view) = app.code.view.clone() else {
-        let body = panel(frame, area, "Code", "", theme);
-        empty_state(
-            frame,
-            body,
-            "No code is open. Pick a unit in the Queue and press Enter.",
-            theme,
-        );
+        let body = panel(frame, area, t::mode_code(l), "", theme);
+        empty_state(frame, body, t::code_empty(l), theme);
         return;
     };
 
     let (side, side_chip) = match view.version {
-        Version::After => ("NEW CODE", Chip::Good),
-        Version::Before => ("OLD CODE", Chip::Warn),
+        Version::After => (t::code_new(l), Chip::Good),
+        Version::Before => (t::code_old(l), Chip::Warn),
     };
     let place = view
         .symbol_lines
-        .map_or_else(String::new, |(a, b)| format!(" · lines {a}–{b}"));
+        .map_or_else(String::new, |(a, b)| t::code_lines(l, a, b));
     let title = format!(
         "{} · {}{place}",
         clean(view.path.as_str()),
         app.current_item()
-            .map_or_else(|| "symbol".to_owned(), |i| clean(&i.unit.label)),
+            .map_or_else(|| t::code_symbol(l).to_owned(), |i| clean(&i.unit.label)),
     );
     let badge = chip_span(side, theme.chip(side_chip));
     let inner = panel_with(frame, area, &title, "", vec![badge], theme);
@@ -483,7 +467,7 @@ fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     if footer_h > 0 {
         let first = &at_cursor[0];
         let more = if at_cursor.len() > 1 {
-            format!(" (+{} more)", at_cursor.len() - 1)
+            t::code_more_comments(l, at_cursor.len() - 1)
         } else {
             String::new()
         };
@@ -529,7 +513,10 @@ fn comment_lines(app: &App, view: &crate::app::CodeView) -> (HashSet<u32>, Vec<(
                 .severity
                 .map_or_else(String::new, |s| format!("{} · ", s.label()));
             at_cursor.push((
-                format!("{severity}{}", labels::comment_status(comment.status)),
+                format!(
+                    "{severity}{}",
+                    labels::comment_status(app.locale, comment.status)
+                ),
                 clean(&comment.text),
             ));
         }
@@ -578,11 +565,12 @@ fn code_spans(line: &CodeLine, hscroll: usize, width: usize, theme: Theme) -> Ve
 
 fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let subject = app.impact_subject().map_or_else(
-        || "no symbol".to_owned(),
+        || t::impact_no_subject(l).to_owned(),
         |k| clean(&format!("{} ({})", k.qualified_name, k.file)),
     );
-    let body = panel(frame, area, &format!("Impact · {subject}"), "", theme);
+    let body = panel(frame, area, &t::impact_title(l, &subject), "", theme);
     let width = usize::from(body.width);
     let rows: Vec<Line<'static>> = app
         .impact
@@ -595,7 +583,7 @@ fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             ImpactRowKind::Note => Line::from(Span::styled(fit(&row.text, width), theme.dim())),
             ImpactRowKind::Entrypoint | ImpactRowKind::Caller | ImpactRowKind::Callee => {
                 let mark = row.origin.map_or(' ', labels::origin_mark);
-                let origin = row.origin.map_or("", labels::origin);
+                let origin = row.origin.map_or("", |o| labels::origin(l, o));
                 let text = fit(&row.text, width.saturating_sub(origin.len() + 6));
                 let mark_style = match row.origin {
                     Some(crate::domain::graph::EdgeOrigin::Resolved) => theme.good(),
@@ -618,25 +606,21 @@ fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn comments(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let total = app.session.review().comments.len();
     let body = panel(
         frame,
         area,
-        &format!("Comments · {total}"),
-        &format!(
-            "(Enter opens the code, {} edit, {} delete drafts)",
+        &t::comments_title(l, total),
+        &t::comments_hint(
+            l,
             app.keymap.key_for("edit_comment"),
             app.keymap.key_for("delete_comment"),
         ),
         theme,
     );
     if total == 0 {
-        empty_state(
-            frame,
-            body,
-            "No comments yet. Open some code and press c.",
-            theme,
-        );
+        empty_state(frame, body, t::comments_empty(l), theme);
         return;
     }
     let detail_h: u16 = if body.height >= 14 { 6 } else { 0 };
@@ -655,7 +639,7 @@ fn comments(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                 .anchor
                 .line_range
                 .map_or_else(String::new, |(a, _)| format!(":{a}"));
-            let status = labels::comment_status(c.status);
+            let status = labels::comment_status(l, c.status);
             let warn = if matches!(c.status, CommentStatus::Stale) {
                 "⚠ "
             } else {
@@ -695,14 +679,14 @@ fn comments(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             .get(app.comments_view.selected)
     {
         let mut lines = vec![Line::from(Span::styled(
-            format!(
-                "{} · anchor confidence {:.0}% · {}",
-                labels::comment_status(c.status),
-                c.anchor_confidence.value() * 100.0,
-                c.anchor
+            t::comment_detail(
+                l,
+                labels::comment_status(l, c.status),
+                &format!("{:.0}", c.anchor_confidence.value() * 100.0),
+                &c.anchor
                     .qualified_name
                     .as_deref()
-                    .map_or_else(|| "file".to_owned(), clean),
+                    .map_or_else(|| t::comment_target_file(l).to_owned(), clean),
             ),
             theme.dim(),
         ))];
@@ -733,22 +717,17 @@ fn clean_multiline(text: &str) -> String {
 
 fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let body = panel(
-        frame,
-        area,
-        "Context",
-        "intent and acceptance criteria (you decide what is verified)",
-        theme,
-    );
+    let l = app.locale;
+    let body = panel(frame, area, t::mode_context(l), t::context_hint(l), theme);
     let brief = app.session.brief().clone();
     let width = usize::from(body.width);
     let mut rows: Vec<Line<'static>> = vec![Line::from(vec![
-        Span::styled("Intent  ", theme.accent()),
+        Span::styled(t::context_intent(l), theme.accent()),
         Span::raw(fit(
             &brief
                 .intent_summary
                 .as_deref()
-                .map_or_else(|| "(not set — Enter to write it)".to_owned(), clean),
+                .map_or_else(|| t::context_intent_unset(l).to_owned(), clean),
             width.saturating_sub(10),
         )),
     ])];
@@ -764,7 +743,7 @@ fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             ),
             Span::raw(fit(&clean(&criterion.text), width.saturating_sub(18))),
             Span::styled(
-                format!("  {}", labels::criterion_status(criterion.status)),
+                format!("  {}", labels::criterion_status(l, criterion.status)),
                 theme.dim(),
             ),
         ]));
@@ -798,7 +777,7 @@ fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             lines.push(Line::from(chunk));
         }
         lines.push(Line::from(Span::styled(
-            "Text from a brief file is untrusted data. Enter changes status, a adds a criterion, i edits the intent.",
+            t::context_untrusted(l),
             theme.faint(),
         )));
         let below_rule = Rect {
@@ -814,9 +793,10 @@ fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let Some(unit) = app.unit.clone() else {
-        let body = panel(frame, area, "Tests", "", theme);
-        empty_state(frame, body, "Select a unit in the Queue first.", theme);
+        let body = panel(frame, area, t::mode_tests(l), "", theme);
+        empty_state(frame, body, t::tests_select_unit(l), theme);
         return;
     };
     let label = app
@@ -825,8 +805,8 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let body = panel(
         frame,
         area,
-        &format!("Tests · {label}"),
-        "(X runs them after asking, U reloads reports)",
+        &t::tests_title(l, &label),
+        t::tests_hint(l),
         theme,
     );
     let body = inset(body, 1);
@@ -840,42 +820,45 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         EvidenceStatus::NotRun => Chip::Quiet,
     };
     lines.push(Line::from(vec![
-        Span::raw("Evidence: "),
-        chip_span(panel.status.label(), theme.chip(status_chip)),
+        Span::raw(t::tests_evidence(l)),
+        chip_span(
+            labels::evidence_status(l, panel.status),
+            theme.chip(status_chip),
+        ),
     ]));
     let explanation = match panel.status {
-        EvidenceStatus::NoAssociationFound => {
-            "No test was linked to this symbol. That does not prove there is none: Klaub only links tests it can see calling or importing it."
-        }
-        EvidenceStatus::NotRun => {
-            "Tests are associated, but no imported report has a result for them."
-        }
-        EvidenceStatus::Passed => {
-            "Every associated test with a result passed in an imported report."
-        }
-        EvidenceStatus::Failed => "At least one associated test failed in an imported report.",
-        EvidenceStatus::Stale => "The report is older than the newest change; do not trust it.",
+        EvidenceStatus::NoAssociationFound => t::tests_none_linked(l),
+        EvidenceStatus::NotRun => t::tests_not_run(l),
+        EvidenceStatus::Passed => t::tests_passed(l),
+        EvidenceStatus::Failed => t::tests_failed(l),
+        EvidenceStatus::Stale => t::tests_stale(l),
     };
     for chunk in wrap(explanation, width) {
         lines.push(Line::from(Span::styled(chunk, theme.dim())));
     }
     if !panel.links.is_empty() {
         lines.push(Line::raw(""));
-        lines.push(Line::from(Span::styled("Associated tests", theme.accent())));
+        lines.push(Line::from(Span::styled(
+            t::tests_associated(l),
+            theme.accent(),
+        )));
         for link in &panel.links {
-            lines.push(Line::from(format!(
-                "  {} ({}:{}) via {} · {:.0}%",
-                clean(&link.test.name),
-                clean(link.test.file.as_str()),
+            lines.push(Line::from(t::tests_link(
+                l,
+                &clean(&link.test.name),
+                &clean(link.test.file.as_str()),
                 link.test.line,
-                link.method.label(),
-                link.confidence.value() * 100.0,
+                labels::link_method(l, link.method),
+                &format!("{:.0}", link.confidence.value() * 100.0),
             )));
         }
     }
     if !panel.results.is_empty() {
         lines.push(Line::raw(""));
-        lines.push(Line::from(Span::styled("Imported results", theme.accent())));
+        lines.push(Line::from(Span::styled(
+            t::tests_imported(l),
+            theme.accent(),
+        )));
         for result in &panel.results {
             let style = if matches!(result.outcome, crate::domain::testing::TestOutcome::Failed) {
                 theme.error()
@@ -883,11 +866,7 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                 theme.text()
             };
             lines.push(Line::from(Span::styled(
-                format!(
-                    "  {} — {}",
-                    clean(&result.name),
-                    labels::outcome(result.outcome)
-                ),
+                t::tests_result(l, &clean(&result.name), labels::outcome(l, result.outcome)),
                 style,
             )));
             if let Some(message) = &result.message {
@@ -900,24 +879,25 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     }
     if let Some(coverage) = &panel.coverage {
         lines.push(Line::raw(""));
-        lines.push(Line::from(format!(
-            "Coverage of {}: {} line(s) covered, {} missed (file level, from an imported report)",
-            clean(coverage.file.as_str()),
+        lines.push(Line::from(t::tests_coverage(
+            l,
+            &clean(coverage.file.as_str()),
             coverage.covered_lines.len(),
             coverage.missed_lines.len(),
         )));
     }
     lines.push(Line::raw(""));
     if panel.sources.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "No test report is configured or found (tests.report_paths).",
-            theme.dim(),
-        )));
+        lines.push(Line::from(Span::styled(t::tests_no_report(l), theme.dim())));
     }
     for source in &panel.sources {
-        let stale = if source.stale { " · STALE" } else { "" };
+        let stale = if source.stale {
+            t::tests_stale_suffix(l)
+        } else {
+            ""
+        };
         lines.push(Line::from(Span::styled(
-            format!("Report: {}{stale}", clean(&source.path)),
+            t::tests_report(l, &clean(&source.path), stale),
             if source.stale {
                 theme.warn()
             } else {
@@ -933,10 +913,7 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     }
     if let Some(output) = &app.test_output {
         lines.push(Line::raw(""));
-        lines.push(Line::from(Span::styled(
-            "Output of the last run (tail)",
-            theme.accent(),
-        )));
+        lines.push(Line::from(Span::styled(t::tests_output(l), theme.accent())));
         for line in output
             .lines()
             .rev()
@@ -962,24 +939,17 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn followup(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let comments: Vec<_> = app.followups().into_iter().cloned().collect();
     let body = panel(
         frame,
         area,
-        &format!(
-            "Follow-up · {} comment(s) from the previous round",
-            comments.len()
-        ),
-        "(y resolved · p partial · u unresolved · X regression)",
+        &t::followup_title(l, comments.len()),
+        t::followup_hint(l),
         theme,
     );
     if comments.is_empty() {
-        empty_state(
-            frame,
-            body,
-            "No comments were carried over. After you hand feedback to the agent and it changes the code, opening a new review continues from here.",
-            theme,
-        );
+        empty_state(frame, body, t::followup_empty(l), theme);
         return;
     }
     let width = usize::from(body.width);
@@ -1000,11 +970,14 @@ fn followup(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             let left_w = width / 2;
             let tail = format!(
                 " {} {}{place} ({confidence}) ",
-                pad(labels::comment_status(c.status), 9),
+                pad(labels::comment_status(l, c.status), 9),
                 clean(c.anchor.file_path.as_str())
             );
             Line::from(vec![
-                Span::styled(pad(c.followup_status.label(), 10), status_style),
+                Span::styled(
+                    pad(labels::followup_status(l, c.followup_status), 10),
+                    status_style,
+                ),
                 Span::styled(fit(&tail, left_w.saturating_sub(10)), theme.faint()),
                 Span::raw(fit(
                     &clean(&c.text),
@@ -1020,14 +993,9 @@ fn followup(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let cov = app.session.coverage();
-    let body = panel(
-        frame,
-        area,
-        "Coverage",
-        "what you marked as reviewed (never an approval)",
-        theme,
-    );
+    let body = panel(frame, area, t::mode_coverage(l), t::coverage_hint(l), theme);
     let width = usize::from(body.width).saturating_sub(2);
     let bar_w = (width / 4).clamp(6, 30);
     let gauge_spans = |done: usize, all: usize, fill: Style| -> Vec<Span<'static>> {
@@ -1038,7 +1006,7 @@ fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         ]
     };
     let overall = percent(cov.reviewed, cov.total);
-    let mut overall_line = vec![Span::styled("Overall  ", theme.accent())];
+    let mut overall_line = vec![Span::styled(t::coverage_overall(l), theme.accent())];
     overall_line.extend(gauge_spans(cov.reviewed, cov.total, theme.gauge(overall)));
     overall_line.push(Span::raw(format!(
         " {}/{} ({}%)",
@@ -1056,19 +1024,13 @@ fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     }
     if cov.unknown > 0 {
         top.push(Line::from(Span::styled(
-            format!(
-                "  {} unit(s) could not be analysed semantically; they are counted, not hidden.",
-                cov.unknown
-            ),
+            t::coverage_unknown(l, cov.unknown),
             theme.warn(),
         )));
     }
     if !cov.pending_critical.is_empty() {
         top.push(Line::from(Span::styled(
-            format!(
-                "  {} P0/P1 unit(s) not reviewed yet (N jumps to the next)",
-                cov.pending_critical.len()
-            ),
+            t::coverage_pending_critical(l, cov.pending_critical.len()),
             theme.warn(),
         )));
     }
@@ -1096,7 +1058,7 @@ fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .collect();
     for note in &notes {
         rows.push(Line::from(Span::styled(
-            format!("  notice: {}", fit(&clean(note), width.saturating_sub(12))),
+            t::coverage_notice(l, &fit(&clean(note), width.saturating_sub(12))),
             theme.dim(),
         )));
     }
@@ -1107,57 +1069,46 @@ fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
+    let l = app.locale;
     let view = app.session.flow().clone();
-    let state_label = view.state.label();
+    let state_label = labels::flow_state(l, &view.state);
     let body = panel(
         frame,
         area,
-        &format!("Flow · {state_label}"),
-        "(Enter opens a step · ←/→/Space fold · p asks the agent · u reloads)",
+        &t::flow_title(l, state_label),
+        t::flow_hint(l),
         theme,
     );
     let width = usize::from(body.width).saturating_sub(4);
     let mut lines: Vec<Line<'static>> = Vec::new();
     match (&view.state, &view.flow) {
         (FlowState::Missing, _) => {
+            lines.push(Line::from(Span::styled(t::flow_not_found(l), theme.warn())));
             lines.push(Line::from(Span::styled(
-                "Flow diagram not found",
-                theme.warn(),
-            )));
-            lines.push(Line::from(Span::styled(
-                format!("Expected at {}", clean(view.expected_path.as_str())),
+                t::flow_expected(l, &clean(view.expected_path.as_str())),
                 theme.dim(),
             )));
             lines.push(Line::raw(""));
-            lines.push(Line::from("Press p to prepare a request for the agent (you confirm first, and Enter is never sent)."));
-            lines.push(Line::from("The review works fully without a diagram."));
+            lines.push(Line::from(t::flow_press_p(l)));
+            lines.push(Line::from(t::flow_works_without(l)));
             lines.push(Line::raw(""));
             for chunk in wrap(&clean(&view.request_prompt), width) {
                 lines.push(Line::from(Span::styled(chunk, theme.dim())));
             }
         }
         (_, None) => {
-            lines.push(Line::from(Span::styled(
-                "The flow file cannot be used",
-                theme.error(),
-            )));
+            lines.push(Line::from(Span::styled(t::flow_unusable(l), theme.error())));
             for issue in &view.issues {
                 for chunk in wrap(&clean(issue), width) {
                     lines.push(Line::from(format!("  {chunk}")));
                 }
             }
-            lines.push(Line::from(Span::styled(
-                "Fix the file or ask the agent again (p). It is never used partially.",
-                theme.dim(),
-            )));
+            lines.push(Line::from(Span::styled(t::flow_fix(l), theme.dim())));
         }
         (state, Some(validated)) => {
             if let FlowState::Stale { found } = state {
                 lines.push(Line::from(Span::styled(
-                    format!(
-                        "Written for snapshot {} — not this one. Treat it as background only.",
-                        clean(found)
-                    ),
+                    t::flow_snapshot_mismatch(l, &clean(found)),
                     theme.warn(),
                 )));
             }
@@ -1169,7 +1120,7 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                 lines.push(Line::from(chunk));
             }
             lines.push(Line::from(Span::styled(
-                format!("Written by {} — an explanation, not proof. ● resolved ◐ heuristic ○ unresolved", clean(&validated.document.generated_by)),
+                t::flow_written_by(l, &clean(&validated.document.generated_by)),
                 theme.dim(),
             )));
             for divergence in &validated.divergences {
@@ -1223,7 +1174,7 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .join(" › ");
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            fit_tail(&format!("path: {crumbs}"), list_width),
+            fit_tail(&t::flow_path(l, &crumbs), list_width),
             theme.dim(),
         ))),
         crumbs_area,
@@ -1236,19 +1187,19 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             let place = match (&step.file_path, &step.symbol) {
                 (Some(f), Some(s)) => format!("{}::{}", clean(f), clean(s)),
                 (Some(f), None) => clean(f),
-                _ => step
-                    .external_ref
-                    .as_ref()
-                    .map_or_else(|| "external".to_owned(), |e| clean(&format!("{e:?}"))),
+                _ => step.external_ref.as_ref().map_or_else(
+                    || t::flow_external(l).to_owned(),
+                    |e| clean(&format!("{e:?}")),
+                ),
             };
             let missing = if resolved
                 .is_some_and(|r| r.file.is_some() && !r.symbol_found && r.symbol.is_some())
             {
-                " ⚠ symbol not found"
+                t::flow_symbol_missing(l)
             } else {
                 ""
             };
-            let changed = if step.changed { " [changed]" } else { "" };
+            let changed = if step.changed { t::flow_changed(l) } else { "" };
             let fold = if line.folded {
                 "▸"
             } else if line.has_branches {
@@ -1259,12 +1210,12 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             let via = line.row.via.map_or_else(String::new, |(kind, origin)| {
                 format!(
                     "{}{} ",
-                    labels::edge_kind(kind),
+                    labels::edge_kind(l, kind),
                     labels::origin_mark(origin)
                 )
             });
             let again = if line.row.revisit {
-                " ↺ shown above"
+                t::flow_shown_above(l)
             } else {
                 ""
             };

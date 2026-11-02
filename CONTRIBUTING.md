@@ -10,6 +10,7 @@ By participating you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 - **Add fixtures.** A small repository with a tricky change (a rename that Git misses, a rewritten function, an odd decorator) is worth more than a long description.
 - **Improve a language adapter or a rule.** Both are evidence-driven; see below.
 - **Fix documentation.** Typos, unclear steps, missing screenshots.
+- **Improve a translation.** Klaub speaks English, Portuguese and Spanish. A better word or a missing accent is a one-line change; [docs/internationalization.md](docs/internationalization.md) says where.
 
 ## Before you start
 
@@ -43,6 +44,7 @@ Rules and matching thresholds are versioned constants. A change needs a fixture 
 - Unit tests live beside the code; integration tests in each crate's `tests/`.
 - Tests must not touch the real `~/.config`, the user's tmux server or the network. Use temporary directories and the private tmux socket helpers.
 - UI changes include a render test at a small and a large terminal size.
+- A sentence the user reads goes in the message catalog in all three languages, never as a literal in the code ([docs/internationalization.md](docs/internationalization.md)).
 
 ## Reporting security issues
 

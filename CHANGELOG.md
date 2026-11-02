@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Portuguese and Spanish.** The reader, its prompts and status messages, `klaub doctor` and the other commands' diagnostics, and `--help` speak English, Portuguese (Brazil) or Spanish. `ui.language` takes `auto` (the default), `en`, `pt` or `es`; `auto` follows `KLAUB_LANG` and then `LC_ALL`, `LC_MESSAGES` and `LANG`, with English as the fallback. A language set in the user or project configuration wins over the environment. JSON output, exports and the text pasted into the agent stay in English. See [Languages](docs/internationalization.md).
+- Yes/no prompts of the command line accept `s` and `sim` (Portuguese) and `s`, `si` and `sí` (Spanish) next to `y` and `yes`.
+
+### Changed
+
+- Every sentence the user reads is now a typed function in `domain::i18n` (`tui` and `cli`) that takes a `Locale`, with its translations next to it. A missing language or a misspelt placeholder fails to compile, and `tests/i18n.rs` checks placeholders and spacing across languages.
+- `Mode::label`, `Filters::summary` and the labels in the reader take a `Locale`; `tui::DELIVERY_OPTIONS` is now `tui::delivery_options(locale)`, and `ReviewSession::finish_warnings` returns typed warnings (`warnings_before_finish` still returns English text).
+
 ## [0.5.0] - 2026-11-02
 
 ### Added

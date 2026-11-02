@@ -1,7 +1,14 @@
+[default]
+# The Portuguese and Spanish lines of the message catalog are not English words.
+extend-ignore-re = ['(?m)^\s*(pt|es): ".*",$']
+
 [default.extend-words]
 # Product and library names the dictionary mistakes for typos.
 Ratatui = "Ratatui"
 ratatui = "ratatui"
+# Headings of the translated `--help`, which the tests look for.
+Comandos = "Comandos"
+Argumentos = "Argumentos"
 
 [files]
 extend-exclude = ["Cargo.lock", "fixtures/**"]

@@ -448,6 +448,7 @@ Run `brew uninstall klaub`, delete `~/.local/bin/klaub`, or run `cargo uninstall
 | | |
 | --- | --- |
 | [Configuration](docs/configuration.md) | Every `.klaub.toml` section, and how to move keys |
+| [Languages](docs/internationalization.md) | English, Portuguese and Spanish: how one is chosen, what is translated, how to add a sentence or a language |
 | [Architecture](docs/architecture.md) | How Klaub is built: layers, ports, data flow, the terminal layer |
 | [Security model](docs/security.md) | Threats, controls and explicit limits |
 | [Using Klaub over SSH](docs/ssh.md) | What works and what the clipboard cannot do |

@@ -7,9 +7,11 @@ use anyhow::Result;
 use serde::Serialize;
 use serde_json::json;
 
+use crate::domain::i18n::{Locale, cli as t};
+
 use crate::cli::args::Format;
 use crate::cli::context::Context;
-use crate::cli::output;
+use crate::cli::{env, output};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -35,6 +37,11 @@ fn check(name: &'static str, status: Status, detail: impl Into<String>) -> Check
 }
 
 pub(super) fn run(tmux_path: Option<PathBuf>, format: Format) -> Result<ExitCode> {
+    // The JSON report is read by programs, so its sentences stay in one language.
+    let l = match format {
+        Format::Json => Locale::En,
+        Format::Text => env::process_locale(),
+    };
     let mut checks = vec![check(
         "klaub",
         Status::Ok,
@@ -45,24 +52,24 @@ pub(super) fn run(tmux_path: Option<PathBuf>, format: Format) -> Result<ExitCode
             std::env::consts::ARCH
         ),
     )];
-    checks.push(git_check());
+    checks.push(git_check(l));
 
     match Context::from_process(tmux_path) {
         Ok(ctx) => {
-            checks.push(tmux_check(&ctx));
-            checks.push(terminal_check());
-            checks.extend(ssh_check());
-            checks.extend(wsl_check());
-            checks.push(clipboard_check());
-            checks.push(grammars_check());
-            checks.extend(directory_checks(&ctx));
-            checks.push(cache_check(&ctx));
-            checks.push(sessions_check(&ctx));
-            checks.push(crashes_check(&ctx));
+            checks.push(tmux_check(&ctx, l));
+            checks.push(terminal_check(l));
+            checks.extend(ssh_check(l));
+            checks.extend(wsl_check(l));
+            checks.push(clipboard_check(l));
+            checks.push(grammars_check(l));
+            checks.extend(directory_checks(&ctx, l));
+            checks.push(cache_check(&ctx, l));
+            checks.push(sessions_check(&ctx, l));
+            checks.push(crashes_check(&ctx, l));
         }
         Err(error) => {
             checks.push(check("directories", Status::Fail, error.to_string()));
-            checks.push(terminal_check());
+            checks.push(terminal_check(l));
         }
     }
 
@@ -87,65 +94,60 @@ pub(super) fn run(tmux_path: Option<PathBuf>, format: Format) -> Result<ExitCode
     })
 }
 
-fn git_check() -> Check {
+fn git_check(l: Locale) -> Check {
     match Command::new("git").arg("--version").output() {
         Ok(out) if out.status.success() => {
             let text = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             check("git", Status::Ok, text)
         }
-        _ => check(
-            "git",
-            Status::Fail,
-            "`git` was not found in PATH; Klaub drives the git executable",
-        ),
+        _ => check("git", Status::Fail, t::doctor_git_missing(l)),
     }
 }
 
-fn tmux_check(ctx: &Context) -> Check {
+fn tmux_check(ctx: &Context, l: Locale) -> Check {
     match ctx.resolve_tmux() {
         Ok(tmux) => {
             let detail = match &tmux.source {
                 TmuxSource::Embedded { version, sha256 } => {
-                    format!("embedded {version}, sha256 {} verified", &sha256[..12])
+                    t::doctor_tmux_embedded(l, version, &sha256[..12])
                 }
-                TmuxSource::Explicit => format!(
-                    "{} (explicit path, not verified)",
-                    output::tilde(&tmux.path, ctx.home.as_deref())
-                ),
-                TmuxSource::System => format!(
-                    "{} (found on PATH, not verified)",
-                    output::tilde(&tmux.path, ctx.home.as_deref())
-                ),
+                TmuxSource::Explicit => {
+                    t::doctor_tmux_explicit(l, &output::tilde(&tmux.path, ctx.home.as_deref()))
+                }
+                TmuxSource::System => {
+                    t::doctor_tmux_system(l, &output::tilde(&tmux.path, ctx.home.as_deref()))
+                }
             };
             check(
                 "tmux",
                 Status::Ok,
-                format!("{detail}; version {}", tmux.version),
+                t::doctor_tmux_version(l, &detail, &tmux.version),
             )
         }
         Err(error) if ctx.explicit_tmux().is_none() && binary::embedded_manifest().is_none() => {
             check(
                 "tmux",
                 Status::Warn,
-                format!("{error}. `klaub review` works without it"),
+                t::doctor_tmux_optional(l, &error.to_string()),
             )
         }
         Err(error) => check("tmux", Status::Fail, error.to_string()),
     }
 }
 
-fn terminal_check() -> Check {
-    let term = std::env::var("TERM").unwrap_or_else(|_| "unset".to_owned());
-    let color = std::env::var("COLORTERM").unwrap_or_else(|_| "unset".to_owned());
+fn terminal_check(l: Locale) -> Check {
+    let unset = || t::doctor_unset(l).to_owned();
+    let term = std::env::var("TERM").unwrap_or_else(|_| unset());
+    let color = std::env::var("COLORTERM").unwrap_or_else(|_| unset());
     let inside_tmux = std::env::var_os("TMUX").is_some();
-    let status = if term == "dumb" || term == "unset" || inside_tmux {
+    let status = if term == "dumb" || term == t::doctor_unset(l) || inside_tmux {
         Status::Warn
     } else {
         Status::Ok
     };
     let mut detail = format!("TERM={term} COLORTERM={color}");
     if inside_tmux {
-        detail.push_str("; inside tmux: `klaub wrap` is unavailable here, `klaub review` works");
+        detail.push_str(t::doctor_inside_tmux(l));
     }
     check("terminal", status, detail)
 }
@@ -155,40 +157,25 @@ fn terminal_check() -> Check {
 /// SSH is supported on a best-effort basis: the reader is a terminal
 /// program and works through it, but nothing here can reach the clipboard of the machine the user
 /// is sitting at.
-fn ssh_check() -> Option<Check> {
+fn ssh_check(l: Locale) -> Option<Check> {
     let over_ssh = ["SSH_CONNECTION", "SSH_TTY", "SSH_CLIENT"]
         .iter()
         .any(|key| std::env::var_os(key).is_some());
-    over_ssh.then(|| {
-        check(
-            "ssh",
-            Status::Warn,
-            "this is an SSH session: best effort. Copy feedback goes to the clipboard of this host, \
-             not of your machine, so use Show file (or `klaub feedback`) to read it",
-        )
-    })
+    over_ssh.then(|| check("ssh", Status::Warn, t::doctor_ssh(l)))
 }
 
 /// WSL runs the Linux build, but it is not a supported target yet. The check says so instead of
 /// staying silent, and warns about the one thing that is known to hurt: a repository on the
 /// Windows file system.
-fn wsl_check() -> Option<Check> {
+fn wsl_check(l: Locale) -> Option<Check> {
     let release = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
     let distro = std::env::var("WSL_DISTRO_NAME").ok();
     if !is_wsl(&release, distro.as_deref()) {
         return None;
     }
-    let mut detail = String::from(
-        "this is WSL: not a supported target. Klaub runs the Linux build here, but the terminal \
-         and the tmux server are on different sides of the VM, so pane identity and paste are \
-         unproven",
-    );
+    let mut detail = String::from(t::doctor_wsl(l));
     if std::env::current_dir().is_ok_and(|dir| on_windows_mount(&dir)) {
-        detail.push_str(
-            ". The current directory is on the Windows file system (/mnt/<drive>): git is slow \
-             there and paths differ from the Linux side; keep the repository inside the Linux \
-             file system",
-        );
+        detail.push_str(t::doctor_wsl_mount(l));
     }
     Some(check("wsl", Status::Warn, detail))
 }
@@ -213,7 +200,7 @@ fn on_windows_mount(dir: &Path) -> bool {
 }
 
 /// Which program `Copy feedback` would use.
-fn clipboard_check() -> Check {
+fn clipboard_check(l: Locale) -> Check {
     let candidates: &[&str] = if cfg!(target_os = "macos") {
         &["pbcopy"]
     } else {
@@ -221,14 +208,15 @@ fn clipboard_check() -> Check {
     };
     let found = candidates.iter().find(|program| on_path(program));
     match found {
-        Some(program) => check("clipboard", Status::Ok, format!("`{program}` will be used")),
+        Some(program) => check(
+            "clipboard",
+            Status::Ok,
+            t::doctor_clipboard_used(l, program),
+        ),
         None => check(
             "clipboard",
             Status::Warn,
-            format!(
-                "none of {} was found; Copy feedback will say so and Show file still works",
-                candidates.join(", ")
-            ),
+            t::doctor_clipboard_missing(l, &candidates.join(", ")),
         ),
     }
 }
@@ -239,7 +227,7 @@ fn on_path(program: &str) -> bool {
 }
 
 /// Parses a tiny sample in every language to prove each grammar loads and finds a function.
-fn grammars_check() -> Check {
+fn grammars_check(l: Locale) -> Check {
     use crate::domain::language::Language;
     use crate::domain::ports::SourceParser;
 
@@ -267,72 +255,61 @@ fn grammars_check() -> Check {
         check(
             "grammars",
             Status::Ok,
-            format!("{} languages parse a sample", Language::ALL.len()),
+            t::doctor_grammars_ok(l, Language::ALL.len()),
         )
     } else {
         check(
             "grammars",
             Status::Fail,
-            format!("did not parse a sample: {}", broken.join(", ")),
+            t::doctor_grammars_broken(l, &broken.join(", ")),
         )
     }
 }
 
 /// The parse cache, looked at without being opened for writing or repaired.
-fn cache_check(ctx: &Context) -> Check {
+fn cache_check(ctx: &Context, l: Locale) -> Check {
     let path = ctx.dirs.cache_db();
     if !path.exists() {
-        return check(
-            "cache",
-            Status::Ok,
-            "no cache yet (created by the first review)",
-        );
+        return check("cache", Status::Ok, t::doctor_cache_none(l));
     }
     match crate::adapters::storage::SqliteCache::check(&path) {
-        Ok(health) if health.is_healthy() => check(
-            "cache",
-            Status::Ok,
-            format!("{} entries, integrity ok", health.entries),
-        ),
+        Ok(health) if health.is_healthy() => {
+            check("cache", Status::Ok, t::doctor_cache_ok(l, health.entries))
+        }
         Ok(health) => check(
             "cache",
             Status::Warn,
-            format!(
-                "integrity {:?}, schema {}: the next review rebuilds it, nothing is lost",
-                health.integrity, health.schema_version
+            t::doctor_cache_degraded(
+                l,
+                &format!("{:?}", health.integrity),
+                &health.schema_version.to_string(),
             ),
         ),
         Err(error) => check(
             "cache",
             Status::Warn,
-            format!("unreadable ({error}): the next review replaces it, nothing is lost"),
+            t::doctor_cache_unreadable(l, &error.to_string()),
         ),
     }
 }
 
-fn crashes_check(ctx: &Context) -> Check {
+fn crashes_check(ctx: &Context, l: Locale) -> Check {
     let count = crate::cli::crash::list(&ctx.dirs.crashes_dir()).len();
     if count == 0 {
-        check("crashes", Status::Ok, "no crash reports")
+        check("crashes", Status::Ok, t::doctor_crashes_none(l))
     } else {
-        check(
-            "crashes",
-            Status::Warn,
-            format!(
-                "{count} saved on this machine; `klaub crashes list` shows them. Nothing was sent"
-            ),
-        )
+        check("crashes", Status::Warn, t::doctor_crashes_some(l, count))
     }
 }
 
-fn directory_checks(ctx: &Context) -> Vec<Check> {
+fn directory_checks(ctx: &Context, l: Locale) -> Vec<Check> {
     let home = ctx.home.as_deref();
     let describe = |path: &Path| {
         let shown = output::tilde(path, home);
         if path.exists() {
             shown
         } else {
-            format!("{shown} (created on first use)")
+            t::doctor_dir_created_on_use(l, &shown)
         }
     };
     vec![
@@ -342,7 +319,7 @@ fn directory_checks(ctx: &Context) -> Vec<Check> {
     ]
 }
 
-fn sessions_check(ctx: &Context) -> Check {
+fn sessions_check(ctx: &Context, l: Locale) -> Check {
     match ctx.registry().list() {
         Ok(records) => {
             let running = records
@@ -352,7 +329,7 @@ fn sessions_check(ctx: &Context) -> Check {
             check(
                 "sessions",
                 Status::Ok,
-                format!("{running} running, {} recorded", records.len()),
+                t::doctor_sessions(l, running, records.len()),
             )
         }
         Err(error) => check("sessions", Status::Warn, error.to_string()),
