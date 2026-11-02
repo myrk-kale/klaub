@@ -68,12 +68,78 @@ impl Default for ReviewConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Theme {
-    /// Dark background.
+    /// Dark background (Tokyo Night colours).
     Dark,
     /// Light background.
     Light,
     /// Maximum contrast, no reliance on colour alone.
     HighContrast,
+    /// Catppuccin Mocha, dark.
+    CatppuccinMocha,
+    /// Catppuccin Latte, light.
+    CatppuccinLatte,
+    /// Dracula, dark.
+    Dracula,
+    /// Gruvbox, dark.
+    GruvboxDark,
+    /// Nord, dark.
+    Nord,
+    /// Rosé Pine, dark.
+    RosePine,
+}
+
+impl Theme {
+    /// Every theme, in the order the reader cycles through them.
+    pub const ALL: [Self; 9] = [
+        Self::Dark,
+        Self::Light,
+        Self::CatppuccinMocha,
+        Self::CatppuccinLatte,
+        Self::Dracula,
+        Self::GruvboxDark,
+        Self::Nord,
+        Self::RosePine,
+        Self::HighContrast,
+    ];
+
+    /// The name used in `ui.theme`.
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+            Self::HighContrast => "high_contrast",
+            Self::CatppuccinMocha => "catppuccin_mocha",
+            Self::CatppuccinLatte => "catppuccin_latte",
+            Self::Dracula => "dracula",
+            Self::GruvboxDark => "gruvbox_dark",
+            Self::Nord => "nord",
+            Self::RosePine => "rose_pine",
+        }
+    }
+
+    /// The name shown to the reader.
+    #[must_use]
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Dark => "Tokyo Night",
+            Self::Light => "Light",
+            Self::HighContrast => "High contrast",
+            Self::CatppuccinMocha => "Catppuccin Mocha",
+            Self::CatppuccinLatte => "Catppuccin Latte",
+            Self::Dracula => "Dracula",
+            Self::GruvboxDark => "Gruvbox Dark",
+            Self::Nord => "Nord",
+            Self::RosePine => "Rosé Pine",
+        }
+    }
+
+    /// The theme after this one, wrapping around.
+    #[must_use]
+    pub fn next(self) -> Self {
+        let at = Self::ALL.iter().position(|&t| t == self).unwrap_or(0);
+        Self::ALL[(at + 1) % Self::ALL.len()]
+    }
 }
 
 /// `[ui]`
@@ -672,6 +738,26 @@ missing_prompt = "confirm"
             "keys absent from the project layer survive"
         );
         assert_eq!(config.review.base, "main");
+    }
+
+    #[test]
+    fn every_theme_round_trips_through_its_key() {
+        for theme in Theme::ALL {
+            let config =
+                Config::parse("x", &format!("[ui]\ntheme = \"{}\"\n", theme.key())).unwrap();
+            assert_eq!(config.ui.theme, theme);
+            assert!(!theme.title().is_empty());
+        }
+        assert!(Config::parse("x", "[ui]\ntheme = \"solarized\"\n").is_err());
+    }
+
+    #[test]
+    fn cycling_themes_wraps_around() {
+        let mut theme = Theme::ALL[0];
+        for _ in 0..Theme::ALL.len() {
+            theme = theme.next();
+        }
+        assert_eq!(theme, Theme::ALL[0]);
     }
 
     #[test]

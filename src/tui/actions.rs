@@ -92,6 +92,8 @@ pub(crate) enum Action {
     ConfirmSubmitted,
     /// Copy the feedback instruction.
     CopyFeedback,
+    /// Switch to the next colour theme for as long as the reader is open.
+    NextTheme,
     /// Leave the reader.
     Quit,
 }
@@ -344,6 +346,11 @@ pub(crate) const ENTRIES: &[Entry] = &[
         key: "",
     },
     Entry {
+        action: Action::NextTheme,
+        name: "Switch colour theme",
+        key: "",
+    },
+    Entry {
         action: Action::Help,
         name: "Help",
         key: "?  F1",
@@ -374,6 +381,18 @@ pub(crate) fn perform(app: &mut App, action: Action) {
             });
         }
         Action::Help => app.overlay = Some(Overlay::Help),
+        Action::NextTheme => {
+            app.theme = app.theme.cycled();
+            let name = app.theme.name();
+            app.say(
+                StatusKind::Info,
+                format!(
+                    "Theme: {}. Set ui.theme = \"{}\" to keep it.",
+                    name.title(),
+                    name.key()
+                ),
+            );
+        }
         Action::ToggleVersion => toggle_version(app),
         // Holding needs the key itself, which a palette entry does not have, so the palette only
         // says how it works.

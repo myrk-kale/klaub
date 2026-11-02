@@ -28,7 +28,7 @@ pub use app::{
 };
 pub use keymap::{Keymap, KeymapError};
 pub use terminal::run;
-pub use theme::Theme;
+pub use theme::{ColorDepth, Theme};
 pub use ui::draw;
 pub use update::{end_peek, handle_key, handle_mouse};
 pub use viewport::Viewport;

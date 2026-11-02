@@ -1084,3 +1084,39 @@ fn drift_banner() {
         "a changed worktree should raise the banner:\n{rendered}"
     );
 }
+
+#[test]
+fn the_palette_switches_the_theme_for_this_session() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    let before = app.theme.name();
+
+    press(&mut app, ':');
+    type_word(&mut app, "theme");
+    handle_key(&mut app, key(KeyCode::Enter));
+
+    let after = app.theme.name();
+    assert_eq!(after, before.next());
+    assert_ne!(after, before);
+    let rendered = screen(&mut app, 120, 30);
+    assert!(
+        rendered.contains(after.title()),
+        "the status line should name the new theme:\n{rendered}"
+    );
+}
+
+#[test]
+fn a_configured_theme_is_the_one_the_reader_starts_with() {
+    let repo = changed_repo();
+    let mut config = Config::default();
+    config.ui.theme = klaub::domain::config::Theme::Nord;
+    let session = ReviewSession::open(
+        ports(&repo, &config),
+        SnapshotRequest::worktree(repo.path()),
+        &config,
+        &OpenOptions::default(),
+    )
+    .unwrap();
+    let app = reader(session);
+    assert_eq!(app.theme.name(), klaub::domain::config::Theme::Nord);
+}
