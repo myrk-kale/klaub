@@ -12,6 +12,7 @@ use std::time::Instant;
 use crate::app::{CodeScope, CodeView, ReviewSession};
 use crate::domain::finding::{Priority, QueueItem, QueueTag, Temporal};
 use crate::domain::graph::{EdgeOrigin, ImpactReport, ImpactScope, SymbolKey};
+use crate::domain::i18n::{Locale, tui as t};
 use crate::domain::ids::{CommentId, UnitId};
 use crate::domain::path::RepoPath;
 use crate::domain::ports::{AgentChannel, Clipboard, SourceParser, TestRunRequest};
@@ -65,18 +66,18 @@ impl Mode {
     ];
 
     /// The name shown in the title bar.
-    pub fn label(self) -> &'static str {
+    pub fn label(self, locale: Locale) -> &'static str {
         match self {
-            Self::Queue => "Queue",
-            Self::Structure => "Structure",
-            Self::Code => "Code",
-            Self::Impact => "Impact",
-            Self::Comments => "Comments",
-            Self::Context => "Context",
-            Self::Tests => "Tests",
-            Self::Followup => "Follow-up",
-            Self::Coverage => "Coverage",
-            Self::Flow => "Flow",
+            Self::Queue => t::mode_queue(locale),
+            Self::Structure => t::mode_structure(locale),
+            Self::Code => t::mode_code(locale),
+            Self::Impact => t::mode_impact(locale),
+            Self::Comments => t::mode_comments(locale),
+            Self::Context => t::mode_context(locale),
+            Self::Tests => t::mode_tests(locale),
+            Self::Followup => t::mode_followup(locale),
+            Self::Coverage => t::mode_coverage(locale),
+            Self::Flow => t::mode_flow(locale),
         }
     }
 
@@ -121,28 +122,28 @@ impl Filters {
     }
 
     /// A short description for the status bar.
-    pub fn summary(&self) -> String {
+    pub fn summary(&self, locale: Locale) -> String {
         let mut parts = Vec::new();
         if let Some(p) = self.min_priority {
             parts.push(format!("≤{}", p.label()));
         }
         if self.unreviewed_only {
-            parts.push("unreviewed".to_owned());
+            parts.push(t::filter_unreviewed(locale).to_owned());
         }
         if self.introduced_only {
-            parts.push("introduced".to_owned());
+            parts.push(t::filter_introduced(locale).to_owned());
         }
         if self.no_tests_only {
-            parts.push("no-tests".to_owned());
+            parts.push(t::filter_no_tests(locale).to_owned());
         }
         if self.new_only {
-            parts.push("new".to_owned());
+            parts.push(t::filter_new(locale).to_owned());
         }
         if let Some(scope) = self.min_scope {
-            parts.push(format!("scope ≥{}", scope.label()));
+            parts.push(t::filter_scope(locale, labels::reach(locale, scope)));
         }
         if let Some(m) = &self.module {
-            parts.push(format!("module {m}"));
+            parts.push(t::filter_module(locale, m));
         }
         if !self.search.is_empty() {
             parts.push(format!("/{}", self.search));
@@ -366,8 +367,18 @@ pub enum FinishStage {
     },
 }
 
+/// How many delivery options there are after finishing.
+pub const DELIVERY_COUNT: usize = 4;
+
 /// Delivery options after finishing.
-pub const DELIVERY_OPTIONS: [&str; 4] = ["Prepare in agent", "Copy feedback", "Show file", "Close"];
+pub fn delivery_options(locale: Locale) -> [&'static str; DELIVERY_COUNT] {
+    [
+        t::delivery_prepare(locale),
+        t::delivery_copy(locale),
+        t::delivery_show(locale),
+        t::delivery_close(locale),
+    ]
+}
 
 /// A layer over the main screen.
 #[derive(Debug, Clone)]
@@ -428,6 +439,8 @@ pub struct App {
     pub clipboard: Option<Arc<dyn Clipboard>>,
     /// Colours.
     pub theme: Theme,
+    /// The language every sentence is shown in.
+    pub locale: Locale,
     /// Which character triggers which action (the defaults plus `[keys]`).
     pub keymap: Keymap,
     /// What the main area shows.
@@ -498,9 +511,6 @@ pub struct App {
     pub peek: Option<Peek>,
 }
 
-/// What the first review of a worktree explains about `.klaub/`.
-const STORAGE_NOTICE: &str = "Your comments, briefs and flow diagrams are saved in a .klaub/ folder inside this repository. It is local data.\n\nKlaub does not add it to .gitignore or .git/info/exclude, and it never commits it. If you do not want .klaub/ in git, add it to .gitignore yourself; if you want to share a flow diagram, commit .klaub/flows/ yourself.\n\nKlaub always leaves .klaub/ out of the changes it reviews, so saving a comment never starts a new snapshot.";
-
 impl App {
     /// Opens with the explanation of where Klaub keeps its files, for a worktree that has none yet.
     ///
@@ -509,8 +519,8 @@ impl App {
     #[must_use]
     pub fn with_storage_notice(mut self) -> Self {
         self.overlay = Some(Overlay::Notice {
-            title: "Where Klaub keeps its files".to_owned(),
-            text: STORAGE_NOTICE.to_owned(),
+            title: t::storage_notice_title(self.locale).to_owned(),
+            text: t::storage_notice_text(self.locale).to_owned(),
         });
         self
     }
@@ -539,6 +549,7 @@ impl App {
         clipboard: Option<Arc<dyn Clipboard>>,
     ) -> Self {
         let theme = Theme::new(session.analysis().config.ui.theme);
+        let locale = session.analysis().config.ui.language.locale_or_default();
         let keymap = match Keymap::from_overrides(&session.analysis().config.keys) {
             Ok(keymap) => keymap,
             Err(error) => {
@@ -553,6 +564,7 @@ impl App {
             agent,
             clipboard,
             theme,
+            locale,
             keymap,
             mode: Mode::Queue,
             history: Vec::new(),
@@ -598,11 +610,7 @@ impl App {
             app.select_in_queue(&unit);
         }
         if has_previous_round {
-            app.status = Some((
-                "Continuing a previous round: decide each carried-over comment in Follow-up (D)."
-                    .to_owned(),
-                StatusKind::Info,
-            ));
+            app.status = Some((t::continuing_round(locale).to_owned(), StatusKind::Info));
         }
         app
     }
@@ -1078,10 +1086,9 @@ impl App {
         let name = |key: &SymbolKey| {
             sanitize_single_line(&format!("{} · {}", key.qualified_name, key.file))
         };
+        let locale = self.locale;
         let Some(subject) = self.impact_subject() else {
-            rows.push(note(
-                "This unit is a whole file, not a symbol, so it has no call graph.",
-            ));
+            rows.push(note(t::impact_whole_file(locale)));
             self.impact.report = None;
             self.impact.rows = rows;
             self.impact_view = Viewport::default();
@@ -1089,30 +1096,31 @@ impl App {
         };
         let report = self.session.impact(&subject);
         match &report {
-            None => rows.push(note(
-                "This symbol is not in the call graph (not indexed, or in an unsupported language).",
-            )),
+            None => rows.push(note(t::impact_not_indexed(locale))),
             Some(report) => {
-                rows.push(heading(format!(
-                    "{} · {} direct caller(s) · {} entrypoint(s), {} external",
-                    report.scope.label(),
+                rows.push(heading(t::impact_summary(
+                    locale,
+                    labels::reach(locale, report.scope),
                     report.direct_callers(),
                     report.entrypoints.len(),
                     report.external_entrypoints(),
                 )));
                 let c = &report.coverage;
-                rows.push(note(&format!(
-                    "evidence: {} resolved · {} heuristic · {} unresolved call(s){}",
+                let tail = if c.truncated {
+                    t::impact_depth_limit(locale)
+                } else {
+                    ""
+                };
+                rows.push(note(&t::impact_evidence(
+                    locale,
                     c.resolved_edges,
                     c.heuristic_edges,
                     c.unresolved_calls,
-                    if c.truncated { " · depth limit reached" } else { "" },
+                    tail,
                 )));
-                rows.push(heading("Entrypoints that can reach it".to_owned()));
+                rows.push(heading(t::impact_entrypoints(locale).to_owned()));
                 if report.entrypoints.is_empty() {
-                    rows.push(note(
-                        "none found (it may be reached in ways the analysis cannot see)",
-                    ));
+                    rows.push(note(t::impact_no_entrypoints(locale)));
                 }
                 for reach in &report.entrypoints {
                     let entry = &reach.entrypoint;
@@ -1121,8 +1129,8 @@ impl App {
                         text: format!(
                             "{} [{}, {}] {}",
                             name(&entry.symbol),
-                            labels::entrypoint_kind(&entry.kind),
-                            labels::entrypoint_scope(entry.scope),
+                            labels::entrypoint_kind(locale, &entry.kind),
+                            labels::entrypoint_scope(locale, entry.scope),
                             sanitize_single_line(&entry.evidence),
                         ),
                         target: Some(entry.symbol.clone()),
@@ -1140,9 +1148,9 @@ impl App {
                         origin: None,
                     });
                 }
-                rows.push(heading("Callers".to_owned()));
+                rows.push(heading(t::impact_callers(locale).to_owned()));
                 if report.callers.is_empty() {
-                    rows.push(note("no callers found"));
+                    rows.push(note(t::impact_no_callers(locale)));
                 }
                 for level in &report.callers {
                     for step in &level.callers {
@@ -1154,9 +1162,9 @@ impl App {
                         });
                     }
                 }
-                rows.push(heading("Calls".to_owned()));
+                rows.push(heading(t::impact_calls(locale).to_owned()));
                 if report.callees.is_empty() {
-                    rows.push(note("no calls into the project"));
+                    rows.push(note(t::impact_no_calls(locale)));
                 }
                 for step in &report.callees {
                     rows.push(ImpactRow {
@@ -1183,10 +1191,7 @@ impl App {
         if view.is_none() {
             self.say(
                 StatusKind::Warn,
-                format!(
-                    "Cannot show {}: the file is unreadable or not indexed.",
-                    sanitize_single_line(&key.qualified_name)
-                ),
+                t::impact_cannot_show(self.locale, &sanitize_single_line(&key.qualified_name)),
             );
             return;
         }

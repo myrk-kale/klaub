@@ -829,7 +829,6 @@ mod tests {
     fn the_help_shows_the_new_key_and_keeps_function_keys() {
         let entry = Entry {
             action: Action::Mode(Mode::Impact),
-            name: "Go to Impact",
             key: "4  g  F5",
         };
         let map = Keymap::from_overrides(&table(&[("impact", "z")])).unwrap();

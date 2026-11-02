@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use crate::domain::finding::Priority;
+use crate::domain::i18n::{Locale, tui as t};
 use crate::domain::ports::{CancelToken, PrepareOutcome};
 use crate::domain::review::{CriterionStatus, Version};
 use crate::domain::snapshot::Drift;
@@ -15,9 +16,10 @@ use crate::tui::actions::{
     self, Action, ENTRIES, ensure_code_visible, followup_decision, perform, prepare_confirm,
 };
 use crate::tui::app::{
-    App, Confirm, ConfirmAction, DELIVERY_OPTIONS, Editor, EditorPurpose, FinishStage, Mode,
-    Overlay, Peek, StatusKind, TreeKind,
+    App, Confirm, ConfirmAction, DELIVERY_COUNT, Editor, EditorPurpose, FinishStage, Mode, Overlay,
+    Peek, StatusKind, TreeKind,
 };
+use crate::tui::labels;
 use crate::tui::viewport::Viewport;
 
 /// How often the worktree is probed for changes.
@@ -64,18 +66,16 @@ fn begin_peek(app: &mut App, key: char) {
     if !app.hold_supported {
         app.say(
             StatusKind::Info,
-            format!(
-                "This terminal does not report key releases, so {key} cannot be held. {toggle} toggles old and new."
-            ),
+            t::peek_unsupported(app.locale, key, toggle),
         );
         return;
     }
     if app.mode != Mode::Code || app.code.view.is_none() {
-        app.say(StatusKind::Info, "Open some code first.");
+        app.say(StatusKind::Info, t::open_code_first(app.locale));
         return;
     }
     if app.code.version == Some(Version::Before) {
-        app.say(StatusKind::Info, "Already showing the previous version.");
+        app.say(StatusKind::Info, t::peek_already_previous(app.locale));
         return;
     }
     actions::toggle_version(app);
@@ -254,10 +254,9 @@ pub(crate) fn tick(app: &mut App) {
     app.last_probe = Instant::now();
     let before = app.session.drift();
     match app.session.check_drift() {
-        Ok(Drift::Changed) if before != Drift::Changed => app.say(
-            StatusKind::Warn,
-            "The worktree changed since this snapshot. Press R to take a new one.",
-        ),
+        Ok(Drift::Changed) if before != Drift::Changed => {
+            app.say(StatusKind::Warn, t::drift_detected(app.locale));
+        }
         Ok(_) => {}
         Err(error) => tracing::debug!(%error, "drift probe failed"),
     }
@@ -272,15 +271,16 @@ pub(crate) fn run_deferred(app: &mut App) {
         ConfirmAction::RunTests(request) => {
             match app.session.run_tests(&request, &CancelToken::default()) {
                 Ok(outcome) => {
+                    let l = app.locale;
                     let what = if outcome.timed_out {
-                        "timed out".to_owned()
+                        t::tests_timed_out(l).to_owned()
                     } else if outcome.cancelled {
-                        "was cancelled".to_owned()
+                        t::tests_cancelled(l).to_owned()
                     } else {
                         match outcome.exit_code {
-                            Some(0) => "passed (exit 0)".to_owned(),
-                            Some(code) => format!("failed (exit {code})"),
-                            None => "ended without an exit code".to_owned(),
+                            Some(0) => t::tests_passed_exit(l).to_owned(),
+                            Some(code) => t::tests_failed_exit(l, code),
+                            None => t::tests_no_exit_code(l).to_owned(),
                         }
                     };
                     app.test_output = Some(sanitize_terminal_text(&outcome.output_tail));
@@ -291,10 +291,7 @@ pub(crate) fn run_deferred(app: &mut App) {
                     };
                     app.say(
                         kind,
-                        format!(
-                            "Tests {what} in {:.1}s. Reports were re-read.",
-                            outcome.duration.as_secs_f32()
-                        ),
+                        t::tests_finished(l, &what, outcome.duration.as_secs_f32()),
                     );
                 }
                 Err(error) => app.say(StatusKind::Error, error.to_string()),
@@ -303,10 +300,7 @@ pub(crate) fn run_deferred(app: &mut App) {
         ConfirmAction::Refresh => match app.session.refresh() {
             Ok(()) => {
                 after_refresh(app);
-                app.say(
-                    StatusKind::Info,
-                    "New snapshot taken; comments were relocated.",
-                );
+                app.say(StatusKind::Info, t::snapshot_taken(app.locale));
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
@@ -382,10 +376,7 @@ fn global_key(app: &mut App, key: KeyEvent, quit_was_armed: bool) {
                 app.should_quit = true;
             } else {
                 app.quit_armed = true;
-                app.say(
-                    StatusKind::Info,
-                    "Press q again to close the reader. Everything is already saved.",
-                );
+                app.say(StatusKind::Info, t::quit_again(app.locale));
             }
         }
         KeyCode::Char(c) if !control => {
@@ -498,10 +489,7 @@ fn structure_key(app: &mut App, key: KeyEvent) -> bool {
             app.go(Mode::Queue);
             app.say(
                 StatusKind::Info,
-                format!(
-                    "Showing module {} only. x clears the filter.",
-                    sanitize_single_line(&module)
-                ),
+                t::module_only(app.locale, &sanitize_single_line(&module)),
             );
         }
         None => {}
@@ -578,15 +566,9 @@ fn impact_key(app: &mut App, key: KeyEvent) -> bool {
                 Some(target) => {
                     app.impact.focus = Some(target);
                     app.rebuild_impact();
-                    app.say(
-                        StatusKind::Info,
-                        "Showing the impact of that symbol. Esc goes back.",
-                    );
+                    app.say(StatusKind::Info, t::impact_pivoted(app.locale));
                 }
-                None => app.say(
-                    StatusKind::Info,
-                    "Select a caller, callee or entrypoint to pivot on.",
-                ),
+                None => app.say(StatusKind::Info, t::impact_pick_target(app.locale)),
             }
             true
         }
@@ -630,17 +612,14 @@ fn comments_key(app: &mut App, key: KeyEvent) -> bool {
                 });
             match unit {
                 Some(unit) => app.open_unit(&unit, Some(comment.anchor.version)),
-                None => app.say(
-                    StatusKind::Warn,
-                    "The code this comment was about is not in this snapshot.",
-                ),
+                None => app.say(StatusKind::Warn, t::comment_code_missing(app.locale)),
             }
             true
         }
         KeyCode::Char('e') => {
             if comment.status == crate::domain::review::CommentStatus::Draft {
                 app.overlay = Some(Overlay::Editor(Editor {
-                    title: "Edit comment".to_owned(),
+                    title: t::comment_edit_title(app.locale).to_owned(),
                     purpose: EditorPurpose::EditComment(comment.comment_id.clone()),
                     text: comment.text.clone(),
                     severity: comment.severity,
@@ -648,25 +627,19 @@ fn comments_key(app: &mut App, key: KeyEvent) -> bool {
                     error: None,
                 }));
             } else {
-                app.say(
-                    StatusKind::Info,
-                    "Only drafts can be edited; this one was already handed over.",
-                );
+                app.say(StatusKind::Info, t::comment_edit_only_drafts(app.locale));
             }
             true
         }
         KeyCode::Char('d') => {
             if comment.status == crate::domain::review::CommentStatus::Draft {
                 app.overlay = Some(Overlay::Confirm(Confirm {
-                    title: "Delete this comment?".to_owned(),
+                    title: t::comment_delete_title(app.locale).to_owned(),
                     lines: vec![sanitize_single_line(&comment.text)],
                     action: ConfirmAction::DeleteComment(comment.comment_id.clone()),
                 }));
             } else {
-                app.say(
-                    StatusKind::Info,
-                    "Only drafts can be deleted; this one was already handed over.",
-                );
+                app.say(StatusKind::Info, t::comment_delete_only_drafts(app.locale));
             }
             true
         }
@@ -697,7 +670,7 @@ fn context_key(app: &mut App, key: KeyEvent) -> bool {
             .clone()
             .unwrap_or_default();
         app.overlay = Some(Overlay::Editor(Editor {
-            title: "Intent of the change (what the author wanted)".to_owned(),
+            title: t::intent_title(app.locale).to_owned(),
             purpose: EditorPurpose::Intent,
             text,
             severity: None,
@@ -712,7 +685,7 @@ fn context_key(app: &mut App, key: KeyEvent) -> bool {
         }
         KeyCode::Char('a') => {
             app.overlay = Some(Overlay::Editor(Editor {
-                title: "New acceptance criterion".to_owned(),
+                title: t::criterion_title(app.locale).to_owned(),
                 purpose: EditorPurpose::Criterion,
                 text: String::new(),
                 severity: None,
@@ -755,7 +728,10 @@ fn followup_key(app: &mut App, key: KeyEvent) -> bool {
         && let Some(status) = followup_decision(c)
     {
         app.overlay = Some(Overlay::Editor(Editor {
-            title: format!("Your decision: {} — optional note", status.label()),
+            title: t::followup_decision_title(
+                app.locale,
+                labels::followup_status(app.locale, status),
+            ),
             purpose: EditorPurpose::FollowupNote {
                 comment: comment.comment_id.clone(),
                 status,
@@ -775,10 +751,7 @@ fn followup_key(app: &mut App, key: KeyEvent) -> bool {
             .filter(|u| app.session.analysis().units.contains_key(u));
         match unit {
             Some(unit) => app.open_unit(&unit, Some(Version::After)),
-            None => app.say(
-                StatusKind::Warn,
-                "That code is not in this snapshot; the comment is stale.",
-            ),
+            None => app.say(StatusKind::Warn, t::followup_code_missing(app.locale)),
         }
         return true;
     }
@@ -798,10 +771,7 @@ fn coverage_key(app: &mut App, key: KeyEvent) -> bool {
         app.filters.unreviewed_only = true;
         app.queue_view = Viewport::default();
         app.go(Mode::Queue);
-        app.say(
-            StatusKind::Info,
-            "Showing what is left to review in that module. x clears the filters.",
-        );
+        app.say(StatusKind::Info, t::coverage_showing_pending(app.locale));
         return true;
     }
     false
@@ -851,10 +821,7 @@ fn flow_key(app: &mut App, key: KeyEvent) -> bool {
             });
             match target {
                 Some(key) => app.open_symbol(&key),
-                None => app.say(
-                    StatusKind::Info,
-                    "This step does not point to a symbol in the project.",
-                ),
+                None => app.say(StatusKind::Info, t::flow_step_no_symbol(app.locale)),
             }
             true
         }
@@ -865,11 +832,11 @@ fn flow_key(app: &mut App, key: KeyEvent) -> bool {
 // ---- overlays ----------------------------------------------------------------------------------------------
 
 /// The palette entries that match what was typed.
-pub(crate) fn palette_matches(input: &str) -> Vec<&'static actions::Entry> {
+pub(crate) fn palette_matches(locale: Locale, input: &str) -> Vec<&'static actions::Entry> {
     let needle = input.trim().to_lowercase();
     ENTRIES
         .iter()
-        .filter(|e| needle.is_empty() || e.name.to_lowercase().contains(&needle))
+        .filter(|e| needle.is_empty() || e.name(locale).to_lowercase().contains(&needle))
         .collect()
 }
 
@@ -886,11 +853,11 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
             mut input,
             mut selected,
         } => {
-            let matches = palette_matches(&input).len();
+            let matches = palette_matches(app.locale, &input).len();
             match key.code {
                 KeyCode::Esc => return,
                 KeyCode::Enter => {
-                    let entry = palette_matches(&input).get(selected).copied();
+                    let entry = palette_matches(app.locale, &input).get(selected).copied();
                     if let Some(entry) = entry {
                         perform(app, entry.action);
                     }
@@ -923,10 +890,7 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
                 if app.mode != Mode::Structure {
                     app.mode = Mode::Queue;
                 }
-                app.say(
-                    StatusKind::Info,
-                    format!("{len} unit(s) match. x clears the search."),
-                );
+                app.say(StatusKind::Info, t::search_matches(app.locale, len));
             }
             KeyCode::Backspace => {
                 input.pop();
@@ -942,7 +906,7 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
         Overlay::Confirm(confirm) => match key.code {
             KeyCode::Char('y' | 'Y') | KeyCode::Enter => confirmed(app, confirm.action),
             KeyCode::Esc | KeyCode::Char('n' | 'N') => {
-                app.say(StatusKind::Info, "Cancelled. Nothing was changed.");
+                app.say(StatusKind::Info, t::search_cancelled(app.locale));
             }
             _ => app.overlay = Some(Overlay::Confirm(confirm)),
         },
@@ -968,16 +932,15 @@ fn explain_key(app: &mut App, unit: crate::domain::ids::UnitId, key: KeyEvent) {
     };
     let rule = finding.rule_id.clone();
     let title = sanitize_single_line(&finding.title);
+    let l = app.locale;
     app.overlay = Some(Overlay::Confirm(Confirm {
-        title: "Silence this rule for this review?".to_owned(),
+        title: t::mute_title(l).to_owned(),
         lines: vec![
-            format!("rule:     {}", sanitize_single_line(&rule)),
-            format!("finding:  {title}"),
-            "Use it for a false positive. Every finding of this rule disappears from this review"
-                .to_owned(),
-            "and the scores that counted it drop. The code under review does not change."
-                .to_owned(),
-            "Bring it back from the palette: \"Bring back silenced rules\".".to_owned(),
+            t::mute_rule_line(l, &sanitize_single_line(&rule)),
+            t::mute_finding_line(l, &title),
+            t::mute_explain_1(l).to_owned(),
+            t::mute_explain_2(l).to_owned(),
+            t::mute_restore_hint(l).to_owned(),
         ],
         action: ConfirmAction::MuteRule(rule),
     }));
@@ -1020,6 +983,7 @@ fn editor_key(app: &mut App, mut editor: Editor, key: KeyEvent) {
 }
 
 fn save_editor(app: &mut App, editor: &Editor) -> Result<(), String> {
+    let l = app.locale;
     let text = editor.text.trim();
     let outcome = match &editor.purpose {
         EditorPurpose::NewComment {
@@ -1029,24 +993,24 @@ fn save_editor(app: &mut App, editor: &Editor) -> Result<(), String> {
         } => app
             .session
             .add_comment(unit, *version, *lines, text, editor.severity)
-            .map(|_| "Comment saved.".to_owned()),
+            .map(|_| t::saved_comment(l).to_owned()),
         EditorPurpose::EditComment(id) => app
             .session
             .edit_comment(id, text, editor.severity)
-            .map(|()| "Comment updated.".to_owned()),
+            .map(|()| t::saved_comment_updated(l).to_owned()),
         EditorPurpose::Intent => app
             .session
             .set_intent(text)
-            .map(|()| "Intent saved.".to_owned()),
+            .map(|()| t::saved_intent(l).to_owned()),
         EditorPurpose::Criterion => app
             .session
             .add_criterion(text)
-            .map(|_| "Criterion added.".to_owned()),
+            .map(|_| t::saved_criterion(l).to_owned()),
         EditorPurpose::FollowupNote { comment, status } => {
             let note = (!text.is_empty()).then(|| text.to_owned());
             app.session
                 .decide_followup(comment, *status, note)
-                .map(|()| format!("Recorded: {}.", status.label()))
+                .map(|()| t::recorded_decision(l, labels::followup_status(l, *status)))
         }
     };
     match outcome {
@@ -1062,14 +1026,11 @@ fn save_editor(app: &mut App, editor: &Editor) -> Result<(), String> {
 fn confirmed(app: &mut App, action: ConfirmAction) {
     match action {
         ConfirmAction::RunTests(_) => {
-            app.say(
-                StatusKind::Info,
-                "Running tests… the screen is busy until they finish or time out.",
-            );
+            app.say(StatusKind::Info, t::tests_running(app.locale));
             app.deferred = Some(action);
         }
         ConfirmAction::Refresh => {
-            app.say(StatusKind::Info, "Taking a new snapshot…");
+            app.say(StatusKind::Info, t::snapshot_taking(app.locale));
             app.deferred = Some(action);
         }
         other => run_confirmed(app, other),
@@ -1083,10 +1044,7 @@ fn run_confirmed(app: &mut App, action: ConfirmAction) {
                 after_refresh(app);
                 app.say(
                     StatusKind::Info,
-                    format!(
-                        "Rule {} is silenced for this review.",
-                        sanitize_single_line(&rule)
-                    ),
+                    t::rule_silenced(app.locale, &sanitize_single_line(&rule)),
                 );
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
@@ -1094,46 +1052,38 @@ fn run_confirmed(app: &mut App, action: ConfirmAction) {
         ConfirmAction::RestoreRules => match app.session.unmute_all_rules() {
             Ok(()) => {
                 after_refresh(app);
-                app.say(StatusKind::Info, "Silenced rules are back.");
+                app.say(StatusKind::Info, t::rules_restored(app.locale));
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
         ConfirmAction::PrepareInAgent => {
             let Some(channel) = app.agent.clone() else {
-                app.say(
-                    StatusKind::Warn,
-                    "No agent pane is managed here. Use Copy feedback or Show file.",
-                );
+                app.say(StatusKind::Warn, t::agent_none_feedback(app.locale));
                 return;
             };
             match app.session.prepare_in_agent(channel.as_ref()) {
-                Ok(PrepareOutcome::Prepared) => app.say(
-                    StatusKind::Info,
-                    "Prepared in the agent's input. Switch to it (prefix + A), read it, and press Enter yourself.",
-                ),
+                Ok(PrepareOutcome::Prepared) => {
+                    app.say(StatusKind::Info, t::agent_prepared_feedback(app.locale));
+                }
                 Ok(PrepareOutcome::Unavailable(why)) => app.say(
                     StatusKind::Warn,
-                    format!("Could not prepare it: {}. Use Copy feedback or Show file.", sanitize_single_line(&why)),
+                    t::agent_could_not_prepare_feedback(app.locale, &sanitize_single_line(&why)),
                 ),
                 Err(error) => app.say(StatusKind::Error, error.to_string()),
             }
         }
         ConfirmAction::PrepareFlowRequest => {
             let Some(channel) = app.agent.clone() else {
-                app.say(
-                    StatusKind::Warn,
-                    "No agent pane is managed here. Copy the request from the Flow screen instead.",
-                );
+                app.say(StatusKind::Warn, t::agent_none_diagram(app.locale));
                 return;
             };
             match app.session.prepare_flow_request(channel.as_ref()) {
-                Ok(PrepareOutcome::Prepared) => app.say(
-                    StatusKind::Info,
-                    "Diagram request prepared in the agent. Press Enter there when you want it sent; then U/L reloads the flow.",
-                ),
+                Ok(PrepareOutcome::Prepared) => {
+                    app.say(StatusKind::Info, t::agent_prepared_diagram(app.locale));
+                }
                 Ok(PrepareOutcome::Unavailable(why)) => app.say(
                     StatusKind::Warn,
-                    format!("Could not prepare it: {}.", sanitize_single_line(&why)),
+                    t::agent_could_not_prepare(app.locale, &sanitize_single_line(&why)),
                 ),
                 Err(error) => app.say(StatusKind::Error, error.to_string()),
             }
@@ -1142,7 +1092,7 @@ fn run_confirmed(app: &mut App, action: ConfirmAction) {
             Ok(()) => {
                 let len = app.session.review().comments.len();
                 app.comments_view.clamp(len);
-                app.say(StatusKind::Info, "Comment deleted.");
+                app.say(StatusKind::Info, t::comment_deleted(app.locale));
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
@@ -1170,7 +1120,7 @@ fn finish_key(app: &mut App, stage: FinishStage, key: KeyEvent) {
             mut selected,
         } => match key.code {
             KeyCode::Down | KeyCode::Char('j') => {
-                selected = (selected + 1).min(DELIVERY_OPTIONS.len() - 1);
+                selected = (selected + 1).min(DELIVERY_COUNT - 1);
                 app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected }));
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1178,10 +1128,7 @@ fn finish_key(app: &mut App, stage: FinishStage, key: KeyEvent) {
                 app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected }));
             }
             KeyCode::Esc => {
-                app.say(
-                    StatusKind::Info,
-                    "Review finished and saved. F offers the delivery options again.",
-                );
+                app.say(StatusKind::Info, t::finished_delivery_again(app.locale));
             }
             KeyCode::Enter => deliver(app, &record, selected),
             _ => app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected })),
@@ -1194,7 +1141,7 @@ fn deliver(app: &mut App, record: &crate::domain::review::FeedbackRecord, select
         0 => {
             app.overlay = Some(Overlay::Confirm(prepare_confirm(
                 app,
-                "Prepare the feedback in the agent?",
+                t::feedback_request_title(app.locale),
                 &record.prompt,
                 ConfirmAction::PrepareInAgent,
             )));
@@ -1205,14 +1152,11 @@ fn deliver(app: &mut App, record: &crate::domain::review::FeedbackRecord, select
                 let file = app.session.review_file();
                 app.say(
                     StatusKind::Info,
-                    format!(
-                        "Feedback file: {file} — tell the agent: {}",
-                        sanitize_single_line(&record.prompt)
-                    ),
+                    t::feedback_file(app.locale, &file, &sanitize_single_line(&record.prompt)),
                 );
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
-        _ => app.say(StatusKind::Info, "Review finished and saved."),
+        _ => app.say(StatusKind::Info, t::finished_saved(app.locale)),
     }
 }

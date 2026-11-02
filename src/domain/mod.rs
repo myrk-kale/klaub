@@ -8,7 +8,8 @@
 //!   [`testing`] and [`flow`];
 //! - the **configuration schema** and its parser ([`config`]);
 //! - the **ports** (traits) that adapters implement ([`ports`]);
-//! - **text safety** helpers ([`text`]).
+//! - **text safety** helpers ([`text`]);
+//! - the **languages** of the interface ([`i18n`]).
 //!
 //! It deliberately performs no I/O. A test (`tests/architecture.rs`)
 //! fails if file system, process, network or environment APIs creep in.
@@ -21,6 +22,7 @@ pub mod flow;
 pub mod glob;
 pub mod graph;
 pub mod harness;
+pub mod i18n;
 pub mod ids;
 pub mod language;
 pub mod path;

@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::domain::config::CountUnit;
 use crate::domain::finding::Priority;
+use crate::domain::i18n::{Locale, tui as t};
 use crate::domain::ids::{CriterionId, UnitId};
 use crate::domain::path::RepoPath;
 use crate::domain::review::{Brief, Criterion, CriterionStatus};
@@ -287,18 +288,43 @@ fn tally(coverage: &mut Coverage, module: &str, priority: Priority, done: bool, 
     by_module.0 += usize::from(done);
 }
 
+/// A non-blocking note shown before finishing a review. It never prevents anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinishWarning {
+    /// P0/P1 units the reviewer has not marked as reviewed.
+    PendingCritical(usize),
+    /// Acceptance criteria that are neither verified nor not applicable.
+    UncheckedCriteria(usize),
+    /// Changed symbols without an associated test.
+    UntestedSymbols(usize),
+    /// The worktree moved on after the snapshot was taken.
+    WorktreeChanged,
+}
+
+impl FinishWarning {
+    /// The warning in the reader's language.
+    #[must_use]
+    pub fn text(self, locale: Locale) -> String {
+        match self {
+            Self::PendingCritical(count) => t::finish_warning_pending(locale, count),
+            Self::UncheckedCriteria(count) => t::finish_warning_criteria(locale, count),
+            Self::UntestedSymbols(count) => t::finish_warning_untested(locale, count),
+            Self::WorktreeChanged => t::finish_warning_drift(locale).to_owned(),
+        }
+    }
+}
+
 /// Non-blocking notes shown before finishing a review. They never prevent anything.
 pub fn finish_warnings(
     coverage: &Coverage,
     brief: &Brief,
     linked_tests_missing: usize,
     warn_on_pending_critical: bool,
-) -> Vec<String> {
+) -> Vec<FinishWarning> {
     let mut warnings = Vec::new();
     if warn_on_pending_critical && !coverage.pending_critical.is_empty() {
-        warnings.push(format!(
-            "{} P0/P1 unit(s) are not marked as reviewed",
-            coverage.pending_critical.len()
+        warnings.push(FinishWarning::PendingCritical(
+            coverage.pending_critical.len(),
         ));
     }
     let open = brief
@@ -312,10 +338,10 @@ pub fn finish_warnings(
         })
         .count();
     if open > 0 {
-        warnings.push(format!("{open} acceptance criteria are still unchecked"));
+        warnings.push(FinishWarning::UncheckedCriteria(open));
     }
     if linked_tests_missing > 0 {
-        warnings.push(format!("{linked_tests_missing} changed symbol(s) have no associated test (which does not prove there is none)"));
+        warnings.push(FinishWarning::UntestedSymbols(linked_tests_missing));
     }
     warnings
 }
@@ -493,8 +519,9 @@ mod tests {
         add_criterion(&mut brief, "one").unwrap();
         let warnings = finish_warnings(&coverage, &brief, 3, true);
         assert_eq!(warnings.len(), 3);
-        assert!(warnings[0].contains("2 P0/P1"));
-        assert!(warnings[2].contains("does not prove"));
+        assert_eq!(warnings[0], FinishWarning::PendingCritical(2));
+        assert!(warnings[0].text(Locale::En).contains("2 P0/P1"));
+        assert!(warnings[2].text(Locale::En).contains("does not prove"));
         assert!(finish_warnings(&coverage, &Brief::default(), 0, false).is_empty());
     }
 }

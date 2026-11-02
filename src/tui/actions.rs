@@ -3,6 +3,7 @@
 
 use crate::domain::finding::Priority;
 use crate::domain::graph::ImpactScope;
+use crate::domain::i18n::{Locale, tui as t};
 use crate::domain::review::{FollowupStatus, Version};
 use crate::domain::text::sanitize_single_line;
 
@@ -10,6 +11,7 @@ use crate::tui::app::{
     App, Confirm, ConfirmAction, Depth, Editor, EditorPurpose, FinishStage, Mode, Overlay,
     StatusKind,
 };
+use crate::tui::labels;
 
 /// A user-level operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,262 +104,268 @@ pub(crate) enum Action {
 pub(crate) struct Entry {
     /// The action.
     pub action: Action,
-    /// What the palette shows.
-    pub name: &'static str,
     /// The default key, for display.
     pub key: &'static str,
+}
+
+impl Entry {
+    /// What the palette and the help show for this action.
+    pub(crate) fn name(&self, locale: Locale) -> &'static str {
+        match self.action {
+            Action::Mode(Mode::Queue) => t::action_go_queue(locale),
+            Action::Mode(Mode::Structure) => t::action_go_structure(locale),
+            Action::Mode(Mode::Code) => t::action_go_code(locale),
+            Action::Mode(Mode::Impact) => t::action_go_impact(locale),
+            Action::Mode(Mode::Comments) => t::action_go_comments(locale),
+            Action::Mode(Mode::Context) => t::action_go_context(locale),
+            Action::Mode(Mode::Tests) => t::action_go_tests(locale),
+            Action::Mode(Mode::Followup) => t::action_go_followup(locale),
+            Action::Mode(Mode::Coverage) => t::action_go_coverage(locale),
+            Action::Mode(Mode::Flow) => t::action_go_flow(locale),
+            Action::NextUnreviewed => t::action_next_unreviewed(locale),
+            Action::PrevUnreviewed => t::action_prev_unreviewed(locale),
+            Action::NextCritical => t::action_next_critical(locale),
+            Action::ToggleReviewed => t::action_toggle_reviewed(locale),
+            Action::ToggleBookmark => t::action_toggle_bookmark(locale),
+            Action::NextBookmark => t::action_next_bookmark(locale),
+            Action::Comment => t::action_comment(locale),
+            Action::Explain => t::action_explain(locale),
+            Action::RestoreRules => t::action_restore_rules(locale),
+            Action::InspectContract => t::action_inspect_contract(locale),
+            Action::OpenWholeFile => t::action_open_whole_file(locale),
+            Action::HistoryBack => t::action_history_back(locale),
+            Action::HistoryForward => t::action_history_forward(locale),
+            Action::ToggleVersion => t::action_toggle_version(locale),
+            Action::PeekPrevious => t::action_peek_previous(locale),
+            Action::NextChange => t::action_next_change(locale),
+            Action::PrevChange => t::action_prev_change(locale),
+            Action::ToggleCodeScope => t::action_toggle_code_scope(locale),
+            Action::Search => t::action_search(locale),
+            Action::FilterHigh => t::action_filter_high(locale),
+            Action::FilterUnreviewed => t::action_filter_unreviewed(locale),
+            Action::FilterIntroduced => t::action_filter_introduced(locale),
+            Action::FilterNoTests => t::action_filter_no_tests(locale),
+            Action::FilterNew => t::action_filter_new(locale),
+            Action::CycleScope => t::action_cycle_scope(locale),
+            Action::CycleModule => t::action_cycle_module(locale),
+            Action::ClearFilters => t::action_clear_filters(locale),
+            Action::DeeperTree => t::action_deeper_tree(locale),
+            Action::ShallowerTree => t::action_shallower_tree(locale),
+            Action::RunTests => t::action_run_tests(locale),
+            Action::ReloadReports => t::action_reload_reports(locale),
+            Action::ReloadFlow => t::action_reload_flow(locale),
+            Action::RequestFlow => t::action_request_flow(locale),
+            Action::Refresh => t::action_refresh(locale),
+            Action::Finish => t::action_finish(locale),
+            Action::CopyFeedback => t::action_copy_feedback(locale),
+            Action::ConfirmSubmitted => t::action_confirm_submitted(locale),
+            Action::NextTheme => t::action_next_theme(locale),
+            Action::Help => t::action_help(locale),
+            Action::Quit => t::action_quit(locale),
+        }
+    }
 }
 
 /// Every action with its key. The palette and the help screen are built from this table.
 pub(crate) const ENTRIES: &[Entry] = &[
     Entry {
         action: Action::Mode(Mode::Queue),
-        name: "Go to Queue",
         key: "1  F2",
     },
     Entry {
         action: Action::Mode(Mode::Structure),
-        name: "Go to Structure",
         key: "2  F3",
     },
     Entry {
         action: Action::Mode(Mode::Code),
-        name: "Go to Code",
         key: "3  F4",
     },
     Entry {
         action: Action::Mode(Mode::Impact),
-        name: "Go to Impact (callers, entrypoints)",
         key: "4  g  F5",
     },
     Entry {
         action: Action::Mode(Mode::Comments),
-        name: "Go to Comments",
         key: "5  F6",
     },
     Entry {
         action: Action::Mode(Mode::Context),
-        name: "Go to Context (brief, criteria)",
         key: "6  b  F8",
     },
     Entry {
         action: Action::Mode(Mode::Tests),
-        name: "Go to Tests",
         key: "7  t  F7",
     },
     Entry {
         action: Action::Mode(Mode::Followup),
-        name: "Go to Follow-up",
         key: "8  F10",
     },
     Entry {
         action: Action::Mode(Mode::Coverage),
-        name: "Go to Coverage",
         key: "9",
     },
     Entry {
         action: Action::Mode(Mode::Flow),
-        name: "Go to Flow",
         key: "0  f  F9",
     },
     Entry {
         action: Action::NextUnreviewed,
-        name: "Next unreviewed",
         key: "n",
     },
     Entry {
         action: Action::PrevUnreviewed,
-        name: "Previous unreviewed",
         key: "P",
     },
     Entry {
         action: Action::NextCritical,
-        name: "Next unreviewed P0/P1",
         key: "N",
     },
     Entry {
         action: Action::ToggleReviewed,
-        name: "Mark reviewed / unmark",
         key: "r",
     },
     Entry {
         action: Action::ToggleBookmark,
-        name: "Bookmark this unit",
         key: "m",
     },
     Entry {
         action: Action::NextBookmark,
-        name: "Next bookmark",
         key: ",",
     },
     Entry {
         action: Action::Comment,
-        name: "Comment on selection",
         key: "c",
     },
     Entry {
         action: Action::Explain,
-        name: "Why this priority?",
         key: "w",
     },
     Entry {
         action: Action::RestoreRules,
-        name: "Bring back silenced rules",
         key: "",
     },
     Entry {
         action: Action::InspectContract,
-        name: "Inspect the contract",
         key: "i",
     },
     Entry {
         action: Action::OpenWholeFile,
-        name: "Open the unit in the whole file",
         key: "o",
     },
     Entry {
         action: Action::HistoryBack,
-        name: "Back to the previous unit",
         key: "<",
     },
     Entry {
         action: Action::HistoryForward,
-        name: "Forward to the next unit in the history",
         key: ">",
     },
     Entry {
         action: Action::ToggleVersion,
-        name: "Toggle before / after",
         key: "v",
     },
     Entry {
         action: Action::PeekPrevious,
-        name: "Hold to see the previous version",
         key: "B",
     },
     Entry {
         action: Action::NextChange,
-        name: "Next change",
         key: "]",
     },
     Entry {
         action: Action::PrevChange,
-        name: "Previous change",
         key: "[",
     },
     Entry {
         action: Action::ToggleCodeScope,
-        name: "Code: symbol / whole file",
         key: "S",
     },
     Entry {
         action: Action::Search,
-        name: "Search",
         key: "/",
     },
     Entry {
         action: Action::FilterHigh,
-        name: "Filter: P0/P1 only",
         key: "H",
     },
     Entry {
         action: Action::FilterUnreviewed,
-        name: "Filter: unreviewed only",
         key: "u",
     },
     Entry {
         action: Action::FilterIntroduced,
-        name: "Filter: introduced by this change",
         key: "I",
     },
     Entry {
         action: Action::FilterNoTests,
-        name: "Filter: no associated tests",
         key: "T",
     },
     Entry {
         action: Action::FilterNew,
-        name: "Filter: new files",
         key: "W",
     },
     Entry {
         action: Action::CycleScope,
-        name: "Filter: minimum reach (local/module/global)",
         key: "s",
     },
     Entry {
         action: Action::CycleModule,
-        name: "Filter: next module",
         key: "M",
     },
     Entry {
         action: Action::ClearFilters,
-        name: "Clear filters",
         key: "x",
     },
     Entry {
         action: Action::DeeperTree,
-        name: "Structure: show more",
         key: "+",
     },
     Entry {
         action: Action::ShallowerTree,
-        name: "Structure: show less",
         key: "-",
     },
     Entry {
         action: Action::RunTests,
-        name: "Run associated tests (asks first)",
         key: "X",
     },
     Entry {
         action: Action::ReloadReports,
-        name: "Reload test reports",
         key: "U",
     },
     Entry {
         action: Action::ReloadFlow,
-        name: "Reload flow",
         key: "L",
     },
     Entry {
         action: Action::RequestFlow,
-        name: "Prepare flow request in agent",
         key: "Flow: p",
     },
     Entry {
         action: Action::Refresh,
-        name: "Refresh snapshot",
         key: "R",
     },
     Entry {
         action: Action::Finish,
-        name: "Finish review…",
         key: "F",
     },
     Entry {
         action: Action::CopyFeedback,
-        name: "Copy feedback instruction",
         key: "",
     },
     Entry {
         action: Action::ConfirmSubmitted,
-        name: "I submitted the feedback in the agent",
         key: "",
     },
     Entry {
         action: Action::NextTheme,
-        name: "Switch colour theme",
         key: "",
     },
     Entry {
         action: Action::Help,
-        name: "Help",
         key: "?  F1",
     },
     Entry {
         action: Action::Quit,
-        name: "Close the reader",
         key: "q q",
     },
 ];
@@ -386,10 +394,10 @@ pub(crate) fn perform(app: &mut App, action: Action) {
             let name = app.theme.name();
             app.say(
                 StatusKind::Info,
-                format!(
-                    "Theme: {}. Set ui.theme = \"{}\" to keep it.",
-                    name.title(),
-                    name.key()
+                t::theme_switched(
+                    app.locale,
+                    labels::theme_title(app.locale, name),
+                    name.key(),
                 ),
             );
         }
@@ -398,8 +406,8 @@ pub(crate) fn perform(app: &mut App, action: Action) {
         // says how it works.
         Action::PeekPrevious => app.say(
             StatusKind::Info,
-            format!(
-                "Hold {} while reading code to see the previous version; {} toggles it.",
+            t::peek_hint(
+                app.locale,
                 app.keymap.key_for("peek_previous"),
                 app.keymap.key_for("toggle_version"),
             ),
@@ -408,23 +416,22 @@ pub(crate) fn perform(app: &mut App, action: Action) {
         Action::PrevChange => jump_change(app, false),
         Action::Explain => match app.unit.clone() {
             Some(unit) => app.overlay = Some(Overlay::Explain(unit)),
-            None => app.say(StatusKind::Info, "Select a unit first."),
+            None => app.say(StatusKind::Info, t::select_unit_first(app.locale)),
         },
         Action::InspectContract => match app.unit.clone() {
             Some(unit) => app.overlay = Some(Overlay::Contract(unit)),
-            None => app.say(StatusKind::Info, "Select a unit first."),
+            None => app.say(StatusKind::Info, t::select_unit_first(app.locale)),
         },
         Action::RestoreRules => {
             let muted = app.session.muted_rules().to_vec();
             if muted.is_empty() {
-                app.say(StatusKind::Info, "No rule is silenced in this review.");
+                app.say(StatusKind::Info, t::no_rule_silenced(app.locale));
             } else {
                 app.overlay = Some(Overlay::Confirm(Confirm {
-                    title: "Bring back the silenced rules?".to_owned(),
+                    title: t::restore_rules_title(app.locale).to_owned(),
                     lines: vec![
-                        format!("silenced here: {}", muted.join(", ")),
-                        "Their findings return and the queue is recomputed on this snapshot."
-                            .to_owned(),
+                        t::restore_rules_silenced(app.locale, &muted.join(", ")),
+                        t::restore_rules_explain(app.locale).to_owned(),
                     ],
                     action: ConfirmAction::RestoreRules,
                 }));
@@ -433,29 +440,26 @@ pub(crate) fn perform(app: &mut App, action: Action) {
         Action::OpenWholeFile => open_whole_file(app),
         Action::HistoryBack => {
             if !app.history_back() {
-                app.say(StatusKind::Info, "No earlier unit in the history.");
+                app.say(StatusKind::Info, t::history_no_earlier(app.locale));
             }
         }
         Action::HistoryForward => {
             if !app.history_forward() {
-                app.say(StatusKind::Info, "No later unit in the history.");
+                app.say(StatusKind::Info, t::history_no_later(app.locale));
             }
         }
         Action::RunTests => ask_run_tests(app),
         Action::ReloadReports => {
             app.session.reload_reports();
             let n = app.session.reports().sources.len();
-            app.say(
-                StatusKind::Info,
-                format!("Test reports reloaded ({n} source(s))."),
-            );
+            app.say(StatusKind::Info, t::reports_reloaded(app.locale, n));
         }
         Action::ReloadFlow => reload_flow(app),
         Action::RequestFlow => ask_flow_request(app),
         Action::ClearFilters => {
             app.filters = crate::tui::app::Filters::default();
             refresh_queue_selection(app);
-            app.say(StatusKind::Info, "Filters cleared.");
+            app.say(StatusKind::Info, t::filters_cleared(app.locale));
         }
         Action::FilterHigh => {
             app.filters.min_priority = if app.filters.min_priority.is_some() {
@@ -506,7 +510,7 @@ pub(crate) fn perform(app: &mut App, action: Action) {
             };
         }
         Action::ConfirmSubmitted => match app.session.confirm_submitted() {
-            Ok(()) => app.say(StatusKind::Info, "Recorded: you submitted the feedback."),
+            Ok(()) => app.say(StatusKind::Info, t::recorded_submitted(app.locale)),
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
         Action::CopyFeedback => copy_feedback(app),
@@ -519,9 +523,10 @@ fn refresh_queue_selection(app: &mut App) {
     app.queue_view.clamp(len);
     app.structure_view.clamp(app.tree_rows().len());
     if app.filters.any() {
+        let summary = app.filters.summary(app.locale);
         app.say(
             StatusKind::Info,
-            format!("Filter: {} — {len} unit(s).", app.filters.summary()),
+            t::filter_status(app.locale, &summary, len),
         );
     }
     if let Some(unit) = app.queue_selection() {
@@ -546,7 +551,7 @@ fn switch_mode(app: &mut App, mode: Mode) {
     if matches!(mode, Mode::Code) && app.code.view.is_none() {
         match app.unit.clone().or_else(|| app.queue_selection()) {
             Some(unit) => app.open_unit(&unit, None),
-            None => app.say(StatusKind::Info, "Nothing to show: the queue is empty."),
+            None => app.say(StatusKind::Info, t::queue_is_empty(app.locale)),
         }
         return;
     }
@@ -582,18 +587,19 @@ fn jump_unreviewed(app: &mut App, forward: bool, critical: bool) {
             focus_unit(app, &unit);
         }
         _ => {
-            let what = if critical { "P0/P1 unit" } else { "unit" };
-            app.say(
-                StatusKind::Info,
-                format!("No unreviewed {what} left in view."),
-            );
+            let message = if critical {
+                t::no_unreviewed_critical(app.locale)
+            } else {
+                t::no_unreviewed(app.locale)
+            };
+            app.say(StatusKind::Info, message);
         }
     }
 }
 
 fn toggle_reviewed(app: &mut App) {
     let Some(unit) = app.unit.clone().or_else(|| app.queue_selection()) else {
-        app.say(StatusKind::Info, "Select a unit first.");
+        app.say(StatusKind::Info, t::select_unit_first(app.locale));
         return;
     };
     match app.session.toggle_reviewed(&unit) {
@@ -601,13 +607,10 @@ fn toggle_reviewed(app: &mut App) {
             let c = app.session.coverage();
             app.say(
                 StatusKind::Info,
-                format!(
-                    "Marked reviewed ({}/{}). Press r again to undo, n for the next.",
-                    c.reviewed, c.total
-                ),
+                t::marked_reviewed(app.locale, c.reviewed, c.total),
             );
         }
-        Ok(false) => app.say(StatusKind::Info, "Mark removed."),
+        Ok(false) => app.say(StatusKind::Info, t::mark_removed(app.locale)),
         Err(error) => app.say(StatusKind::Error, error.to_string()),
     }
     let len = app.visible_queue().len();
@@ -616,27 +619,24 @@ fn toggle_reviewed(app: &mut App) {
 
 fn toggle_bookmark(app: &mut App) {
     let Some(unit) = app.unit.clone().or_else(|| app.queue_selection()) else {
-        app.say(StatusKind::Info, "Select a unit first.");
+        app.say(StatusKind::Info, t::select_unit_first(app.locale));
         return;
     };
     if let Some(position) = app.bookmarks.iter().position(|marked| marked == &unit) {
         app.bookmarks.remove(position);
-        app.say(StatusKind::Info, "Bookmark removed.");
+        app.say(StatusKind::Info, t::bookmark_removed(app.locale));
     } else {
         app.bookmarks.push(unit);
         app.say(
             StatusKind::Info,
-            format!("Bookmarked ({}). , jumps to the next.", app.bookmarks.len()),
+            t::bookmarked(app.locale, app.bookmarks.len()),
         );
     }
 }
 
 fn next_bookmark(app: &mut App) {
     if app.bookmarks.is_empty() {
-        app.say(
-            StatusKind::Info,
-            "No bookmarks yet. m marks the current unit.",
-        );
+        app.say(StatusKind::Info, t::bookmarks_none(app.locale));
         return;
     }
     let from = app.unit.clone().or_else(|| app.queue_selection());
@@ -650,21 +650,19 @@ fn next_bookmark(app: &mut App) {
         .cloned();
     match target {
         Some(unit) if Some(&unit) != from.as_ref() => focus_unit(app, &unit),
-        Some(_) => app.say(StatusKind::Info, "Already on the only bookmark."),
-        None => app.say(StatusKind::Info, "No bookmark is still in the queue."),
+        Some(_) => app.say(StatusKind::Info, t::bookmark_only_one(app.locale)),
+        None => app.say(StatusKind::Info, t::bookmark_none_in_queue(app.locale)),
     }
 }
 
 fn start_comment(app: &mut App) {
+    let l = app.locale;
     let Some(unit) = app.unit.clone() else {
-        app.say(StatusKind::Info, "Select a unit first.");
+        app.say(StatusKind::Info, t::select_unit_first(l));
         return;
     };
     if app.mode == Mode::Code && app.code.detached.is_some() {
-        app.say(
-            StatusKind::Warn,
-            "This code is not part of the change; comments attach to changed code only.",
-        );
+        app.say(StatusKind::Warn, t::comment_detached(l));
         return;
     }
     let version = app.code.version.unwrap_or(Version::After);
@@ -675,22 +673,22 @@ fn start_comment(app: &mut App) {
         .current_item()
         .map_or_else(String::new, |i| sanitize_single_line(&i.unit.label));
     let place = lines.map_or_else(
-        || "whole unit".to_owned(),
+        || t::comment_place_unit(l).to_owned(),
         |(a, b)| {
             if a == b {
-                format!("line {a}")
+                t::comment_place_line(l, a)
             } else {
-                format!("lines {a}–{b}")
+                t::comment_place_lines(l, a, b)
             }
         },
     );
     let side = if version == Version::Before {
-        "old"
+        t::comment_side_old(l)
     } else {
-        "new"
+        t::comment_side_new(l)
     };
     app.overlay = Some(Overlay::Editor(Editor {
-        title: format!("Comment on {label} ({side} code, {place})"),
+        title: t::comment_title(l, &label, side, &place),
         purpose: EditorPurpose::NewComment {
             unit,
             version,
@@ -713,38 +711,43 @@ pub(crate) fn selected_lines(app: &App) -> Option<(u32, u32)> {
 }
 
 fn start_finish(app: &mut App) {
-    let warnings = app.session.warnings_before_finish();
+    let locale = app.locale;
+    let warnings = app
+        .session
+        .finish_warnings()
+        .into_iter()
+        .map(|warning| warning.text(locale))
+        .collect();
     app.overlay = Some(Overlay::Finish(FinishStage::Confirm { warnings }));
 }
 
 fn ask_refresh(app: &mut App) {
+    let l = app.locale;
     app.overlay = Some(Overlay::Confirm(Confirm {
-        title: "Take a new snapshot?".to_owned(),
+        title: t::refresh_title(l).to_owned(),
         lines: vec![
-            "The changes are analysed again from the current worktree.".to_owned(),
-            "Comments are moved to where their code went; uncertain ones become stale.".to_owned(),
-            "Units marked reviewed stay marked only if their code did not change.".to_owned(),
+            t::refresh_line_analyse(l).to_owned(),
+            t::refresh_line_comments(l).to_owned(),
+            t::refresh_line_reviewed(l).to_owned(),
         ],
         action: ConfirmAction::Refresh,
     }));
 }
 
 pub(crate) fn toggle_version(app: &mut App) {
+    let l = app.locale;
     let Some(view) = &app.code.view else {
-        app.say(StatusKind::Info, "Open some code first.");
+        app.say(StatusKind::Info, t::open_code_first(l));
         return;
     };
     if app.code.detached.is_some() {
-        app.say(
-            StatusKind::Info,
-            "This code is not part of the change; there is no other version.",
-        );
+        app.say(StatusKind::Info, t::version_detached(l));
         return;
     }
     if !view.other_version_exists {
         let why = match app.code.version {
-            Some(Version::Before) => "this code was removed; there is no new version",
-            _ => "NEW · there is no previous version to compare with",
+            Some(Version::Before) => t::version_removed(l),
+            _ => t::version_new_only(l),
         };
         app.say(StatusKind::Info, why);
         return;
@@ -760,7 +763,7 @@ pub(crate) fn toggle_version(app: &mut App) {
 /// twice stays in the file.
 fn open_whole_file(app: &mut App) {
     let Some(unit) = app.unit.clone() else {
-        app.say(StatusKind::Info, "Select a unit first.");
+        app.say(StatusKind::Info, t::select_unit_first(app.locale));
         return;
     };
     if app.mode != Mode::Code || app.code.view.is_none() {
@@ -803,9 +806,9 @@ fn jump_change(app: &mut App, forward: bool) {
         None => app.say(
             StatusKind::Info,
             if forward {
-                "No further change in this code. n goes to the next unreviewed unit."
+                t::change_none_further(app.locale)
             } else {
-                "No earlier change in this code."
+                t::change_none_earlier(app.locale)
             },
         ),
     }
@@ -826,21 +829,22 @@ pub(crate) fn ensure_code_visible(app: &mut App) {
 }
 
 fn ask_run_tests(app: &mut App) {
+    let l = app.locale;
     let Some(unit) = app.unit.clone() else {
-        app.say(StatusKind::Info, "Select a unit first.");
+        app.say(StatusKind::Info, t::select_unit_first(l));
         return;
     };
     match app.session.plan_test_run(&unit) {
         Ok(request) => {
             let preview = crate::app::ReviewSession::preview_test_run(&request);
             app.overlay = Some(Overlay::Confirm(Confirm {
-                title: "Run these tests?".to_owned(),
+                title: t::run_tests_title(l).to_owned(),
                 lines: vec![
-                    format!("command: {preview}"),
-                    format!("in:      {}", request.cwd.display()),
-                    format!("limit:   {} s", request.timeout.as_secs()),
-                    "The command comes from your .klaub.toml; Klaub never invents one.".to_owned(),
-                    "The screen is busy until it finishes or times out.".to_owned(),
+                    t::run_tests_command(l, &preview),
+                    t::run_tests_cwd(l, &request.cwd.display().to_string()),
+                    t::run_tests_limit(l, request.timeout.as_secs()),
+                    t::run_tests_source(l).to_owned(),
+                    t::run_tests_busy(l).to_owned(),
                 ],
                 action: ConfirmAction::RunTests(request),
             }));
@@ -852,8 +856,8 @@ fn ask_run_tests(app: &mut App) {
 fn reload_flow(app: &mut App) {
     match app.session.reload_flow() {
         Ok(()) => {
-            let label = app.session.flow().state.label();
-            app.say(StatusKind::Info, format!("Flow reloaded: {label}."));
+            let label = labels::flow_state(app.locale, &app.session.flow().state);
+            app.say(StatusKind::Info, t::flow_reloaded(app.locale, label));
         }
         Err(error) => app.say(StatusKind::Error, error.to_string()),
     }
@@ -863,7 +867,7 @@ fn ask_flow_request(app: &mut App) {
     let prompt = app.session.flow().request_prompt.clone();
     app.overlay = Some(Overlay::Confirm(prepare_confirm(
         app,
-        "Prepare the diagram request in the agent?",
+        t::diagram_request_title(app.locale),
         &prompt,
         ConfirmAction::PrepareFlowRequest,
     )));
@@ -885,32 +889,31 @@ pub(crate) fn prepare_confirm(
     text: &str,
     action: ConfirmAction,
 ) -> Confirm {
+    let l = app.locale;
     let mut foreground = None;
     let destination = match &app.agent {
-        None => "none — Klaub is not managing an agent here; use Copy instead".to_owned(),
+        None => t::destination_none_unmanaged(l).to_owned(),
         Some(channel) => match channel.target() {
             Ok(Some(target)) => {
                 foreground = Some(sanitize_single_line(&target.command));
                 sanitize_single_line(&target.description)
             }
-            Ok(None) => "none — no agent pane was found; use Copy instead".to_owned(),
-            Err(error) => format!("unverified — {error}"),
+            Ok(None) => t::destination_none_pane(l).to_owned(),
+            Err(error) => t::destination_unverified(l, &error.to_string()),
         },
     };
-    let mut lines = vec![format!("destination: {destination}")];
+    let mut lines = vec![t::paste_destination(l, &destination)];
     if let Some(command) = &foreground {
-        lines.push(format!("running there: {command}"));
+        lines.push(t::paste_running_there(l, command));
         if is_shell(command) {
-            lines.push(format!(
-                "⚠ {command} is a shell. If your agent is not the one reading the keyboard, the text lands on a shell prompt."
-            ));
+            lines.push(t::paste_shell_warning(l, command));
         }
         lines.extend(harness_lines(app, command));
     }
     lines.extend([
-        "text to paste (Klaub never presses Enter; you decide when to send it):".to_owned(),
+        t::paste_text_heading(l).to_owned(),
         format!("  {}", sanitize_single_line(text)),
-        "If the agent's input already has text, the paste may be appended to it.".to_owned(),
+        t::paste_appended(l).to_owned(),
     ]);
     Confirm {
         title: title.to_owned(),
@@ -924,7 +927,10 @@ pub(crate) fn prepare_confirm(
 /// answer only informs the confirmation, it never decides whether to paste.
 fn harness_lines(app: &App, command: &str) -> Vec<String> {
     let adapter = app.harnesses.select(command);
-    let mut lines = vec![format!("harness: {}", sanitize_single_line(adapter.name()))];
+    let mut lines = vec![t::paste_harness(
+        app.locale,
+        &sanitize_single_line(adapter.name()),
+    )];
     if adapter.id() == "generic" {
         return lines;
     }
@@ -945,17 +951,11 @@ const HARNESS_SCREEN_LINES: usize = 20;
 
 fn copy_feedback(app: &mut App) {
     let Some(clipboard) = app.clipboard.clone() else {
-        app.say(
-            StatusKind::Warn,
-            "No clipboard is available here. Use Show file instead.",
-        );
+        app.say(StatusKind::Warn, t::clipboard_unavailable(app.locale));
         return;
     };
     match app.session.copy_feedback(clipboard.as_ref()) {
-        Ok(()) => app.say(
-            StatusKind::Info,
-            "Feedback instruction copied. Paste it into the agent yourself.",
-        ),
+        Ok(()) => app.say(StatusKind::Info, t::feedback_copied(app.locale)),
         Err(error) => app.say(StatusKind::Error, error.to_string()),
     }
 }

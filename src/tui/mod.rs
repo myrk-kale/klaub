@@ -22,9 +22,9 @@ mod views;
 mod widgets;
 
 pub use app::{
-    App, CodeState, Confirm, ConfirmAction, DELIVERY_OPTIONS, Depth, Editor, EditorPurpose,
-    Filters, FinishStage, FlowLine, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay, Peek,
-    StatusKind, TreeKind, TreeRow,
+    App, CodeState, Confirm, ConfirmAction, DELIVERY_COUNT, Depth, Editor, EditorPurpose, Filters,
+    FinishStage, FlowLine, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay, Peek, StatusKind,
+    TreeKind, TreeRow, delivery_options,
 };
 pub use keymap::{Keymap, KeymapError};
 pub use terminal::run;

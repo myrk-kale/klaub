@@ -12,6 +12,7 @@ use crate::domain::config::Config;
 use crate::domain::finding::{FindingDelta, Priority, Temporal};
 use crate::domain::flow::FlowState;
 use crate::domain::graph::SymbolKey;
+use crate::domain::i18n::Locale;
 use crate::domain::ids::{CommentId, CriterionId, SessionId, UnitId};
 use crate::domain::path::RepoPath;
 use crate::domain::ports::{
@@ -27,7 +28,9 @@ use crate::domain::testing::{CoverageEntry, EvidenceStatus, ReportSource, TestLi
 use crate::domain::text::{sanitize_terminal_text, truncate_chars};
 use crate::domain::timestamp::Timestamp;
 use crate::domain::{Error, Result};
-use crate::services::context::{CoverageUnit, compute_coverage, finish_warnings, parse_brief};
+use crate::services::context::{
+    CoverageUnit, FinishWarning, compute_coverage, finish_warnings, parse_brief,
+};
 use crate::services::flow::{FlowContext, ValidatedFlow, Validation};
 use crate::services::review::{
     Candidate, ExportContext, ReviewTarget, build_anchor_fingerprint, relocate,
@@ -642,7 +645,7 @@ impl ReviewSession {
     }
 
     /// Non-blocking notes to show before finishing.
-    pub fn warnings_before_finish(&self) -> Vec<String> {
+    pub fn finish_warnings(&self) -> Vec<FinishWarning> {
         let untested = self
             .analysis
             .queue
@@ -656,13 +659,17 @@ impl ReviewSession {
             self.analysis.config.coverage.warn_on_unreviewed_p0_p1,
         );
         if self.drift == Drift::Changed {
-            warnings.push(
-                "The worktree changed after this snapshot was taken, so the comments and the impact \
-                 refer to code that has moved on. R takes a new snapshot."
-                    .to_owned(),
-            );
+            warnings.push(FinishWarning::WorktreeChanged);
         }
         warnings
+    }
+
+    /// [`Self::finish_warnings`] in English, for callers that print them without a reader.
+    pub fn warnings_before_finish(&self) -> Vec<String> {
+        self.finish_warnings()
+            .into_iter()
+            .map(|warning| warning.text(Locale::En))
+            .collect()
     }
 
     /// Finishes the review: freezes the open comments into a feedback payload and saves.

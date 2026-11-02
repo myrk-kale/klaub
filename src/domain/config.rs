@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::domain::error::{Error, Result};
+use crate::domain::i18n::Locale;
 use crate::domain::semantic::{MatchThresholds, PROBABLE_MATCH, STRONG_MATCH};
 
 /// Which comparison `klaub review` makes by default.
@@ -142,12 +143,53 @@ impl Theme {
     }
 }
 
+/// The language of the interface (`ui.language`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    /// Follow `KLAUB_LANG` and the system locale, and fall back to English.
+    #[default]
+    Auto,
+    /// English.
+    En,
+}
+
+impl Language {
+    /// The language this setting names, or `None` for `auto`.
+    #[must_use]
+    pub const fn locale(self) -> Option<Locale> {
+        match self {
+            Self::Auto => None,
+            Self::En => Some(Locale::En),
+        }
+    }
+
+    /// What the reader should speak: the setting itself, or English while it is still `auto`.
+    ///
+    /// The command line replaces `auto` with the detected language before it opens a review (see
+    /// `From<Locale>`), so `auto` only survives here in tests.
+    #[must_use]
+    pub fn locale_or_default(self) -> Locale {
+        self.locale().unwrap_or_default()
+    }
+}
+
+impl From<Locale> for Language {
+    fn from(locale: Locale) -> Self {
+        match locale {
+            Locale::En => Self::En,
+        }
+    }
+}
+
 /// `[ui]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiConfig {
     /// Colour theme.
     pub theme: Theme,
+    /// Language of the interface.
+    pub language: Language,
     /// Show key hints in the status bar.
     pub show_hints: bool,
     /// Let the mouse scroll, select and switch tabs. Off by default: capturing the mouse stops the
@@ -162,6 +204,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             theme: Theme::Dark,
+            language: Language::Auto,
             show_hints: true,
             mouse: false,
             hold_to_peek: false,
