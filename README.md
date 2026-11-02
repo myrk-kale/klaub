@@ -73,7 +73,7 @@ To work with the agent and the reviewer side by side, start the agent through Kl
 klaub wrap codex                 # or: klaub wrap -- claude --model <model>
 ```
 
-Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Ctrl+B` then `R` to open the reviewer, `Ctrl+B` then `A` to go back to the agent, and `Ctrl+B` then `D` to leave the session running in the background. `klaub session attach` brings it back.
+Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Ctrl+B` then `R` to open the reviewer, `Ctrl+B` then `A` to go back to the agent (lower case works too), and `Ctrl+B` then `d` to leave the session running in the background. `klaub session attach` brings it back. `Ctrl+B` then `Q` ends the session and the agent.
 
 ### Your first review in six keys
 
@@ -333,10 +333,11 @@ These work after `klaub wrap`. Press the prefix (`Ctrl+B` by default), release i
 
 | Key | Action |
 | --- | --- |
-| `R` | Open the reviewer |
-| `A` | Back to the agent |
+| `R` or `r` | Open the reviewer |
+| `A` or `a` | Back to the agent |
 | `I`, `C`, `T`, `B`, `L` | Open the reviewer on impact, comments, tests, brief or flow |
-| `D` | Detach and leave the session running |
+| `d` | Detach and leave the session running (`klaub session attach` brings it back) |
+| `Q` | End the session and its agent, after a `y/n` confirmation |
 | `?` | Print these chords |
 
 An optional mouse mode (`[ui] mouse = true`) adds wheel scrolling and clicks on tabs, rows and code lines.
