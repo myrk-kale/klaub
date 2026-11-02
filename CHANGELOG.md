@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-02
+
 ### Added
 
 - `Prefix+Q` ends the whole session, agent included, after a `y/n` confirmation. `Prefix+d` only detaches and leaves the agent running.
