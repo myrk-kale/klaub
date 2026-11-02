@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
+### Added
+
+- **Named colour themes.** `ui.theme` accepts `catppuccin_mocha`, `catppuccin_latte`, `dracula`, `gruvbox_dark`, `nord` and `rose_pine`, next to `dark`, `light` and `high_contrast`. `dark` is the Tokyo Night palette. The palette (`:`) has "Switch colour theme", which cycles through them for the current session; set `ui.theme` to keep one. The light themes assume a light terminal.
+- **`ColorDepth`.** The colour themes are written in true colour and use the 256-colour palette when the terminal does not report 24-bit colour (`COLORTERM`, `TERM`, `TERM_PROGRAM`).
+
+### Changed
+
+- **A premium look for the reader.** A title bar with the brand and a progress gauge, pill tabs, a status bar that shows the mode and its keys (hints that do not fit are dropped whole), rounded titled panels, scrollbars, and a details panel next to the queue. Selected rows get an accent bar and a full-width background, and priority and status are chips. The code view tints added, removed and changed lines, has a gutter and a NEW CODE / OLD CODE badge, and shows the comment under the cursor as a callout. Overlays dim the screen behind them, and empty states are centred. `high_contrast` still uses no colour.
+- `domain::config::Theme` has new variants, so an exhaustive `match` on it outside Klaub needs new arms.
+
 ## [0.4.0] - 2026-11-01
 
 ### Added
