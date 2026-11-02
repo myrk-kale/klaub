@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-02
+
 ### Fixed
 
 - **The embedded tmux no longer exits unexpectedly on Apple Silicon.** With a full-screen agent (Claude Code, Codex) running, switching to the reviewer with `Ctrl+B R` ended the session with `[server exited unexpectedly]`. The cause was jemalloc 5.4 in the macOS build of tmux 3.8; the embedded tmux now uses the system allocator on every macOS target. A Homebrew tmux through `KLAUB_TMUX_PATH` was a workaround and is no longer needed.
