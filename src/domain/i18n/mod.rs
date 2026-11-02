@@ -16,14 +16,20 @@
 ///
 /// ```ignore
 /// messages! {
-///     fn greeting(name: &str) { en: "Hello, {name}" }
+///     fn greeting(name: &str) {
+///         en: "Hello, {name}",
+///         pt: "Olá, {name}",
+///         es: "Hola, {name}",
+///     }
 /// }
 /// ```
 macro_rules! messages {
     ($(
         $(#[$meta:meta])*
         fn $name:ident($($arg:ident: $ty:ty),* $(,)?) {
-            en: $en:literal $(,)?
+            en: $en:literal,
+            pt: $pt:literal,
+            es: $es:literal $(,)?
         }
     )*) => {$(
         $(#[$meta])*
@@ -31,6 +37,8 @@ macro_rules! messages {
         pub fn $name(locale: $crate::domain::i18n::Locale, $($arg: $ty),*) -> String {
             match locale {
                 $crate::domain::i18n::Locale::En => format!($en),
+                $crate::domain::i18n::Locale::Pt => format!($pt),
+                $crate::domain::i18n::Locale::Es => format!($es),
             }
         }
     )*};
@@ -41,7 +49,9 @@ macro_rules! texts {
     ($(
         $(#[$meta:meta])*
         const $name:ident {
-            en: $en:literal $(,)?
+            en: $en:literal,
+            pt: $pt:literal,
+            es: $es:literal $(,)?
         }
     )*) => {$(
         $(#[$meta])*
@@ -49,6 +59,8 @@ macro_rules! texts {
         pub const fn $name(locale: $crate::domain::i18n::Locale) -> &'static str {
             match locale {
                 $crate::domain::i18n::Locale::En => $en,
+                $crate::domain::i18n::Locale::Pt => $pt,
+                $crate::domain::i18n::Locale::Es => $es,
             }
         }
     )*};
@@ -63,21 +75,27 @@ pub enum Locale {
     /// English, the language the program is written in and the fallback for every other one.
     #[default]
     En,
+    /// Portuguese, as written in Brazil.
+    Pt,
+    /// Spanish.
+    Es,
 }
 
 impl Locale {
     /// Every language, in the order they are listed to the user.
-    pub const ALL: [Self; 1] = [Self::En];
+    pub const ALL: [Self; 3] = [Self::En, Self::Pt, Self::Es];
 
     /// The two-letter code used in `ui.language` and `KLAUB_LANG`.
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
             Self::En => "en",
+            Self::Pt => "pt",
+            Self::Es => "es",
         }
     }
 
-    /// The language a locale tag such as `en`, `en_US.UTF-8` or `en-GB` asks for.
+    /// The language a locale tag such as `en`, `pt_BR.UTF-8` or `es-MX` asks for.
     ///
     /// Only the language part counts. `None` for a tag Klaub has no translation for, including
     /// `C` and `POSIX`.
@@ -126,6 +144,12 @@ mod tests {
         for tag in ["en", "EN", "en_US.UTF-8", "en-GB", " en_US@euro "] {
             assert_eq!(Locale::from_tag(tag), Some(Locale::En), "{tag}");
         }
+        for tag in ["pt", "pt_BR", "pt_BR.UTF-8", "pt-PT", "PT_br"] {
+            assert_eq!(Locale::from_tag(tag), Some(Locale::Pt), "{tag}");
+        }
+        for tag in ["es", "es_ES.UTF-8", "es-MX", "es_AR@euro"] {
+            assert_eq!(Locale::from_tag(tag), Some(Locale::Es), "{tag}");
+        }
         for tag in ["", "C", "POSIX", "xx_XX", "eng"] {
             assert_eq!(Locale::from_tag(tag), None, "{tag}");
         }
@@ -151,6 +175,14 @@ mod tests {
         assert_eq!(
             Locale::detect(&env(&[("KLAUB_LANG", "en"), ("LC_ALL", "fr_FR")])),
             Some(Locale::En)
+        );
+        assert_eq!(
+            Locale::detect(&env(&[("KLAUB_LANG", "pt"), ("LANG", "en_US")])),
+            Some(Locale::Pt)
+        );
+        assert_eq!(
+            Locale::detect(&env(&[("LC_MESSAGES", "es_ES.UTF-8"), ("LANG", "en_US")])),
+            Some(Locale::Es)
         );
     }
 

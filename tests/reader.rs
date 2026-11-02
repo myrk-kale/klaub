@@ -1120,3 +1120,135 @@ fn a_configured_theme_is_the_one_the_reader_starts_with() {
     let app = reader(session);
     assert_eq!(app.theme.name(), klaub::domain::config::Theme::Nord);
 }
+
+// ---- languages ------------------------------------------------------------------------------------
+
+/// A reader whose configuration asks for `locale`.
+fn reader_in(repo: &TempRepo, locale: klaub::domain::i18n::Locale) -> App {
+    let mut config = Config::default();
+    config.ui.language = locale.into();
+    let session = ReviewSession::open(
+        ports(repo, &config),
+        SnapshotRequest::worktree(repo.path()),
+        &config,
+        &OpenOptions::default(),
+    )
+    .unwrap();
+    reader(session)
+}
+
+#[test]
+fn the_reader_speaks_the_language_of_the_configuration() {
+    use klaub::domain::i18n::Locale;
+    let repo = changed_repo();
+    for (locale, queue, structure, help) in [
+        (Locale::En, "Queue", "Structure", "Help"),
+        (Locale::Pt, "Fila", "Estrutura", "Ajuda"),
+        (Locale::Es, "Cola", "Estructura", "Ayuda"),
+    ] {
+        let mut app = reader_in(&repo, locale);
+        assert_eq!(app.locale, locale);
+        let text = screen(&mut app, 140, 30);
+        assert!(text.contains(queue), "{locale:?} tab: {text}");
+        assert!(text.contains(structure), "{locale:?} tab: {text}");
+        press(&mut app, '?');
+        let text = screen(&mut app, 120, 60);
+        assert!(text.contains(help), "{locale:?} help: {text}");
+    }
+}
+
+#[test]
+fn a_translated_reader_shows_no_english_chrome() {
+    use klaub::domain::i18n::Locale;
+    let repo = changed_repo();
+    for locale in [Locale::Pt, Locale::Es] {
+        let mut app = reader_in(&repo, locale);
+        // The tab row; the panels below also quote analysis text, which stays in English.
+        let text = screen(&mut app, 140, 30);
+        let tabs = text.lines().nth(1).unwrap_or_default();
+        for english in ["Queue", "Structure", "Impact", "Comments", "Coverage"] {
+            assert!(
+                !tabs.split_whitespace().any(|word| word == english),
+                "{locale:?} still shows `{english}`: {tabs}"
+            );
+        }
+        press(&mut app, '?');
+        let help = screen(&mut app, 120, 60);
+        for english in ["Go to", "Next unreviewed", "Close the reader"] {
+            assert!(
+                !help.contains(english),
+                "{locale:?} help still shows `{english}`: {help}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_mode_and_overlay_draws_in_every_language_at_small_and_large_sizes() {
+    use klaub::domain::i18n::Locale;
+    let repo = changed_repo();
+    for locale in Locale::ALL {
+        for (width, height) in [(50, 10), (80, 24), (160, 50)] {
+            let mut app = reader_in(&repo, locale);
+            for mode in Mode::ALL {
+                app.go(mode);
+                let text = screen(&mut app, width, height);
+                assert!(
+                    !text.trim().is_empty(),
+                    "{locale:?} {mode:?} {width}x{height}"
+                );
+            }
+            app.go(Mode::Queue);
+            // Each key opens an overlay; the next one closes it again.
+            for opener in ['?', ':', '/', 'w', 'F', 'R', 'c'] {
+                press(&mut app, opener);
+                let _ = screen(&mut app, width, height);
+                handle_key(&mut app, key(KeyCode::Esc));
+                app.overlay = None;
+            }
+        }
+    }
+}
+
+#[test]
+fn the_palette_searches_the_names_of_the_current_language() {
+    use klaub::domain::i18n::Locale;
+    let repo = changed_repo();
+    let mut app = reader_in(&repo, Locale::Pt);
+    press(&mut app, ':');
+    type_word(&mut app, "abrir");
+    let text = screen(&mut app, 120, 40);
+    assert!(
+        text.contains("Abrir a unidade no arquivo inteiro"),
+        "{text}"
+    );
+    assert!(!text.contains("Open the unit"), "{text}");
+    handle_key(&mut app, key(KeyCode::Esc));
+
+    let mut app = reader_in(&repo, Locale::Es);
+    press(&mut app, ':');
+    type_word(&mut app, "abrir");
+    let text = screen(&mut app, 120, 40);
+    assert!(
+        text.contains("Abrir la unidad en el archivo completo"),
+        "{text}"
+    );
+}
+
+#[test]
+fn status_messages_use_the_language_too() {
+    use klaub::domain::i18n::Locale;
+    let repo = changed_repo();
+    let mut app = reader_in(&repo, Locale::Pt);
+    press(&mut app, 'r');
+    let (message, _) = app.status.clone().expect("marking says so");
+    assert!(message.starts_with("Marcada como revisada"), "{message}");
+    press(&mut app, 'r');
+    let (message, _) = app.status.clone().unwrap();
+    assert_eq!(message, "Marca removida.");
+
+    let mut app = reader_in(&repo, Locale::Es);
+    press(&mut app, 'r');
+    let (message, _) = app.status.clone().unwrap();
+    assert!(message.starts_with("Marcada como revisada"), "{message}");
+}

@@ -152,6 +152,10 @@ pub enum Language {
     Auto,
     /// English.
     En,
+    /// Portuguese (Brazil).
+    Pt,
+    /// Spanish.
+    Es,
 }
 
 impl Language {
@@ -161,6 +165,8 @@ impl Language {
         match self {
             Self::Auto => None,
             Self::En => Some(Locale::En),
+            Self::Pt => Some(Locale::Pt),
+            Self::Es => Some(Locale::Es),
         }
     }
 
@@ -178,6 +184,8 @@ impl From<Locale> for Language {
     fn from(locale: Locale) -> Self {
         match locale {
             Locale::En => Self::En,
+            Locale::Pt => Self::Pt,
+            Locale::Es => Self::Es,
         }
     }
 }

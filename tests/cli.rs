@@ -120,6 +120,7 @@ fn require_tmux(sandbox: &Sandbox) -> bool {
 #[test]
 fn prints_its_version() {
     cargo_bin_cmd!("klaub")
+        .env("KLAUB_LANG", "en")
         .arg("--version")
         .assert()
         .success()
@@ -137,6 +138,7 @@ fn version_json_is_pure_json() {
 #[test]
 fn help_lists_the_main_commands() {
     cargo_bin_cmd!("klaub")
+        .env("KLAUB_LANG", "en")
         .arg("--help")
         .assert()
         .success()
@@ -150,6 +152,7 @@ fn help_lists_the_main_commands() {
 #[test]
 fn no_arguments_shows_usage_and_fails() {
     cargo_bin_cmd!("klaub")
+        .env("KLAUB_LANG", "en")
         .assert()
         .failure()
         .stderr(predicate::str::contains("Usage"));
@@ -159,6 +162,7 @@ fn no_arguments_shows_usage_and_fails() {
 fn completions_are_generated() {
     for shell in ["bash", "zsh", "fish"] {
         cargo_bin_cmd!("klaub")
+            .env("KLAUB_LANG", "en")
             .args(["completions", shell])
             .assert()
             .success()
@@ -724,4 +728,96 @@ fn tests_run_runs_the_configured_command_for_the_review() {
         .success()
         .stdout(predicate::str::contains("ran:"))
         .stdout(predicate::str::contains("tests/test_app.py::test_add"));
+}
+
+// ---- languages ------------------------------------------------------------------------------------
+
+#[test]
+fn the_help_follows_the_language_of_the_environment() {
+    for (variable, value, heading, summary) in [
+        ("KLAUB_LANG", "pt", "Comandos:", "Abre o revisor"),
+        ("LANG", "es_ES.UTF-8", "Comandos:", "Abre el revisor"),
+        ("LC_ALL", "en_US.UTF-8", "Commands:", "Open the reviewer"),
+    ] {
+        let sandbox = Sandbox::new();
+        let mut command = sandbox.klaub();
+        // Start from an empty locale, whatever the machine running the tests uses.
+        for name in ["KLAUB_LANG", "LC_ALL", "LC_MESSAGES", "LANG"] {
+            command.env_remove(name);
+        }
+        command.env(variable, value);
+        let output = command.arg("--help").output().unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains(heading), "{variable}={value}: {text}");
+        assert!(text.contains(summary), "{variable}={value}: {text}");
+    }
+}
+
+#[test]
+fn a_language_the_program_does_not_speak_falls_back_to_english() {
+    let sandbox = Sandbox::new();
+    let output = sandbox
+        .klaub()
+        .env("KLAUB_LANG", "fr_FR.UTF-8")
+        .arg("--help")
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Commands:"), "{text}");
+}
+
+#[test]
+fn the_user_configuration_wins_over_the_environment() {
+    let sandbox = Sandbox::new();
+    std::fs::create_dir_all(sandbox.root.path().join("config")).unwrap();
+    std::fs::write(
+        sandbox.root.path().join("config/config.toml"),
+        "[ui]\nlanguage = \"pt\"\n",
+    )
+    .unwrap();
+    // `Sandbox::klaub` sets KLAUB_LANG=en, and the configuration still decides.
+    let output = sandbox.klaub().args(["session", "list"]).output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "nenhuma sessão"
+    );
+
+    std::fs::write(
+        sandbox.root.path().join("config/config.toml"),
+        "[ui]\nlanguage = \"auto\"\n",
+    )
+    .unwrap();
+    let output = sandbox.klaub().args(["session", "list"]).output().unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "no sessions"
+    );
+}
+
+#[test]
+fn a_machine_readable_report_stays_in_english_whatever_the_language() {
+    let sandbox = Sandbox::new();
+    let checks = doctor_checks(&sandbox, |command| {
+        command.env("KLAUB_LANG", "pt");
+    });
+    let grammars = check_named(&checks, "grammars").expect("a grammars check");
+    assert!(grammars["detail"].as_str().unwrap().contains("7 languages"));
+
+    let mut command = sandbox.klaub();
+    command.env("KLAUB_LANG", "pt").arg("doctor");
+    let text = String::from_utf8(command.output().unwrap().stdout).unwrap();
+    assert!(text.contains("7 linguagens"), "{text}");
+}
+
+#[test]
+fn errors_are_reported_in_the_language_too() {
+    let sandbox = Sandbox::new();
+    let mut command = sandbox.klaub();
+    command.env("KLAUB_LANG", "es").args(["session", "attach"]);
+    let output = command.output().unwrap();
+    assert!(!output.status.success());
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert!(text.contains("ninguna sesión en ejecución"), "{text}");
 }
