@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-02
+
 ### Added
 
 - **Portuguese and Spanish.** The reader, its prompts and status messages, `klaub doctor` and the other commands' diagnostics, and `--help` speak English, Portuguese (Brazil) or Spanish. `ui.language` takes `auto` (the default), `en`, `pt` or `es`; `auto` follows `KLAUB_LANG` and then `LC_ALL`, `LC_MESSAGES` and `LANG`, with English as the fallback. A language set in the user or project configuration wins over the environment. JSON output, exports and the text pasted into the agent stay in English. See [Languages](docs/internationalization.md).
