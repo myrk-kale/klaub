@@ -29,8 +29,9 @@ LIBEVENT_VERSION="2.1.13-stable"
 LIBEVENT_URL="https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VERSION}/libevent-${LIBEVENT_VERSION}.tar.gz"
 LIBEVENT_SHA256="f7e9383b8c0baa81b687e5b5eecc01beefaf1b19b64151d95ed61647fe7a315c"
 
-# macOS only: tmux insists on utf8proc (the system wcwidth is poor for emoji) and jemalloc
-# (macOS calloc has been seen not to zero memory) and refuses to configure without a choice.
+# macOS only: tmux insists on utf8proc (the system wcwidth is poor for emoji) and refuses to
+# configure without an allocator choice (see "macOS allocator" below; jemalloc is only built for
+# experiments).
 UTF8PROC_VERSION="2.12.0"
 UTF8PROC_URL="https://github.com/JuliaStrings/utf8proc/releases/download/v${UTF8PROC_VERSION}/utf8proc-${UTF8PROC_VERSION}.tar.gz"
 UTF8PROC_SHA256="a393fbef160835fb315bc3e91ba8d86f7a73a7cec9e6198b6c60b848b498bfeb"
@@ -126,24 +127,21 @@ log "building ncurses ${NCURSES_VERSION}"
   make install.libs install.includes >/dev/null
 )
 
-# macOS allocator: jemalloc, which tmux asks for there because the system calloc has been seen
-# not to zero memory, or the system allocator. On x86_64 macOS a tmux built with jemalloc 5.4 dies
-# with a segmentation fault in the forked child before it can exec the pane's command, with or
-# without jemalloc's zone allocator (observed on the macos-15-intel runner; the same source works
-# on Apple Silicon). That target therefore uses the system allocator. KLAUB_TMUX_MALLOC (jemalloc,
-# jemalloc-nozone or system) overrides the choice for experiments.
-case "${target}" in
-  x86_64-apple-darwin) default_malloc=system ;;
-  *) default_malloc=jemalloc ;;
-esac
+# macOS allocator: the system allocator. tmux asks for jemalloc on macOS because the system calloc
+# has been seen not to zero memory, but a tmux 3.8 built with jemalloc 5.4 exits unexpectedly
+# ("[server exited unexpectedly]") once a full-screen program such as Claude Code or Codex runs in
+# a pane and the client switches windows (Ctrl+B R, Ctrl+B A). It does so on Apple Silicon with
+# and without jemalloc's zone allocator, while the same tmux with the system allocator survives
+# (scripts/test-tmux-interactive.py reproduces both). On x86_64 macOS a jemalloc build died even
+# earlier, in the forked child. KLAUB_TMUX_MALLOC (system, jemalloc or jemalloc-nozone) overrides
+# the choice for experiments.
+default_malloc=system
 malloc_choice="${KLAUB_TMUX_MALLOC:-${default_malloc}}"
 tmux_flags=(--disable-utf8proc)
 if [ "$(uname -s)" = Darwin ]; then
   fetch "${UTF8PROC_URL}" "${UTF8PROC_SHA256}" "${work}/utf8proc.tar.gz"
-  fetch "${JEMALLOC_URL}" "${JEMALLOC_SHA256}" "${work}/jemalloc.tar.bz2"
-  mkdir -p "${work}/src/utf8proc" "${work}/src/jemalloc"
+  mkdir -p "${work}/src/utf8proc"
   tar -xzf "${work}/utf8proc.tar.gz" -C "${work}/src/utf8proc" --strip-components=1
-  tar -xjf "${work}/jemalloc.tar.bz2" -C "${work}/src/jemalloc" --strip-components=1
 
   log "building utf8proc ${UTF8PROC_VERSION}"
   (
@@ -157,6 +155,9 @@ if [ "$(uname -s)" = Darwin ]; then
   if [ "${malloc_choice}" = system ]; then
     tmux_flags=(--enable-utf8proc --disable-jemalloc)
   else
+    fetch "${JEMALLOC_URL}" "${JEMALLOC_SHA256}" "${work}/jemalloc.tar.bz2"
+    mkdir -p "${work}/src/jemalloc"
+    tar -xjf "${work}/jemalloc.tar.bz2" -C "${work}/src/jemalloc" --strip-components=1
     jemalloc_flags=(--disable-shared --enable-static)
     if [ "${malloc_choice}" = jemalloc-nozone ]; then
       jemalloc_flags+=(--disable-zone-allocator)
@@ -225,7 +226,9 @@ cp "${work}/src/libevent/LICENSE" "${out}/licenses/libevent-LICENSE"
 cp "${work}/src/ncurses/COPYING"  "${out}/licenses/ncurses-COPYING"
 if [ "$(uname -s)" = Darwin ]; then
   cp "${work}/src/utf8proc/LICENSE.md" "${out}/licenses/utf8proc-LICENSE.md"
-  cp "${work}/src/jemalloc/COPYING"    "${out}/licenses/jemalloc-COPYING"
+  if [ "${malloc_choice}" != system ]; then
+    cp "${work}/src/jemalloc/COPYING" "${out}/licenses/jemalloc-COPYING"
+  fi
 fi
 
 echo
