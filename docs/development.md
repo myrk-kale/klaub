@@ -39,7 +39,7 @@ Release builds embed a hash-verified tmux. To produce one locally, run `scripts/
 export KLAUB_TMUX_PATH="$(command -v tmux)"
 cargo build
 target/debug/klaub wrap -- sh        # any interactive program works as a stand-in agent
-# Ctrl+B R  review window   Ctrl+B A  back to the agent   Ctrl+B d  detach
+# Ctrl+B R  review window   Ctrl+B A  back to the agent   Ctrl+B d  detach   Ctrl+B Q  end the session
 target/debug/klaub session list
 target/debug/klaub session kill --yes <id>
 ```

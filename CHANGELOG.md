@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `Prefix+Q` ends the whole session, agent included, after a `y/n` confirmation. `Prefix+d` only detaches and leaves the agent running.
+
+### Fixed
+
+- `Prefix+r` and `Prefix+a` open the reviewer and go back to the agent like `Prefix+R` and `Prefix+A`; before, only the capital letters were bound.
+
 ## [0.6.1] - 2026-11-02
 
 ### Fixed

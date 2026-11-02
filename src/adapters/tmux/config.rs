@@ -26,7 +26,8 @@ pub struct SessionConfig<'a> {
 
 /// The help shown by `Prefix ?`.
 pub const HELP_TEXT: &str = "klaub  Prefix+R review  Prefix+A agent  Prefix+I impact  Prefix+C comments  \
-Prefix+T tests  Prefix+B brief  Prefix+L flow  Prefix+d detach  (Prefix is Ctrl+B unless configured)";
+Prefix+T tests  Prefix+B brief  Prefix+L flow  Prefix+d detach  Prefix+Q quit  \
+(Prefix is Ctrl+B unless configured; R and A also work in lower case)";
 
 /// Checks a tmux key name such as `C-b`, `C-Space` or `M-a`.
 pub fn validate_prefix(prefix: &str) -> Result<()> {
@@ -66,6 +67,7 @@ pub fn configuration(spec: &SessionConfig<'_>) -> Result<Vec<Vec<String>>> {
     let focus =
         |target: &str| klaub_shell(spec.klaub_exe, &["session", "focus", "--id", id, target]);
     let reap = klaub_shell(spec.klaub_exe, &["session", "reap", "--id", id]);
+    let quit = klaub_shell(spec.klaub_exe, &["session", "kill", "--yes", id]);
 
     let mut commands = vec![
         command(&["set-option", "-g", "escape-time", "10"]),
@@ -95,9 +97,9 @@ pub fn configuration(spec: &SessionConfig<'_>) -> Result<Vec<Vec<String>>> {
             "set-option",
             "-g",
             "status-right",
-            " Prefix+R review  Prefix+A agent  Prefix+? help ",
+            " Prefix+R review  Prefix+A agent  Prefix+Q quit  Prefix+? help ",
         ]),
-        command(&["set-option", "-g", "status-right-length", "64"]),
+        command(&["set-option", "-g", "status-right-length", "80"]),
         command(&[
             "set-option",
             "-g",
@@ -132,23 +134,45 @@ pub fn configuration(spec: &SessionConfig<'_>) -> Result<Vec<Vec<String>>> {
         "@klaub-reap".into(),
         reap,
     ]);
+    commands.push(vec![
+        "set-option".into(),
+        "-g".into(),
+        "@klaub-quit".into(),
+        quit,
+    ]);
+    // R and A are also bound in lower case, so Caps Lock and Shift are not needed.
+    for key in ["R", "r"] {
+        commands.push(command(&[
+            "bind-key",
+            "-T",
+            "prefix",
+            key,
+            "run-shell",
+            "-b",
+            "#{@klaub-focus-review}",
+        ]));
+    }
+    for key in ["A", "a"] {
+        commands.push(command(&[
+            "bind-key",
+            "-T",
+            "prefix",
+            key,
+            "run-shell",
+            "-b",
+            "#{@klaub-focus-agent}",
+        ]));
+    }
+    // Ends the whole session (the agent included), which `Prefix+d` does not: that only detaches.
     commands.push(command(&[
         "bind-key",
         "-T",
         "prefix",
-        "R",
-        "run-shell",
-        "-b",
-        "#{@klaub-focus-review}",
-    ]));
-    commands.push(command(&[
-        "bind-key",
-        "-T",
-        "prefix",
-        "A",
-        "run-shell",
-        "-b",
-        "#{@klaub-focus-agent}",
+        "Q",
+        "confirm-before",
+        "-p",
+        "End the klaub session and its agent? (y/n)",
+        "run-shell -b \"#{@klaub-quit}\"",
     ]));
     commands.push(command(&[
         "bind-key",
@@ -235,6 +259,24 @@ mod tests {
                 .any(|c| c == "bind-key -T prefix A run-shell -b #{@klaub-focus-agent}")
         );
         assert!(flat.iter().any(|c| c == "set-option -g @klaub-focus-review /usr/bin/klaub session focus --id ses_abc123 review"));
+        for key in ["r", "a"] {
+            assert!(
+                flat.iter().any(|c| c.starts_with(&format!(
+                    "bind-key -T prefix {key} run-shell -b #{{@klaub-focus-"
+                ))),
+                "Prefix+{key} works in lower case"
+            );
+        }
+        assert!(
+            flat.iter()
+                .any(|c| c
+                    == "set-option -g @klaub-quit /usr/bin/klaub session kill --yes ses_abc123"),
+            "Prefix+Q ends the session"
+        );
+        assert!(
+            flat.iter()
+                .any(|c| c.starts_with("bind-key -T prefix Q confirm-before"))
+        );
         assert!(
             flat.iter()
                 .any(|c| c == "bind-key -T prefix I send-keys -t review F5"),
