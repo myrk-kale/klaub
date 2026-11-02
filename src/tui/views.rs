@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use crate::app::CodeLine;
 use crate::domain::finding::{QueueItem, Temporal};
 use crate::domain::flow::FlowState;
-use crate::domain::review::Version;
+use crate::domain::review::{CommentStatus, CriterionStatus, FollowupStatus, Version};
 use crate::domain::semantic::LineMark;
 use crate::domain::testing::EvidenceStatus;
 use ratatui::Frame;
@@ -15,11 +15,15 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 use crate::tui::app::{App, ImpactRowKind, Mode, TreeKind};
 use crate::tui::labels;
-use crate::tui::theme::{Theme, mark_symbol};
-use crate::tui::widgets::{bar, clean, draw_list, fit, fit_tail, pad, percent, wrap};
+use crate::tui::theme::{Chip, Theme, mark_symbol};
+use crate::tui::widgets::{
+    chip_span, clean, draw_list, empty_state, fill_line, fit, fit_tail, gauge, inset, pad, panel,
+    panel_with, percent, scrollbar, wrap,
+};
 
 /// Draws the main area for the current mode.
 pub(crate) fn draw_mode(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
@@ -37,28 +41,23 @@ pub(crate) fn draw_mode(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     }
 }
 
-fn header(frame: &mut Frame<'_>, area: Rect, text: &str, theme: Theme) {
+/// A one-line rule across `area`, to separate a detail pane from the list above it.
+fn rule(frame: &mut Frame<'_>, area: Rect, theme: Theme) {
     let line = Line::from(Span::styled(
-        fit(text, usize::from(area.width)),
-        theme.strong(),
+        "─".repeat(usize::from(area.width)),
+        theme.border(),
     ));
-    frame.render_widget(Paragraph::new(line), area);
+    frame.render_widget(Paragraph::new(line), Rect { height: 1, ..area });
 }
 
-fn split_header(area: Rect) -> (Rect, Rect) {
-    let parts = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
-        .split(area);
-    (parts[0], parts[1])
-}
-
-fn empty(frame: &mut Frame<'_>, area: Rect, text: &str, theme: Theme) {
-    let lines: Vec<Line<'static>> = wrap(text, usize::from(area.width).saturating_sub(2))
-        .into_iter()
-        .map(|l| Line::from(Span::styled(l, theme.dim())))
-        .collect();
-    frame.render_widget(Paragraph::new(lines), area);
+/// The status of a comment as a coloured word.
+fn comment_status_style(status: CommentStatus, theme: Theme) -> Style {
+    match status {
+        CommentStatus::Draft => theme.dim(),
+        CommentStatus::Prepared => theme.accent(),
+        CommentStatus::Submitted | CommentStatus::Addressed => theme.good(),
+        CommentStatus::Unresolved | CommentStatus::Stale => theme.warn(),
+    }
 }
 
 // ---- queue ------------------------------------------------------------------------------------------------
@@ -67,57 +66,51 @@ fn queue(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
     let total = app.session.analysis().queue.len();
     let visible = app.visible_queue().len();
-    let (head, body) = split_header(area);
     let summary = if app.filters.any() {
         format!(" · filter: {}", app.filters.summary())
     } else {
         String::new()
     };
-    header(
-        frame,
-        head,
-        &format!("Queue · {visible} of {total} unit(s){summary}"),
-        theme,
-    );
+    let title = format!("Queue · {visible} of {total} unit(s){summary}");
 
     if visible == 0 {
+        let body = panel(frame, area, &title, "", theme);
         let text = if total == 0 {
             "Nothing changed relative to the base: there is nothing to review."
         } else {
             "No unit matches the filters. x clears them."
         };
-        empty(frame, body, text, theme);
+        empty_state(frame, body, text, theme);
         return;
     }
-    let wide = body.width >= 100;
+    let wide = area.width >= 100;
     let (list_area, detail_area) = if wide {
         let parts = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(body);
+            .split(area);
         (parts[0], Some(parts[1]))
     } else {
-        (body, None)
+        (area, None)
     };
-    let width = usize::from(list_area.width);
+    let list_inner = panel(frame, list_area, &title, "", theme);
+    let width = usize::from(list_inner.width);
     let rows: Vec<Line<'static>> = app
         .visible_queue()
         .iter()
         .map(|item| queue_row(app, item, width))
         .collect();
-    draw_list(frame, list_area, &mut app.queue_view, rows, theme);
+    draw_list(frame, list_inner, &mut app.queue_view, rows, theme);
     if let Some(detail) = detail_area {
+        let inner = panel(frame, detail, "Details", "", theme);
         let selected = app
             .queue_selection()
             .and_then(|u| app.session.analysis().item(&u));
         if let Some(item) = selected {
+            let inner = inset(inner, 1);
             frame.render_widget(
-                Paragraph::new(explain_lines(
-                    app,
-                    item,
-                    usize::from(detail.width).saturating_sub(2),
-                )),
-                detail,
+                Paragraph::new(explain_lines(app, item, usize::from(inner.width))),
+                inner,
             );
         }
     }
@@ -127,31 +120,34 @@ fn queue_row(app: &App, item: &QueueItem, width: usize) -> Line<'static> {
     let theme = app.theme;
     let reviewed = app.session.review().is_reviewed(&item.unit.id);
     let comments = app.session.comments_on(&item.unit.id).len();
-    let rest = width.saturating_sub(8);
+    // One column for the selection bar, then the check, the priority chip and a space.
+    let rest = width.saturating_sub(9);
     let label_w = (rest * 32 / 100).max(12);
     let kind_w = 10;
     let narrow = width < 64;
     let tags: Vec<&str> = item.tags.iter().map(|t| t.label()).collect();
     let tags_w = if narrow { 0 } else { (rest * 22 / 100).max(8) };
     let file_w = rest.saturating_sub(label_w + kind_w + tags_w + 3);
+    let label_style = if reviewed { theme.dim() } else { theme.text() };
     let mut spans = vec![
         Span::styled(if reviewed { "✓ " } else { "  " }, theme.good()),
-        Span::styled(
-            format!("{} ", item.priority.label()),
-            theme.priority(item.priority),
-        ),
-        Span::raw(pad(&clean(&item.unit.label), label_w)),
+        chip_span(item.priority.label(), theme.priority_chip(item.priority)),
+        Span::raw(" "),
+        Span::styled(pad(&clean(&item.unit.label), label_w), label_style),
         Span::styled(
             format!(" {}", pad(item.change.label(), kind_w)),
             theme.dim(),
         ),
     ];
     if !narrow {
-        spans.push(Span::raw(format!(" {}", pad(&tags.join(","), tags_w))));
+        spans.push(Span::styled(
+            format!(" {}", pad(&tags.join(","), tags_w)),
+            theme.key().remove_modifier(Modifier::BOLD),
+        ));
     }
     spans.push(Span::styled(
         format!(" {}", fit(&clean(item.unit.file.as_str()), file_w)),
-        theme.dim(),
+        theme.faint(),
     ));
     if comments > 0 {
         spans.push(Span::styled(format!(" ✎{comments}"), theme.warn()));
@@ -162,18 +158,21 @@ fn queue_row(app: &App, item: &QueueItem, width: usize) -> Line<'static> {
 /// The reasons behind a priority, one line each.
 pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Line<'static>> {
     let theme = app.theme;
-    let mut lines = vec![Line::from(Span::styled(
-        format!(
-            "{} · score {} · {}",
-            item.priority.label(),
-            item.score.total(),
-            clean(&item.unit.label)
+    let mut lines = vec![Line::from(vec![
+        chip_span(item.priority.label(), theme.priority_chip(item.priority)),
+        Span::styled(
+            format!(
+                " score {} · {}",
+                item.score.total(),
+                clean(&item.unit.label)
+            ),
+            theme.strong(),
         ),
-        theme.priority(item.priority),
-    ))];
+    ])];
+    lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "Why this priority",
-        theme.strong(),
+        theme.accent(),
     )));
     for part in item.score.parts.iter().filter(|p| p.points != 0) {
         let text = format!(
@@ -183,10 +182,23 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
             clean(&part.reason)
         );
         for (i, chunk) in wrap(&text, width).into_iter().enumerate() {
-            lines.push(Line::from(format!(
-                "{}{chunk}",
-                if i == 0 { "  " } else { "      " }
-            )));
+            let points = part.points;
+            let style = match points {
+                1.. => theme.warn(),
+                _ => theme.good(),
+            };
+            let indent = if i == 0 { "  " } else { "      " };
+            if i == 0 {
+                // The signed number is the part to scan; the reason is read after it.
+                let (number, reason) = chunk.split_once(' ').unwrap_or((&chunk, ""));
+                lines.push(Line::from(vec![
+                    Span::raw(indent),
+                    Span::styled(number.to_owned(), style.add_modifier(Modifier::BOLD)),
+                    Span::raw(format!(" {reason}")),
+                ]));
+            } else {
+                lines.push(Line::from(format!("{indent}{chunk}")));
+            }
         }
     }
     if item.score.parts.iter().all(|p| p.points == 0) {
@@ -196,7 +208,8 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
         )));
     }
     if !item.findings.is_empty() {
-        lines.push(Line::from(Span::styled("Findings", theme.strong())));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled("Findings", theme.accent())));
         for (number, finding) in item.findings.iter().enumerate() {
             let temporal = match finding.temporal {
                 Temporal::Introduced => "introduced",
@@ -267,16 +280,16 @@ pub(crate) fn explain_lines(app: &App, item: &QueueItem, width: usize) -> Vec<Li
 
 fn structure(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let (head, body) = split_header(area);
-    header(
+    let body = panel(
         frame,
-        head,
-        "Structure · modules → files → symbols (+ / - to open or close levels)",
+        area,
+        "Structure",
+        "modules → files → symbols (+ / - to open or close levels)",
         theme,
     );
     let tree = app.tree_rows();
     if tree.is_empty() {
-        empty(
+        empty_state(
             frame,
             body,
             "Nothing to show with the current filters.",
@@ -304,18 +317,28 @@ fn structure(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             let priority = row
                 .priority
                 .map_or_else(|| "  ".to_owned(), |p| p.label().to_owned());
-            let indent = "  ".repeat(row.depth);
-            let text = fit(
-                &format!("{indent}{glyph}{}", clean(&row.label)),
-                width.saturating_sub(progress.len() + 6),
+            let indent = "│ ".repeat(row.depth);
+            let room = width.saturating_sub(progress.len() + 6);
+            let label = fit(
+                &format!("{glyph}{}", clean(&row.label)),
+                room.saturating_sub(indent.width()),
             );
+            let label_style = if matches!(row.kind, TreeKind::Unit(_)) {
+                theme.text()
+            } else {
+                theme.strong()
+            };
             Line::from(vec![
                 Span::styled(
                     format!("{priority} "),
                     row.priority
                         .map_or_else(|| theme.dim(), |p| theme.priority(p)),
                 ),
-                Span::raw(pad(&text, width.saturating_sub(progress.len() + 6))),
+                Span::styled(indent.clone(), theme.faint()),
+                Span::styled(
+                    pad(&label, room.saturating_sub(indent.width())),
+                    label_style,
+                ),
                 Span::styled(progress, theme.dim()),
             ])
         })
@@ -328,23 +351,19 @@ fn structure(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
     let Some(view) = app.code.view.clone() else {
-        empty(
+        let body = panel(frame, area, "Code", "", theme);
+        empty_state(
             frame,
-            area,
+            body,
             "No code is open. Pick a unit in the Queue and press Enter.",
             theme,
         );
         return;
     };
-    let parts = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
-        .split(area);
-    let (head, body) = (parts[0], parts[1]);
 
-    let side = match view.version {
-        Version::After => "NEW CODE",
-        Version::Before => "OLD CODE",
+    let (side, side_chip) = match view.version {
+        Version::After => ("NEW CODE", Chip::Good),
+        Version::Before => ("OLD CODE", Chip::Warn),
     };
     let place = view
         .symbol_lines
@@ -355,46 +374,31 @@ fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         app.current_item()
             .map_or_else(|| "symbol".to_owned(), |i| clean(&i.unit.label)),
     );
-    let width = usize::from(head.width);
-    let badge = format!(" [{side}]");
-    let first = Line::from(vec![
-        Span::styled(
-            fit(&title, width.saturating_sub(badge.len())),
-            theme.strong(),
-        ),
-        Span::styled(
-            badge,
-            if view.version == Version::Before {
-                theme.warn()
-            } else {
-                theme.good()
-            },
-        ),
-    ]);
-    let second = match &view.notice {
-        Some(notice) => Line::from(Span::styled(fit(&clean(notice), width), theme.warn())),
-        None => {
-            let toggle = if view.other_version_exists {
-                format!("{} old/new · ", app.keymap.key_for("toggle_version"))
-            } else {
-                String::new()
-            };
-            Line::from(Span::styled(
-                fit(
-                    &format!(
-                        "{toggle}{} {} changes · {} comment · {} select lines · Enter impact",
-                        app.keymap.key_for("previous_change"),
-                        app.keymap.key_for("next_change"),
-                        app.keymap.key_for("comment"),
-                        app.keymap.key_for("select_lines"),
+    let badge = chip_span(side, theme.chip(side_chip));
+    let inner = panel_with(frame, area, &title, "", vec![badge], theme);
+
+    // A notice (the file is binary, the version is missing...) takes the first row.
+    let notice_h = u16::from(view.notice.is_some());
+    let parts = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(notice_h), Constraint::Min(1)])
+        .split(inner);
+    if let Some(notice) = &view.notice {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" ▲ ", theme.warn()),
+                Span::styled(
+                    fit(
+                        &clean(notice),
+                        usize::from(parts[0].width).saturating_sub(3),
                     ),
-                    width,
+                    theme.warn(),
                 ),
-                theme.dim(),
-            ))
-        }
-    };
-    frame.render_widget(Paragraph::new(vec![first, second]), head);
+            ])),
+            parts[0],
+        );
+    }
+    let body = parts[1];
 
     if view.lines.is_empty() {
         return;
@@ -430,32 +434,51 @@ fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .skip(app.code.offset)
         .take(usize::from(text_area.height))
         .map(|(i, line)| {
+            let is_cursor = i == app.code.cursor;
             let mark = mark_symbol(line.mark);
             let dot = if commented.contains(&line.number) {
                 '●'
             } else {
                 ' '
             };
-            let mut spans = vec![Span::styled(
-                format!("{mark}{:>number_w$} {dot}│", line.number),
-                theme.mark(line.mark).add_modifier(if line.in_symbol {
-                    Modifier::empty()
-                } else {
-                    Modifier::DIM
-                }),
-            )];
-            spans.extend(code_spans(line, app.code.hscroll, text_w, theme));
-            let mut out = Line::from(spans);
-            if i == app.code.cursor {
+            let number_style = if is_cursor {
+                theme.accent()
+            } else {
+                theme.faint()
+            };
+            let outside = if line.in_symbol {
+                Modifier::empty()
+            } else {
+                Modifier::DIM
+            };
+            let mut spans = vec![
+                Span::styled(mark.to_string(), theme.mark(line.mark)),
+                Span::styled(
+                    format!("{:>number_w$} ", line.number),
+                    number_style.add_modifier(outside),
+                ),
+                Span::styled(dot.to_string(), theme.warn()),
+                Span::styled("│", theme.border()),
+            ];
+            spans.extend(
+                code_spans(line, app.code.hscroll, text_w, theme)
+                    .into_iter()
+                    .map(|span| Span::styled(span.content, span.style.add_modifier(outside))),
+            );
+            let mut out = fill_line(
+                Line::from(spans).style(theme.mark_bg(line.mark)),
+                usize::from(text_area.width),
+            );
+            if is_cursor {
                 out = out.style(theme.selected());
             } else if selection.is_some_and(|(a, b)| (a..=b).contains(&i)) {
-                out =
-                    out.style(Style::default().add_modifier(Modifier::UNDERLINED | Modifier::BOLD));
+                out = out.style(theme.selection());
             }
             out
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), text_area);
+    scrollbar(frame, text_area, view.lines.len(), app.code.offset, theme);
 
     if footer_h > 0 {
         let first = &at_cursor[0];
@@ -464,18 +487,19 @@ fn code(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         } else {
             String::new()
         };
+        let width = usize::from(footer_area.width);
         let text = vec![
-            Line::from(Span::styled(
-                format!(
-                    "● {}{more}",
-                    fit(&first.0, usize::from(footer_area.width).saturating_sub(12))
+            Line::from(vec![
+                Span::styled("▌ ", theme.warn()),
+                Span::styled(
+                    format!("● {}{more}", fit(&first.0, width.saturating_sub(14))),
+                    theme.warn(),
                 ),
-                theme.warn(),
-            )),
-            Line::from(Span::styled(
-                fit(&first.1, usize::from(footer_area.width)),
-                theme.dim(),
-            )),
+            ]),
+            Line::from(vec![
+                Span::styled("▌ ", theme.warn()),
+                Span::styled(fit(&first.1, width.saturating_sub(2)), theme.dim()),
+            ]),
         ];
         frame.render_widget(Paragraph::new(text), footer_area);
     }
@@ -554,12 +578,11 @@ fn code_spans(line: &CodeLine, hscroll: usize, width: usize, theme: Theme) -> Ve
 
 fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let (head, body) = split_header(area);
     let subject = app.impact_subject().map_or_else(
         || "no symbol".to_owned(),
         |k| clean(&format!("{} ({})", k.qualified_name, k.file)),
     );
-    header(frame, head, &format!("Impact · {subject}"), theme);
+    let body = panel(frame, area, &format!("Impact · {subject}"), "", theme);
     let width = usize::from(body.width);
     let rows: Vec<Line<'static>> = app
         .impact
@@ -567,16 +590,23 @@ fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .iter()
         .map(|row| match row.kind {
             ImpactRowKind::Heading => {
-                Line::from(Span::styled(fit(&row.text, width), theme.strong()))
+                Line::from(Span::styled(fit(&row.text, width), theme.accent()))
             }
             ImpactRowKind::Note => Line::from(Span::styled(fit(&row.text, width), theme.dim())),
             ImpactRowKind::Entrypoint | ImpactRowKind::Caller | ImpactRowKind::Callee => {
                 let mark = row.origin.map_or(' ', labels::origin_mark);
                 let origin = row.origin.map_or("", labels::origin);
                 let text = fit(&row.text, width.saturating_sub(origin.len() + 6));
+                let mark_style = match row.origin {
+                    Some(crate::domain::graph::EdgeOrigin::Resolved) => theme.good(),
+                    Some(crate::domain::graph::EdgeOrigin::Heuristic) => theme.warn(),
+                    _ => theme.dim(),
+                };
                 Line::from(vec![
-                    Span::raw(format!("  {mark} {text}")),
-                    Span::styled(format!("  {origin}"), theme.dim()),
+                    Span::raw("  "),
+                    Span::styled(mark.to_string(), mark_style),
+                    Span::raw(format!(" {text}")),
+                    Span::styled(format!("  {origin}"), theme.faint()),
                 ])
             }
         })
@@ -589,19 +619,19 @@ fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 fn comments(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
     let total = app.session.review().comments.len();
-    let (head, body) = split_header(area);
-    header(
+    let body = panel(
         frame,
-        head,
+        area,
+        &format!("Comments · {total}"),
         &format!(
-            "Comments · {total}  (Enter opens the code, {} edit, {} delete drafts)",
+            "(Enter opens the code, {} edit, {} delete drafts)",
             app.keymap.key_for("edit_comment"),
             app.keymap.key_for("delete_comment"),
         ),
         theme,
     );
     if total == 0 {
-        empty(
+        empty_state(
             frame,
             body,
             "No comments yet. Open some code and press c.",
@@ -625,25 +655,38 @@ fn comments(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                 .anchor
                 .line_range
                 .map_or_else(String::new, |(a, _)| format!(":{a}"));
-            let severity = c.severity.map_or("  ", |s| s.label());
             let status = labels::comment_status(c.status);
-            let warn = if matches!(c.status, crate::domain::review::CommentStatus::Stale) {
+            let warn = if matches!(c.status, CommentStatus::Stale) {
                 "⚠ "
             } else {
                 ""
             };
-            let head = format!(
-                "{warn}{} {severity} {}{place} ",
-                pad(status, 9),
-                clean(c.anchor.file_path.as_str())
+            let severity = c.severity.map_or_else(
+                || Span::raw("  "),
+                |s| Span::styled(s.label().to_owned(), theme.priority(s)),
             );
+            let file = format!(" {}{place} ", clean(c.anchor.file_path.as_str()));
+            let left_w = width / 2;
+            let fixed = warn.width() + 10 + 2;
             Line::from(vec![
-                Span::styled(fit(&head, width / 2), theme.dim()),
-                Span::raw(fit(&clean(&c.text), width.saturating_sub(width / 2 + 1))),
+                Span::styled(warn, theme.warn()),
+                Span::styled(pad(status, 9), comment_status_style(c.status, theme)),
+                Span::raw(" "),
+                severity,
+                Span::styled(fit(&file, left_w.saturating_sub(fixed)), theme.faint()),
+                Span::raw(fit(
+                    &clean(&c.text),
+                    width.saturating_sub(left_w.max(fixed) + 1),
+                )),
             ])
         })
         .collect();
     draw_list(frame, parts[0], &mut app.comments_view, rows, theme);
+    if detail_h > 0
+        && let Some(detail) = Some(parts[1])
+    {
+        rule(frame, detail, theme);
+    }
     if detail_h > 0
         && let Some(c) = app
             .session
@@ -672,7 +715,12 @@ fn comments(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         {
             lines.push(Line::from(chunk));
         }
-        frame.render_widget(Paragraph::new(lines), parts[1]);
+        let below_rule = Rect {
+            y: parts[1].y + 1,
+            height: parts[1].height.saturating_sub(1),
+            ..parts[1]
+        };
+        frame.render_widget(Paragraph::new(lines), inset(below_rule, 1));
     }
 }
 
@@ -685,17 +733,17 @@ fn clean_multiline(text: &str) -> String {
 
 fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let (head, body) = split_header(area);
-    header(
+    let body = panel(
         frame,
-        head,
-        "Context · intent and acceptance criteria (you decide what is verified)",
+        area,
+        "Context",
+        "intent and acceptance criteria (you decide what is verified)",
         theme,
     );
     let brief = app.session.brief().clone();
     let width = usize::from(body.width);
     let mut rows: Vec<Line<'static>> = vec![Line::from(vec![
-        Span::styled("Intent  ", theme.strong()),
+        Span::styled("Intent  ", theme.accent()),
         Span::raw(fit(
             &brief
                 .intent_summary
@@ -708,7 +756,11 @@ fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         rows.push(Line::from(vec![
             Span::styled(
                 format!("{} ", labels::criterion_mark(criterion.status)),
-                theme.good(),
+                match criterion.status {
+                    CriterionStatus::Verified => theme.good(),
+                    CriterionStatus::Pending => theme.warn(),
+                    CriterionStatus::NotChecked | CriterionStatus::NotApplicable => theme.dim(),
+                },
             ),
             Span::raw(fit(&clean(&criterion.text), width.saturating_sub(18))),
             Span::styled(
@@ -724,6 +776,7 @@ fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .split(body);
     draw_list(frame, parts[0], &mut app.context_view, rows, theme);
     if detail_h > 0 {
+        rule(frame, parts[1], theme);
         let mut lines = Vec::new();
         let selected = app.context_view.selected;
         let text = if selected == 0 {
@@ -746,9 +799,14 @@ fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         }
         lines.push(Line::from(Span::styled(
             "Text from a brief file is untrusted data. Enter changes status, a adds a criterion, i edits the intent.",
-            theme.dim(),
+            theme.faint(),
         )));
-        frame.render_widget(Paragraph::new(lines), parts[1]);
+        let below_rule = Rect {
+            y: parts[1].y + 1,
+            height: parts[1].height.saturating_sub(1),
+            ..parts[1]
+        };
+        frame.render_widget(Paragraph::new(lines), inset(below_rule, 1));
     }
 }
 
@@ -756,33 +814,34 @@ fn context(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let (head, body) = split_header(area);
     let Some(unit) = app.unit.clone() else {
-        header(frame, head, "Tests", theme);
-        empty(frame, body, "Select a unit in the Queue first.", theme);
+        let body = panel(frame, area, "Tests", "", theme);
+        empty_state(frame, body, "Select a unit in the Queue first.", theme);
         return;
     };
     let label = app
         .current_item()
         .map_or_else(String::new, |i| clean(&i.unit.label));
-    header(
+    let body = panel(
         frame,
-        head,
-        &format!("Tests · {label}  (X runs them after asking, U reloads reports)"),
+        area,
+        &format!("Tests · {label}"),
+        "(X runs them after asking, U reloads reports)",
         theme,
     );
+    let body = inset(body, 1);
     let panel = app.session.test_panel(&unit);
     let width = usize::from(body.width).saturating_sub(2);
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let status_style = match panel.status {
-        EvidenceStatus::Passed => theme.good(),
-        EvidenceStatus::Failed => theme.error(),
-        EvidenceStatus::Stale | EvidenceStatus::NoAssociationFound => theme.warn(),
-        EvidenceStatus::NotRun => theme.dim(),
+    let status_chip = match panel.status {
+        EvidenceStatus::Passed => Chip::Good,
+        EvidenceStatus::Failed => Chip::Bad,
+        EvidenceStatus::Stale | EvidenceStatus::NoAssociationFound => Chip::Warn,
+        EvidenceStatus::NotRun => Chip::Quiet,
     };
     lines.push(Line::from(vec![
         Span::raw("Evidence: "),
-        Span::styled(panel.status.label().to_owned(), status_style),
+        chip_span(panel.status.label(), theme.chip(status_chip)),
     ]));
     let explanation = match panel.status {
         EvidenceStatus::NoAssociationFound => {
@@ -802,7 +861,7 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     }
     if !panel.links.is_empty() {
         lines.push(Line::raw(""));
-        lines.push(Line::from(Span::styled("Associated tests", theme.strong())));
+        lines.push(Line::from(Span::styled("Associated tests", theme.accent())));
         for link in &panel.links {
             lines.push(Line::from(format!(
                 "  {} ({}:{}) via {} · {:.0}%",
@@ -816,7 +875,7 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     }
     if !panel.results.is_empty() {
         lines.push(Line::raw(""));
-        lines.push(Line::from(Span::styled("Imported results", theme.strong())));
+        lines.push(Line::from(Span::styled("Imported results", theme.accent())));
         for result in &panel.results {
             let style = if matches!(result.outcome, crate::domain::testing::TestOutcome::Failed) {
                 theme.error()
@@ -876,7 +935,7 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         lines.push(Line::raw(""));
         lines.push(Line::from(Span::styled(
             "Output of the last run (tail)",
-            theme.strong(),
+            theme.accent(),
         )));
         for line in output
             .lines()
@@ -903,19 +962,19 @@ fn tests(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn followup(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let (head, body) = split_header(area);
     let comments: Vec<_> = app.followups().into_iter().cloned().collect();
-    header(
+    let body = panel(
         frame,
-        head,
+        area,
         &format!(
-            "Follow-up · {} comment(s) from the previous round  (y resolved · p partial · u unresolved · X regression)",
+            "Follow-up · {} comment(s) from the previous round",
             comments.len()
         ),
+        "(y resolved · p partial · u unresolved · X regression)",
         theme,
     );
     if comments.is_empty() {
-        empty(
+        empty_state(
             frame,
             body,
             "No comments were carried over. After you hand feedback to the agent and it changes the code, opening a new review continues from here.",
@@ -932,26 +991,25 @@ fn followup(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                 .line_range
                 .map_or_else(String::new, |(a, _)| format!(":{a}"));
             let confidence = format!("{:.0}%", c.anchor_confidence.value() * 100.0);
-            let head = format!(
-                "{} {} {}{place} ({confidence}) ",
-                pad(c.followup_status.label(), 10),
+            let status_style = match c.followup_status {
+                FollowupStatus::Resolved => theme.good(),
+                FollowupStatus::Stale | FollowupStatus::Regression => theme.error(),
+                FollowupStatus::Partial | FollowupStatus::Unresolved => theme.warn(),
+                FollowupStatus::Pending => theme.dim(),
+            };
+            let left_w = width / 2;
+            let tail = format!(
+                " {} {}{place} ({confidence}) ",
                 pad(labels::comment_status(c.status), 9),
                 clean(c.anchor.file_path.as_str())
             );
             Line::from(vec![
-                Span::styled(
-                    fit(&head, width / 2),
-                    if matches!(
-                        c.followup_status,
-                        crate::domain::review::FollowupStatus::Stale
-                            | crate::domain::review::FollowupStatus::Regression
-                    ) {
-                        theme.warn()
-                    } else {
-                        theme.dim()
-                    },
-                ),
-                Span::raw(fit(&clean(&c.text), width.saturating_sub(width / 2 + 1))),
+                Span::styled(pad(c.followup_status.label(), 10), status_style),
+                Span::styled(fit(&tail, left_w.saturating_sub(10)), theme.faint()),
+                Span::raw(fit(
+                    &clean(&c.text),
+                    width.saturating_sub(left_w.max(10) + 1),
+                )),
             ])
         })
         .collect();
@@ -962,34 +1020,39 @@ fn followup(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let (head, body) = split_header(area);
     let cov = app.session.coverage();
-    header(
+    let body = panel(
         frame,
-        head,
-        "Coverage · what you marked as reviewed (never an approval)",
+        area,
+        "Coverage",
+        "what you marked as reviewed (never an approval)",
         theme,
     );
-    let width = usize::from(body.width);
+    let width = usize::from(body.width).saturating_sub(2);
     let bar_w = (width / 4).clamp(6, 30);
-    let mut top: Vec<Line<'static>> = vec![Line::from(vec![
-        Span::styled("Overall  ", theme.strong()),
-        Span::styled(bar(cov.reviewed, cov.total, bar_w), theme.good()),
-        Span::raw(format!(
-            " {}/{} ({}%)",
-            cov.reviewed,
-            cov.total,
-            percent(cov.reviewed, cov.total)
-        )),
-    ])];
+    let gauge_spans = |done: usize, all: usize, fill: Style| -> Vec<Span<'static>> {
+        let (filled, track) = gauge(done, all, bar_w);
+        vec![
+            Span::styled(filled, fill),
+            Span::styled(track, theme.border()),
+        ]
+    };
+    let overall = percent(cov.reviewed, cov.total);
+    let mut overall_line = vec![Span::styled("Overall  ", theme.accent())];
+    overall_line.extend(gauge_spans(cov.reviewed, cov.total, theme.gauge(overall)));
+    overall_line.push(Span::raw(format!(
+        " {}/{} ({}%)",
+        cov.reviewed, cov.total, overall
+    )));
+    let mut top: Vec<Line<'static>> = vec![Line::from(overall_line)];
     for (priority, (done, all)) in &cov.by_priority {
-        top.push(Line::from(vec![
-            Span::styled(
-                format!("  {}     ", priority.label()),
-                theme.priority(*priority),
-            ),
-            Span::raw(format!("{} {done}/{all}", bar(*done, *all, bar_w))),
-        ]));
+        let mut spans = vec![Span::styled(
+            format!("  {}     ", priority.label()),
+            theme.priority(*priority),
+        )];
+        spans.extend(gauge_spans(*done, *all, theme.priority(*priority)));
+        spans.push(Span::raw(format!(" {done}/{all}")));
+        top.push(Line::from(spans));
     }
     if cov.unknown > 0 {
         top.push(Line::from(Span::styled(
@@ -1017,16 +1080,18 @@ fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(top_h), Constraint::Min(2)])
         .split(body);
-    frame.render_widget(Paragraph::new(top), parts[0]);
+    frame.render_widget(Paragraph::new(top), inset(parts[0], 1));
     let mut rows: Vec<Line<'static>> = cov
         .by_module
         .iter()
         .map(|(module, (done, all))| {
-            Line::from(vec![
-                Span::raw(pad(&clean(module), width.saturating_sub(bar_w + 14).max(8))),
-                Span::styled(format!(" {}", bar(*done, *all, bar_w)), theme.good()),
-                Span::raw(format!(" {done}/{all}")),
-            ])
+            let mut spans = vec![
+                Span::raw(pad(&clean(module), (width / 3).clamp(12, 40))),
+                Span::raw(" "),
+            ];
+            spans.extend(gauge_spans(*done, *all, theme.gauge(percent(*done, *all))));
+            spans.push(Span::raw(format!(" {done}/{all}")));
+            Line::from(spans)
         })
         .collect();
     for note in &notes {
@@ -1042,18 +1107,16 @@ fn coverage(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
 
 fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let theme = app.theme;
-    let (head, body) = split_header(area);
     let view = app.session.flow().clone();
-    let width = usize::from(body.width).saturating_sub(2);
     let state_label = view.state.label();
-    header(
+    let body = panel(
         frame,
-        head,
-        &format!(
-            "Flow · {state_label}  (Enter opens a step · ←/→/Space fold · p asks the agent · u reloads)"
-        ),
+        area,
+        &format!("Flow · {state_label}"),
+        "(Enter opens a step · ←/→/Space fold · p asks the agent · u reloads)",
         theme,
     );
+    let width = usize::from(body.width).saturating_sub(4);
     let mut lines: Vec<Line<'static>> = Vec::new();
     match (&view.state, &view.flow) {
         (FlowState::Missing, _) => {
@@ -1120,7 +1183,7 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     }
     // Steps are a list the reviewer moves through; text above scrolls with it.
     let Some(validated) = &view.flow else {
-        frame.render_widget(Paragraph::new(lines), body);
+        frame.render_widget(Paragraph::new(lines), inset(body, 1));
         return;
     };
     let intro_h = u16::try_from(lines.len())
@@ -1130,7 +1193,7 @@ fn flow(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(intro_h), Constraint::Min(2)])
         .split(body);
-    frame.render_widget(Paragraph::new(lines), parts[0]);
+    frame.render_widget(Paragraph::new(lines), inset(parts[0], 1));
     let lines = app.flow_rows();
     let list_width = usize::from(parts[1].width);
     let [crumbs_area, list_area] = {
