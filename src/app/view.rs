@@ -69,6 +69,8 @@ pub struct CodeView {
     pub symbol_lines: Option<(u32, u32)>,
     /// The other version exists, so `v` has something to toggle to.
     pub other_version_exists: bool,
+    /// The comment that documents the symbol in this version, without its comment markers.
+    pub doc: Option<String>,
 }
 
 const TAB_WIDTH: usize = 4;
@@ -157,6 +159,7 @@ impl Analysis {
             changes: Vec::new(),
             symbol_lines: None,
             other_version_exists: exists(other),
+            doc: None,
         };
 
         let Some(text) = text_of(version) else {
@@ -182,7 +185,10 @@ impl Analysis {
                 Version::Before => c.before.as_ref(),
             };
             match side {
-                Some(r) => view.symbol_lines = Some((r.span.start_line, r.span.end_line)),
+                Some(r) => {
+                    view.symbol_lines = Some((r.span.start_line, r.span.end_line));
+                    view.doc = crate::app::doc_comment::extract(text, r.span.start_line);
+                }
                 None => {
                     view.notice = Some(match (version, c.kind) {
                         (Version::Before, ChangeKind::Added) => {
@@ -281,6 +287,7 @@ impl Analysis {
             changes,
             symbol_lines,
             other_version_exists: false,
+            doc: None,
         })
     }
 }

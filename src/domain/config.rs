@@ -190,6 +190,17 @@ impl From<Locale> for Language {
     }
 }
 
+/// How much room the lists leave around each row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Density {
+    /// Rows packed as tightly as they stay readable.
+    Compact,
+    /// A blank line of air around each row.
+    #[default]
+    Comfortable,
+}
+
 /// `[ui]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -198,6 +209,8 @@ pub struct UiConfig {
     pub theme: Theme,
     /// Language of the interface.
     pub language: Language,
+    /// Spacing of the lists.
+    pub density: Density,
     /// Show key hints in the status bar.
     pub show_hints: bool,
     /// Let the mouse scroll, select and switch tabs. Off by default: capturing the mouse stops the
@@ -213,6 +226,7 @@ impl Default for UiConfig {
         Self {
             theme: Theme::Dark,
             language: Language::Auto,
+            density: Density::Comfortable,
             show_hints: true,
             mouse: false,
             hold_to_peek: false,

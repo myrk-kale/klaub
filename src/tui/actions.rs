@@ -52,6 +52,8 @@ pub(crate) enum Action {
     Explain,
     /// Show what changed about the current symbol's contract.
     InspectContract,
+    /// Show or hide the panel with the symbol's signature, documentation and comments.
+    ToggleInspector,
     /// Bring back the rules this review silenced.
     RestoreRules,
     /// Open the current unit in the whole file.
@@ -114,6 +116,7 @@ impl Entry {
         match self.action {
             Action::Mode(Mode::Queue) => t::action_go_queue(locale),
             Action::Mode(Mode::Structure) => t::action_go_structure(locale),
+            Action::Mode(Mode::Files) => t::action_go_files(locale),
             Action::Mode(Mode::Code) => t::action_go_code(locale),
             Action::Mode(Mode::Impact) => t::action_go_impact(locale),
             Action::Mode(Mode::Comments) => t::action_go_comments(locale),
@@ -132,6 +135,7 @@ impl Entry {
             Action::Explain => t::action_explain(locale),
             Action::RestoreRules => t::action_restore_rules(locale),
             Action::InspectContract => t::action_inspect_contract(locale),
+            Action::ToggleInspector => t::action_toggle_inspector(locale),
             Action::OpenWholeFile => t::action_open_whole_file(locale),
             Action::HistoryBack => t::action_history_back(locale),
             Action::HistoryForward => t::action_history_forward(locale),
@@ -177,8 +181,12 @@ pub(crate) const ENTRIES: &[Entry] = &[
         key: "2  F3",
     },
     Entry {
+        action: Action::Mode(Mode::Files),
+        key: "3",
+    },
+    Entry {
         action: Action::Mode(Mode::Code),
-        key: "3  F4",
+        key: "F4",
     },
     Entry {
         action: Action::Mode(Mode::Impact),
@@ -247,6 +255,10 @@ pub(crate) const ENTRIES: &[Entry] = &[
     Entry {
         action: Action::InspectContract,
         key: "i",
+    },
+    Entry {
+        action: Action::ToggleInspector,
+        key: "K",
     },
     Entry {
         action: Action::OpenWholeFile,
@@ -422,6 +434,13 @@ pub(crate) fn perform(app: &mut App, action: Action) {
             Some(unit) => app.overlay = Some(Overlay::Contract(unit)),
             None => app.say(StatusKind::Info, t::select_unit_first(app.locale)),
         },
+        Action::ToggleInspector => {
+            if app.inspector_fits {
+                app.inspector = Some(!app.inspector_shown);
+            } else {
+                app.say(StatusKind::Info, t::inspector_too_narrow(app.locale));
+            }
+        }
         Action::RestoreRules => {
             let muted = app.session.muted_rules().to_vec();
             if muted.is_empty() {

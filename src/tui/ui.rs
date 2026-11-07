@@ -56,15 +56,25 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
             Constraint::Length(1),
         ])
         .split(area);
-    let (title, tabs, banner, body, status) = (rows[0], rows[1], rows[2], rows[3], rows[4]);
+    let (title, tabs, banner, outer, status) = (rows[0], rows[1], rows[2], rows[3], rows[4]);
+    // Breathing room: a row under the tabs, one above the status bar, two columns at each side.
+    let body = content_area(outer);
 
-    draw_title(frame, title, app, theme);
-    app.tab_hits = draw_tabs(frame, tabs, app.mode, app.locale, theme);
+    draw_title(frame, margin(title), app, theme);
+    app.tab_hits = draw_tabs(
+        frame,
+        margin(tabs),
+        app.mode,
+        app.list,
+        app.locale,
+        &app.keymap,
+        theme,
+    );
     if drift {
-        draw_banner(frame, banner, app.locale, theme);
+        draw_banner(frame, margin(banner), app.locale, theme);
     }
     draw_mode(frame, body, app);
-    draw_status(frame, status, app, theme);
+    draw_status(frame, margin(status), app, theme);
 
     if let Some(overlay) = app.overlay.clone() {
         if !theme.is_high_contrast() {
@@ -72,7 +82,34 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
                 .buffer_mut()
                 .set_style(area, Style::default().add_modifier(Modifier::DIM));
         }
-        draw_overlay(frame, body, app, &overlay, theme);
+        draw_overlay(frame, outer, app, &overlay, theme);
+    }
+}
+
+/// Columns kept empty at each side of the screen.
+const MARGIN: u16 = 2;
+
+/// `area` without the side margins.
+fn margin(area: Rect) -> Rect {
+    let side = MARGIN.min(area.width / 2);
+    Rect {
+        x: area.x + side,
+        width: area.width - side * 2,
+        ..area
+    }
+}
+
+/// The room for a mode's view: side margins, a blank row above and another below. Short
+/// terminals keep every row, because the margin is only a courtesy.
+fn content_area(outer: Rect) -> Rect {
+    let area = margin(outer);
+    if area.height < 12 {
+        return area;
+    }
+    Rect {
+        y: area.y + 1,
+        height: area.height - 2,
+        ..area
     }
 }
 
@@ -134,21 +171,58 @@ fn short_id(id: &str) -> &str {
 
 // ---- mode tabs --------------------------------------------------------------------------------------------------
 
-/// Draws the row of mode tabs and returns where each one is, for the mouse.
+/// The id a mode's key is filed under in the key map.
+fn mode_key_id(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Queue => "queue",
+        Mode::Structure => "structure",
+        Mode::Files => "files",
+        Mode::Code => "code",
+        Mode::Impact => "impact",
+        Mode::Comments => "comments",
+        Mode::Context => "context",
+        Mode::Tests => "tests",
+        Mode::Followup => "followup",
+        Mode::Coverage => "coverage",
+        Mode::Flow => "flow",
+    }
+}
+
+/// The modes that share the review workspace: a list on the left and the code on the right.
+fn in_workspace(mode: Mode) -> bool {
+    matches!(
+        mode,
+        Mode::Queue | Mode::Structure | Mode::Files | Mode::Code
+    )
+}
+
+/// Draws the row of mode tabs and returns where each one is, for the mouse. The four workspace
+/// modes are one tab, `Review`; the lists inside it are picked in the pane's own header.
 fn draw_tabs(
     frame: &mut Frame<'_>,
     area: Rect,
     current: Mode,
+    list: Mode,
     locale: Locale,
+    keymap: &Keymap,
     theme: Theme,
 ) -> Vec<(Rect, Mode)> {
     let width = usize::from(area.width);
-    let labels: Vec<String> = Mode::ALL
-        .iter()
-        .enumerate()
-        .map(|(i, mode)| format!(" {} {} ", i + 1, mode.label(locale)))
-        .collect();
-    let full: usize = labels.iter().map(String::len).sum();
+    let mut tabs: Vec<(bool, Mode, String, String)> = vec![(
+        in_workspace(current),
+        list,
+        format!(" {}-{} ", keymap.key_for("queue"), keymap.key_for("files")),
+        format!("{} ", t::tab_review(locale)),
+    )];
+    for mode in Mode::ALL.iter().filter(|m| !in_workspace(**m)) {
+        tabs.push((
+            *mode == current,
+            *mode,
+            format!(" {} ", keymap.key_for(mode_key_id(*mode))),
+            format!("{} ", mode.label(locale)),
+        ));
+    }
+    let full: usize = tabs.iter().map(|(_, _, n, m)| n.width() + m.width()).sum();
 
     // A narrow terminal shows only the current mode rather than a row of clipped names.
     if full > width {
@@ -163,20 +237,19 @@ fn draw_tabs(
         return Vec::new();
     }
 
-    let mut hits = Vec::with_capacity(labels.len());
+    let mut hits = Vec::with_capacity(tabs.len());
     let mut x = area.x;
     let mut spans: Vec<Span<'static>> = Vec::new();
-    for (mode, label) in Mode::ALL.iter().zip(labels) {
-        let cells = u16::try_from(label.len()).unwrap_or(u16::MAX);
-        hits.push((Rect::new(x, area.y, cells, 1), *mode));
+    for (active, mode, number, name) in tabs {
+        let cells = u16::try_from(number.width() + name.width()).unwrap_or(u16::MAX);
+        hits.push((Rect::new(x, area.y, cells, 1), mode));
         x = x.saturating_add(cells);
-        if *mode == current {
-            spans.push(Span::styled(label, theme.tab_active()));
+        if active {
+            spans.push(Span::styled(format!("{number}{name}"), theme.tab_active()));
         } else {
             // The number is quieter than the name, so the row reads as names first.
-            let (number, name) = label.split_at(3);
-            spans.push(Span::styled(number.to_owned(), theme.faint()));
-            spans.push(Span::styled(name.to_owned(), theme.tab_idle()));
+            spans.push(Span::styled(number, theme.faint()));
+            spans.push(Span::styled(name, theme.tab_idle()));
         }
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -280,6 +353,14 @@ fn hints_for(l: Locale, mode: Mode, filtered: bool, keys: &Keymap) -> Vec<(Strin
             ),
             hint(&k("comment"), t::hint_comment(l)),
             hint(&k("toggle_reviewed"), t::hint_reviewed(l)),
+            hint(&k("help"), t::hint_help(l)),
+        ],
+        Mode::Files => vec![
+            hint(&moves, t::hint_move(l)),
+            hint(&"Enter".to_owned(), t::hint_open(l)),
+            hint(&k("comment"), t::hint_comment(l)),
+            hint(&k("toggle_reviewed"), t::hint_reviewed(l)),
+            hint(&k("search"), t::hint_search(l)),
             hint(&k("help"), t::hint_help(l)),
         ],
         Mode::Code => vec![

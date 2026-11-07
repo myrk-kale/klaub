@@ -559,7 +559,7 @@ fn the_help_lists_the_configured_key() {
 fn a_moved_movement_key_moves_the_cursor_and_releases_the_old_one() {
     let repo = changed_repo();
     let mut app = reader_with_keys(&repo, &[("down", "z"), ("up", "Z")]);
-    press(&mut app, '3');
+    handle_key(&mut app, key(KeyCode::Enter));
     assert_eq!(app.mode, Mode::Code);
     let start = app.code.cursor;
 
@@ -735,8 +735,14 @@ fn clicking_a_row_selects_it_and_clicking_the_selected_row_opens_it() {
     assert!(app.queue_view.len >= 3);
     let first = app.queue_selection();
 
+    // Each row is a card of several lines; any line of the card picks it.
     let area = app.queue_view.area;
-    click(&mut app, area.x + 4, area.y + 2);
+    let step = u16::try_from(app.queue_view.stride).unwrap();
+    assert!(
+        step >= 2,
+        "a queue row has a line for the name and one for the facts"
+    );
+    click(&mut app, area.x + 4, area.y + 2 * step + 1);
     assert_eq!(app.queue_view.selected, 2);
     assert_ne!(
         app.queue_selection(),
@@ -746,7 +752,7 @@ fn clicking_a_row_selects_it_and_clicking_the_selected_row_opens_it() {
     assert_eq!(app.mode, Mode::Queue, "one click only selects");
 
     let _ = screen(&mut app, 140, 30);
-    click(&mut app, area.x + 4, area.y + 2);
+    click(&mut app, area.x + 4, area.y + 2 * step);
     assert_eq!(
         app.mode,
         Mode::Code,
@@ -1251,4 +1257,136 @@ fn status_messages_use_the_language_too() {
     press(&mut app, 'r');
     let (message, _) = app.status.clone().unwrap();
     assert!(message.starts_with("Marcada como revisada"), "{message}");
+}
+
+#[test]
+fn the_code_follows_the_list_cursor_without_leaving_the_list() {
+    let repo = three_changes();
+    let mut app = reader(open(&repo));
+    let _ = screen(&mut app, 140, 30);
+    let shown = |app: &App| app.code.view.as_ref().and_then(|v| v.unit.clone());
+    assert_eq!(
+        shown(&app),
+        app.queue_selection(),
+        "the first unit is already on screen"
+    );
+
+    press(&mut app, 'j');
+    let _ = screen(&mut app, 140, 30);
+    assert_eq!(
+        app.mode,
+        Mode::Queue,
+        "moving in the list keeps the list focused"
+    );
+    assert_eq!(
+        shown(&app),
+        app.queue_selection(),
+        "the code pane follows the cursor"
+    );
+}
+
+#[test]
+fn three_is_the_flat_list_of_changed_files_and_enter_opens_the_code() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    press(&mut app, '3');
+    assert_eq!(app.mode, Mode::Files);
+    let shown = screen(&mut app, 140, 30);
+    assert!(shown.contains("service.py"), "{shown}");
+    assert!(
+        shown.contains("lookup"),
+        "the code of the file's unit is beside the list: {shown}"
+    );
+
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(app.mode, Mode::Code);
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(
+        app.mode,
+        Mode::Files,
+        "Esc returns to the list that was open"
+    );
+}
+
+#[test]
+fn the_symbol_panel_shows_the_signature_types_and_the_documentation() {
+    let repo = TempRepo::new();
+    repo.write(
+        "service.py",
+        "def lookup(name):\n    \"\"\"Finds a user by name.\"\"\"\n    return name\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "def lookup(name: str, limit: int = 1) -> str:\n    \"\"\"Finds a user by name.\"\"\"\n    return name\n",
+    );
+    let mut app = reader(open(&repo));
+    let shown = screen(&mut app, 170, 40);
+    assert!(shown.contains("Signature"), "{shown}");
+    assert!(
+        shown.contains("name: str"),
+        "the parameter and its type: {shown}"
+    );
+    assert!(shown.contains("limit: int"), "{shown}");
+    assert!(shown.contains("Documentation"), "{shown}");
+    assert!(
+        shown.contains("Finds a user by name."),
+        "the docstring: {shown}"
+    );
+    assert!(shown.contains("Review comments"), "{shown}");
+}
+
+#[test]
+fn k_hides_and_shows_the_symbol_panel() {
+    let repo = changed_repo();
+    let mut app = reader(open(&repo));
+    handle_key(&mut app, key(KeyCode::Enter));
+    let open = screen(&mut app, 170, 40);
+    assert!(
+        open.contains("Review comments"),
+        "the panel is open on a wide terminal"
+    );
+
+    press(&mut app, 'K');
+    let closed = screen(&mut app, 170, 40);
+    assert!(!closed.contains("Review comments"), "K closes it");
+    press(&mut app, 'K');
+    assert!(
+        screen(&mut app, 170, 40).contains("Review comments"),
+        "K opens it again"
+    );
+}
+
+#[test]
+fn a_module_row_names_its_file_and_the_panel_explains_it() {
+    // A change to the imports belongs to the file's top-level code, `<module>`, which every file
+    // has: on its own the name would not say which file is meant.
+    let repo = TempRepo::new();
+    repo.write(
+        "service.py",
+        "import os\n\n\ndef lookup(name):\n    return name\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "import os\nimport sys\n\n\ndef lookup(name):\n    return name\n",
+    );
+    let mut app = reader(open(&repo));
+    let shown = screen(&mut app, 170, 40);
+    let row = shown
+        .lines()
+        .find(|line| line.contains("<module>"))
+        .expect("the top-level code is a unit of the queue");
+    assert!(
+        row.contains("service.py"),
+        "the row names its file: {row:?}"
+    );
+    assert!(
+        shown.contains("top-level code"),
+        "the panel says what it is: {shown}"
+    );
+    assert!(
+        !shown.contains("Signature"),
+        "a module has no signature section: {shown}"
+    );
 }

@@ -15,6 +15,9 @@ pub struct Viewport {
     pub area: Rect,
     /// How many rows the list had when it was drawn last.
     pub len: usize,
+    /// How many screen lines each row takes. Zero means one, so a list that never sets it keeps
+    /// the one-line rows it always had.
+    pub stride: usize,
 }
 
 impl Viewport {
@@ -62,7 +65,7 @@ impl Viewport {
         if !inside {
             return None;
         }
-        let row = self.offset + usize::from(y - self.area.y);
+        let row = self.offset + usize::from(y - self.area.y) / self.stride.max(1);
         (row < self.len).then_some(row)
     }
 
