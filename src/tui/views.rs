@@ -287,13 +287,31 @@ fn queue_row(app: &App, item: &QueueItem, width: usize) -> Vec<Line<'static>> {
     } else {
         theme.strong()
     };
-    let top = Line::from(vec![
+    // Every file has a `<module>`, so on its own the name says nothing: add the file it is in.
+    let label = clean(&item.unit.label);
+    let file_name = clean(item.unit.file.as_str());
+    let file_name = file_name
+        .rsplit('/')
+        .next()
+        .unwrap_or(&file_name)
+        .to_owned();
+    let mut name = vec![Span::styled(label.clone(), label_style)];
+    let mut used = label.width();
+    if item.unit.symbol_kind == Some(crate::domain::symbol::SymbolKind::Module) {
+        let tail = fit(&file_name, label_w.saturating_sub(used + 2));
+        used += 2 + tail.width();
+        name.push(Span::styled(format!("  {tail}"), theme.dim()));
+    }
+    let name_pad = label_w.saturating_sub(used);
+    let mut top_spans = vec![
         Span::styled(if reviewed { "✓ " } else { "  " }, theme.good()),
         Span::styled(item.priority.label(), theme.priority(item.priority)),
         Span::raw("  "),
-        Span::styled(pad(&clean(&item.unit.label), label_w), label_style),
-        Span::styled(note, theme.warn()),
-    ]);
+    ];
+    top_spans.extend(name);
+    top_spans.push(Span::raw(" ".repeat(name_pad)));
+    top_spans.push(Span::styled(note, theme.warn()));
+    let top = Line::from(top_spans);
 
     let mut facts = vec![labels::change_kind(l, item.change)];
     facts.extend(item.tags.iter().map(|tag| labels::queue_tag(l, *tag)));
@@ -855,8 +873,13 @@ fn inspector_lines(app: &App, view: &crate::app::CodeView, width: usize) -> Vec<
         )));
     }
 
-    // The signature, with its types.
-    if let Some(d) = &delta {
+    // The signature, with its types. A file's top-level code has none, so it says what it is.
+    if item.is_some_and(|i| i.unit.symbol_kind == Some(crate::domain::symbol::SymbolKind::Module)) {
+        lines.push(Line::from(""));
+        for chunk in wrap(t::inspector_module_note(l), width) {
+            lines.push(Line::from(Span::styled(chunk, theme.dim())));
+        }
+    } else if let Some(d) = &delta {
         let signature = signature_lines(d, width, app);
         if !signature.is_empty() {
             lines.extend(section(t::inspector_signature(l), width, theme));
@@ -954,15 +977,15 @@ fn signature_lines(
     let Some(after) = &delta.signature_after else {
         // Not a callable (a class, a constant...): the declaration as written.
         return match (&delta.after_signature, &delta.before_signature) {
-            (Some(text), _) => wrap(&clean(text), width)
+            (Some(text), _) if !text.trim().is_empty() => wrap(&clean(text), width)
                 .into_iter()
                 .map(|chunk| Line::from(Span::styled(chunk, theme.text())))
                 .collect(),
-            (None, Some(old)) => wrap(&clean(old), width)
+            (None, Some(old)) if !old.trim().is_empty() => wrap(&clean(old), width)
                 .into_iter()
                 .map(|chunk| Line::from(Span::styled(chunk, theme.faint())))
                 .collect(),
-            (None, None) => Vec::new(),
+            _ => Vec::new(),
         };
     };
     let before = delta.signature_before.as_ref();

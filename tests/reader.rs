@@ -1356,3 +1356,37 @@ fn k_hides_and_shows_the_symbol_panel() {
         "K opens it again"
     );
 }
+
+#[test]
+fn a_module_row_names_its_file_and_the_panel_explains_it() {
+    // A change to the imports belongs to the file's top-level code, `<module>`, which every file
+    // has: on its own the name would not say which file is meant.
+    let repo = TempRepo::new();
+    repo.write(
+        "service.py",
+        "import os\n\n\ndef lookup(name):\n    return name\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "import os\nimport sys\n\n\ndef lookup(name):\n    return name\n",
+    );
+    let mut app = reader(open(&repo));
+    let shown = screen(&mut app, 170, 40);
+    let row = shown
+        .lines()
+        .find(|line| line.contains("<module>"))
+        .expect("the top-level code is a unit of the queue");
+    assert!(
+        row.contains("service.py"),
+        "the row names its file: {row:?}"
+    );
+    assert!(
+        shown.contains("top-level code"),
+        "the panel says what it is: {shown}"
+    );
+    assert!(
+        !shown.contains("Signature"),
+        "a module has no signature section: {shown}"
+    );
+}

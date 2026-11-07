@@ -1724,6 +1724,11 @@ texts! {
         pt: "O painel do símbolo precisa de um terminal com pelo menos 125 colunas.",
         es: "El panel del símbolo necesita un terminal de al menos 125 columnas.",
     }
+    const inspector_module_note {
+        en: "The file's top-level code: imports, constants and anything outside a function or class.",
+        pt: "O código de nível superior do arquivo: imports, constantes e tudo que fica fora de funções e classes.",
+        es: "El código de nivel superior del archivo: imports, constantes y todo lo que queda fuera de funciones y clases.",
+    }
     const inspector_signature {
         en: "Signature",
         pt: "Assinatura",
