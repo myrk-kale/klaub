@@ -53,41 +53,6 @@ const BINDABLE: &[Bindable] = &[
         defaults: &[],
     },
     Bindable {
-        id: "impact",
-        action: Action::Mode(Mode::Impact),
-        defaults: &['4', 'g'],
-    },
-    Bindable {
-        id: "comments",
-        action: Action::Mode(Mode::Comments),
-        defaults: &['5'],
-    },
-    Bindable {
-        id: "context",
-        action: Action::Mode(Mode::Context),
-        defaults: &['6', 'b'],
-    },
-    Bindable {
-        id: "tests",
-        action: Action::Mode(Mode::Tests),
-        defaults: &['7', 't'],
-    },
-    Bindable {
-        id: "followup",
-        action: Action::Mode(Mode::Followup),
-        defaults: &['8'],
-    },
-    Bindable {
-        id: "coverage",
-        action: Action::Mode(Mode::Coverage),
-        defaults: &['9'],
-    },
-    Bindable {
-        id: "flow",
-        action: Action::Mode(Mode::Flow),
-        defaults: &['0', 'f'],
-    },
-    Bindable {
         id: "next_unreviewed",
         action: Action::NextUnreviewed,
         defaults: &['n'],
@@ -116,11 +81,6 @@ const BINDABLE: &[Bindable] = &[
         id: "next_bookmark",
         action: Action::NextBookmark,
         defaults: &[','],
-    },
-    Bindable {
-        id: "comment",
-        action: Action::Comment,
-        defaults: &['c'],
     },
     Bindable {
         id: "explain",
@@ -208,21 +168,6 @@ const BINDABLE: &[Bindable] = &[
         defaults: &['-'],
     },
     Bindable {
-        id: "run_tests",
-        action: Action::RunTests,
-        defaults: &['X'],
-    },
-    Bindable {
-        id: "reload_reports",
-        action: Action::ReloadReports,
-        defaults: &['U'],
-    },
-    Bindable {
-        id: "reload_flow",
-        action: Action::ReloadFlow,
-        defaults: &['L'],
-    },
-    Bindable {
         id: "history_back",
         action: Action::HistoryBack,
         defaults: &['<'],
@@ -236,11 +181,6 @@ const BINDABLE: &[Bindable] = &[
         id: "refresh",
         action: Action::Refresh,
         defaults: &['R'],
-    },
-    Bindable {
-        id: "finish",
-        action: Action::Finish,
-        defaults: &['F'],
     },
     Bindable {
         id: "help",
@@ -284,11 +224,6 @@ const MODAL: &[Modal] = &[
         modes: &[Mode::Code],
     },
     Modal {
-        id: "select_lines",
-        canonical: 'V',
-        modes: &[Mode::Code],
-    },
-    Modal {
         id: "open_file",
         canonical: 'o',
         modes: &[Mode::Code],
@@ -302,56 +237,6 @@ const MODAL: &[Modal] = &[
         id: "toggle_inspector",
         canonical: 'K',
         modes: &[Mode::Code],
-    },
-    Modal {
-        id: "pivot_impact",
-        canonical: 'p',
-        modes: &[Mode::Impact],
-    },
-    Modal {
-        id: "request_flow",
-        canonical: 'p',
-        modes: &[Mode::Flow],
-    },
-    Modal {
-        id: "edit_intent",
-        canonical: 'i',
-        modes: &[Mode::Context],
-    },
-    Modal {
-        id: "add_criterion",
-        canonical: 'a',
-        modes: &[Mode::Context],
-    },
-    Modal {
-        id: "edit_comment",
-        canonical: 'e',
-        modes: &[Mode::Comments],
-    },
-    Modal {
-        id: "delete_comment",
-        canonical: 'd',
-        modes: &[Mode::Comments],
-    },
-    Modal {
-        id: "decide_resolved",
-        canonical: 'y',
-        modes: &[Mode::Followup],
-    },
-    Modal {
-        id: "decide_partial",
-        canonical: 'p',
-        modes: &[Mode::Followup],
-    },
-    Modal {
-        id: "decide_unresolved",
-        canonical: 'u',
-        modes: &[Mode::Followup],
-    },
-    Modal {
-        id: "decide_regression",
-        canonical: 'X',
-        modes: &[Mode::Followup],
     },
 ];
 
@@ -698,18 +583,21 @@ mod tests {
 
     #[test]
     fn an_action_with_two_defaults_gives_up_both_when_moved() {
-        let map = Keymap::from_overrides(&table(&[("impact", "z")])).unwrap();
-        assert_eq!(map.action('z'), Some(Action::Mode(Mode::Impact)));
-        assert_eq!(map.action('4'), None);
-        assert_eq!(map.action('g'), None);
+        let map = Keymap::from_overrides(&table(&[("deeper_tree", "z")])).unwrap();
+        assert_eq!(map.action('z'), Some(Action::DeeperTree));
+        assert_eq!(map.action('+'), None);
+        assert_eq!(map.action('='), None);
     }
 
     #[test]
     fn two_actions_swapped_with_each_other_are_accepted() {
-        let map =
-            Keymap::from_overrides(&table(&[("toggle_reviewed", "c"), ("comment", "r")])).unwrap();
-        assert_eq!(map.action('c'), Some(Action::ToggleReviewed));
-        assert_eq!(map.action('r'), Some(Action::Comment));
+        let map = Keymap::from_overrides(&table(&[
+            ("toggle_reviewed", "n"),
+            ("next_unreviewed", "r"),
+        ]))
+        .unwrap();
+        assert_eq!(map.action('n'), Some(Action::ToggleReviewed));
+        assert_eq!(map.action('r'), Some(Action::NextUnreviewed));
     }
 
     #[test]
@@ -725,7 +613,7 @@ mod tests {
     #[test]
     fn a_value_must_be_exactly_one_printable_character() {
         for bad in ["", "ab", " ", "\n", "\u{1b}"] {
-            let error = Keymap::from_overrides(&table(&[("comment", bad)])).unwrap_err();
+            let error = Keymap::from_overrides(&table(&[("toggle_reviewed", bad)])).unwrap_err();
             assert!(
                 matches!(error, KeymapError::NotOneCharacter { .. }),
                 "{bad:?} gave {error:?}"
@@ -736,20 +624,20 @@ mod tests {
     #[test]
     fn a_reserved_key_is_refused() {
         for key in ["q", ":", "j"] {
-            let error = Keymap::from_overrides(&table(&[("comment", key)])).unwrap_err();
+            let error = Keymap::from_overrides(&table(&[("toggle_reviewed", key)])).unwrap_err();
             assert!(matches!(error, KeymapError::Reserved { .. }), "{key}");
         }
     }
 
     #[test]
     fn two_actions_on_one_key_name_both() {
-        let error = Keymap::from_overrides(&table(&[("comment", "n")])).unwrap_err();
+        let error = Keymap::from_overrides(&table(&[("toggle_reviewed", "n")])).unwrap_err();
         assert_eq!(
             error,
             KeymapError::Conflict {
                 key: 'n',
                 first: "next_unreviewed".to_owned(),
-                second: "comment".to_owned(),
+                second: "toggle_reviewed".to_owned(),
             }
         );
     }
@@ -776,23 +664,11 @@ mod tests {
 
     #[test]
     fn a_mode_key_only_moves_in_the_modes_it_works_in() {
-        let map = Keymap::from_overrides(&table(&[("decide_resolved", "z")])).unwrap();
-        assert_eq!(map.translate(Some(Mode::Followup), 'z'), 'y');
-        assert_eq!(map.translate(Some(Mode::Followup), 'y'), RELEASED);
+        let map = Keymap::from_overrides(&table(&[("open_file", "z")])).unwrap();
+        assert_eq!(map.translate(Some(Mode::Code), 'z'), 'o');
+        assert_eq!(map.translate(Some(Mode::Code), 'o'), RELEASED);
         assert_eq!(map.translate(Some(Mode::Queue), 'z'), 'z');
-        assert_eq!(map.translate(Some(Mode::Queue), 'y'), 'y');
-    }
-
-    #[test]
-    fn the_same_character_in_two_modes_is_two_independent_keys() {
-        let map = Keymap::from_overrides(&table(&[("pivot_impact", "z")])).unwrap();
-        assert_eq!(map.translate(Some(Mode::Impact), 'z'), 'p');
-        assert_eq!(
-            map.translate(Some(Mode::Flow), 'p'),
-            'p',
-            "request_flow was not moved"
-        );
-        assert_eq!(map.translate(Some(Mode::Followup), 'p'), 'p');
+        assert_eq!(map.translate(Some(Mode::Queue), 'o'), 'o');
     }
 
     #[test]
@@ -810,25 +686,20 @@ mod tests {
                 second: "down".to_owned(),
             }
         );
-        // The same character in modes that never overlap is fine.
-        assert!(
-            Keymap::from_overrides(&table(&[("edit_comment", "z"), ("decide_partial", "z")]))
-                .is_ok()
-        );
     }
 
     #[test]
     fn a_default_map_translates_nothing() {
         let map = Keymap::default();
         for c in ['j', 'k', 'y', 'p', 'z', 'X'] {
-            assert_eq!(map.translate(Some(Mode::Followup), c), c);
+            assert_eq!(map.translate(Some(Mode::Queue), c), c);
         }
     }
 
     #[test]
     fn hints_use_the_current_key() {
-        let map = Keymap::from_overrides(&table(&[("comment", "e"), ("down", "z")])).unwrap();
-        assert_eq!(map.key_for("comment"), 'e');
+        let map = Keymap::from_overrides(&table(&[("explain", "e"), ("down", "z")])).unwrap();
+        assert_eq!(map.key_for("explain"), 'e');
         assert_eq!(map.key_for("down"), 'z');
         assert_eq!(map.key_for("up"), 'k');
         assert_eq!(map.key_for("search"), '/');
@@ -838,11 +709,11 @@ mod tests {
     #[test]
     fn the_help_shows_the_new_key_and_keeps_function_keys() {
         let entry = Entry {
-            action: Action::Mode(Mode::Impact),
-            key: "4  g  F5",
+            action: Action::Mode(Mode::Queue),
+            key: "1  F2",
         };
-        let map = Keymap::from_overrides(&table(&[("impact", "z")])).unwrap();
-        assert_eq!(map.label(&entry), "z  F5");
-        assert_eq!(Keymap::default().label(&entry), "4  g  F5");
+        let map = Keymap::from_overrides(&table(&[("queue", "z")])).unwrap();
+        assert_eq!(map.label(&entry), "z  F2");
+        assert_eq!(Keymap::default().label(&entry), "1  F2");
     }
 }

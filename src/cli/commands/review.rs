@@ -15,16 +15,15 @@ use crate::adapters::parse::TreeSitterParser;
 use crate::adapters::storage::{
     FsConfigSource, FsFileReader, FsFlowRepository, JsonReviewRepository, SqliteCache,
 };
-use crate::adapters::tmux::channel::TmuxAgentChannel;
 use crate::app::{OpenOptions, Ports, ReviewSession};
 use crate::domain::i18n::{Locale, cli as t};
 use crate::domain::ids::SessionId;
-use crate::domain::ports::{AgentChannel, Clipboard, ConfigSource};
+use crate::domain::ports::ConfigSource;
 use crate::domain::snapshot::{Scope, SnapshotRequest};
 use crate::tui::App;
 use anyhow::{Context as _, Result};
 
-use crate::adapters::{ClipboardCopy, ProcessTestRunner, RandomIds, SystemClock};
+use crate::adapters::{ProcessTestRunner, RandomIds, SystemClock};
 use crate::cli::args::{Format, ReviewArgs};
 use crate::cli::context::Context;
 use crate::cli::{env, logging, output};
@@ -93,8 +92,7 @@ pub(super) fn run(ctx: &Context, args: &ReviewArgs) -> Result<ExitCode> {
     let session = ReviewSession::open(ports, request, &config, &options)
         .with_context(|| t::cannot_open_review(locale, &target.worktree.display().to_string()))?;
 
-    let clipboard: Option<Arc<dyn Clipboard>> = Some(Arc::new(ClipboardCopy));
-    let mut app = App::new(session, parser, target.agent, clipboard);
+    let mut app = App::new(session, parser);
     if first_review_here {
         app = app.with_storage_notice();
     }
@@ -137,10 +135,9 @@ fn report_wait(session: &ReviewSession, format: Format, locale: Locale) -> Resul
     Ok(code)
 }
 
-/// Where the review happens and, inside a wrapped session, the pane the feedback can be prepared in.
+/// Where the review happens and, inside a wrapped session, the session it belongs to.
 struct ReviewTarget {
     session_id: Option<SessionId>,
-    agent: Option<Arc<dyn AgentChannel>>,
     worktree: PathBuf,
 }
 
@@ -149,7 +146,6 @@ fn resolve_target(ctx: &Context, args: &ReviewArgs) -> Result<ReviewTarget> {
         let cwd = std::env::current_dir()?;
         return Ok(ReviewTarget {
             session_id: None,
-            agent: None,
             worktree: env::find_worktree_root(&cwd).unwrap_or(cwd),
         });
     };
@@ -158,10 +154,8 @@ fn resolve_target(ctx: &Context, args: &ReviewArgs) -> Result<ReviewTarget> {
         .registry()
         .load(&id)
         .with_context(|| t::cannot_load_session(ctx.locale, id.as_str()))?;
-    let channel: Arc<dyn AgentChannel> = Arc::new(TmuxAgentChannel::new(record.clone()));
     Ok(ReviewTarget {
         session_id: Some(id),
-        agent: Some(channel),
         worktree: record.worktree,
     })
 }

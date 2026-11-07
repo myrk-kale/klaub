@@ -85,7 +85,7 @@ fn edges(text: &str) -> (usize, usize) {
 fn the_catalog_is_parsed_completely() {
     // A rough floor: if the parser above stops matching entries this fails instead of passing
     // vacuously.
-    assert!(catalog("tui.rs").len() > 400);
+    assert!(catalog("tui.rs").len() > 150);
     assert!(catalog("cli.rs").len() > 60);
 }
 

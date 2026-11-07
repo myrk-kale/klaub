@@ -22,9 +22,8 @@ mod views;
 mod widgets;
 
 pub use app::{
-    App, CodeState, Confirm, ConfirmAction, DELIVERY_COUNT, Depth, Editor, EditorPurpose, Filters,
-    FinishStage, FlowLine, ImpactRow, ImpactRowKind, ImpactState, Mode, Overlay, Peek, StatusKind,
-    TreeKind, TreeRow, delivery_options,
+    App, CodeState, Confirm, ConfirmAction, Depth, Filters, Mode, Overlay, Peek, StatusKind,
+    TreeKind, TreeRow,
 };
 pub use keymap::{Keymap, KeymapError};
 pub use terminal::run;

@@ -11,14 +11,12 @@ use std::time::Instant;
 
 use crate::app::{CodeScope, CodeView, ReviewSession};
 use crate::domain::finding::{Priority, QueueItem, QueueTag, Temporal};
-use crate::domain::graph::{EdgeOrigin, ImpactReport, ImpactScope, SymbolKey};
+use crate::domain::graph::ImpactScope;
 use crate::domain::i18n::{Locale, tui as t};
-use crate::domain::ids::{CommentId, UnitId};
+use crate::domain::ids::UnitId;
 use crate::domain::path::RepoPath;
-use crate::domain::ports::{AgentChannel, Clipboard, SourceParser, TestRunRequest};
-use crate::domain::review::{FeedbackRecord, FollowupStatus, Version};
-
-use crate::domain::text::sanitize_single_line;
+use crate::domain::ports::SourceParser;
+use crate::domain::review::Version;
 
 use crate::tui::keymap::Keymap;
 use crate::tui::labels;
@@ -28,45 +26,19 @@ use crate::tui::viewport::Viewport;
 /// What the main area shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mode {
-    /// The prioritised list of changes.
+    /// The prioritised list of changes, beside the code.
     Queue,
-    /// The module, file and symbol tree.
+    /// The module, file and symbol tree, beside the code.
     Structure,
-    /// The changed files as one flat list.
+    /// The changed files as one flat list, beside the code.
     Files,
-    /// One version of the code.
+    /// One version of the code, with the focus on it.
     Code,
-    /// Callers, entrypoints and callees of the selected unit.
-    Impact,
-    /// All comments.
-    Comments,
-    /// The brief and acceptance criteria.
-    Context,
-    /// Test evidence of the selected unit.
-    Tests,
-    /// Comments of the previous round awaiting a decision.
-    Followup,
-    /// Review progress.
-    Coverage,
-    /// The explained flow of the change.
-    Flow,
 }
 
 impl Mode {
     /// Every mode in `Tab` order.
-    pub const ALL: [Self; 11] = [
-        Self::Queue,
-        Self::Structure,
-        Self::Files,
-        Self::Code,
-        Self::Impact,
-        Self::Comments,
-        Self::Context,
-        Self::Tests,
-        Self::Followup,
-        Self::Coverage,
-        Self::Flow,
-    ];
+    pub const ALL: [Self; 4] = [Self::Queue, Self::Structure, Self::Files, Self::Code];
 
     /// The name shown in the title bar.
     pub fn label(self, locale: Locale) -> &'static str {
@@ -75,13 +47,6 @@ impl Mode {
             Self::Structure => t::mode_structure(locale),
             Self::Files => t::mode_files(locale),
             Self::Code => t::mode_code(locale),
-            Self::Impact => t::mode_impact(locale),
-            Self::Comments => t::mode_comments(locale),
-            Self::Context => t::mode_context(locale),
-            Self::Tests => t::mode_tests(locale),
-            Self::Followup => t::mode_followup(locale),
-            Self::Coverage => t::mode_coverage(locale),
-            Self::Flow => t::mode_flow(locale),
         }
     }
 
@@ -167,17 +132,6 @@ pub enum Depth {
     Symbol,
 }
 
-/// A row of the flow list.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FlowLine {
-    /// The step, its depth and how it was reached.
-    pub row: crate::app::FlowRow,
-    /// Other steps hang below this one.
-    pub has_branches: bool,
-    /// Those steps are folded away.
-    pub folded: bool,
-}
-
 /// How many visited units `<` can walk back through.
 const HISTORY_LIMIT: usize = 64;
 
@@ -237,10 +191,6 @@ pub struct CodeState {
     pub height: usize,
     /// Columns scrolled to the right.
     pub hscroll: usize,
-    /// Where a multi-line selection started.
-    pub selection: Option<usize>,
-    /// A symbol of the project that is not part of the change (reached from the impact view).
-    pub detached: Option<crate::domain::graph::SymbolKey>,
     /// Where the code lines were drawn last, so a mouse click can pick a line.
     pub area: ratatui::layout::Rect,
 }
@@ -254,110 +204,9 @@ pub struct Peek {
     pub restore: Version,
 }
 
-/// What a row of the impact view is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImpactRowKind {
-    /// A section title.
-    Heading,
-    /// An entrypoint or the path to it.
-    Entrypoint,
-    /// A caller.
-    Caller,
-    /// A callee.
-    Callee,
-    /// Explanatory text.
-    Note,
-}
-
-/// One line of the impact view.
-#[derive(Debug, Clone)]
-pub struct ImpactRow {
-    /// What it is.
-    pub kind: ImpactRowKind,
-    /// Text to show (already free of terminal sequences).
-    pub text: String,
-    /// The symbol it leads to, when it can be opened.
-    pub target: Option<SymbolKey>,
-    /// How certain the connection is.
-    pub origin: Option<EdgeOrigin>,
-    /// The second line of the row: where the symbol lives. For a heading, how many rows follow it.
-    pub detail: String,
-    /// The third line of the row, when it has one: the path an entrypoint takes to the symbol.
-    pub extra: String,
-    /// How many calls away the symbol is, to indent it. Zero for everything but a caller.
-    pub depth: usize,
-}
-
-/// The impact view of one symbol.
-#[derive(Debug, Clone, Default)]
-pub struct ImpactState {
-    /// A symbol picked with `p`; otherwise the current unit's symbol is used.
-    pub focus: Option<SymbolKey>,
-    /// The graph answer.
-    pub report: Option<ImpactReport>,
-    /// What to draw.
-    pub rows: Vec<ImpactRow>,
-    /// The one-line answer shown above the rows.
-    pub summary: String,
-    /// How much of that answer is certain, shown under it.
-    pub evidence: String,
-}
-
-/// What a text editor overlay is for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EditorPurpose {
-    /// A new comment on a unit.
-    NewComment {
-        /// The unit.
-        unit: UnitId,
-        /// The version being read.
-        version: Version,
-        /// The selected lines.
-        lines: Option<(u32, u32)>,
-    },
-    /// Editing an existing draft comment.
-    EditComment(CommentId),
-    /// The intent summary.
-    Intent,
-    /// A new acceptance criterion.
-    Criterion,
-    /// The note for a follow-up decision.
-    FollowupNote {
-        /// The comment.
-        comment: CommentId,
-        /// The decision.
-        status: FollowupStatus,
-    },
-}
-
-/// A small text editor shown over the screen.
-#[derive(Debug, Clone)]
-pub struct Editor {
-    /// The heading.
-    pub title: String,
-    /// What it is for.
-    pub purpose: EditorPurpose,
-    /// The text so far.
-    pub text: String,
-    /// Optional priority of a comment.
-    pub severity: Option<Priority>,
-    /// Whether the field accepts several lines (`Ctrl-J` inserts a line break; `Enter` always saves).
-    pub multiline: bool,
-    /// Why the last attempt to save failed.
-    pub error: Option<String>,
-}
-
 /// Something the user must confirm.
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
-    /// Paste the instruction into the agent's input.
-    PrepareInAgent,
-    /// Paste the request for a flow diagram into the agent's input.
-    PrepareFlowRequest,
-    /// Run the user's test command.
-    RunTests(TestRunRequest),
-    /// Delete a draft comment.
-    DeleteComment(CommentId),
     /// Take a new snapshot.
     Refresh,
     /// Silence a rule for this review (a false positive).
@@ -377,36 +226,6 @@ pub struct Confirm {
     pub action: ConfirmAction,
 }
 
-/// The finishing flow.
-#[derive(Debug, Clone)]
-pub enum FinishStage {
-    /// Waiting for confirmation, with the non-blocking warnings.
-    Confirm {
-        /// Warnings to show.
-        warnings: Vec<String>,
-    },
-    /// Finished; choosing how to deliver.
-    Deliver {
-        /// The payload.
-        record: FeedbackRecord,
-        /// The selected option.
-        selected: usize,
-    },
-}
-
-/// How many delivery options there are after finishing.
-pub const DELIVERY_COUNT: usize = 4;
-
-/// Delivery options after finishing.
-pub fn delivery_options(locale: Locale) -> [&'static str; DELIVERY_COUNT] {
-    [
-        t::delivery_prepare(locale),
-        t::delivery_copy(locale),
-        t::delivery_show(locale),
-        t::delivery_close(locale),
-    ]
-}
-
 /// A layer over the main screen.
 #[derive(Debug, Clone)]
 pub enum Overlay {
@@ -424,16 +243,12 @@ pub enum Overlay {
         /// What was typed.
         input: String,
     },
-    /// A text editor.
-    Editor(Editor),
     /// A question.
     Confirm(Confirm),
     /// The reasons behind a priority.
     Explain(UnitId),
     /// What changed about one symbol's contract.
     Contract(UnitId),
-    /// Finishing the review.
-    Finish(FinishStage),
     /// A one-time explanation. Any key closes it.
     Notice {
         /// The heading.
@@ -460,10 +275,6 @@ pub struct App {
     pub session: ReviewSession,
     /// Highlighting and parsing for ad-hoc views.
     pub parser: Arc<dyn SourceParser>,
-    /// The agent's input, when the reader runs inside `klaub wrap`.
-    pub agent: Option<Arc<dyn AgentChannel>>,
-    /// The clipboard.
-    pub clipboard: Option<Arc<dyn Clipboard>>,
     /// Colours.
     pub theme: Theme,
     /// The language every sentence is shown in.
@@ -474,7 +285,7 @@ pub struct App {
     pub mode: Mode,
     /// Modes visited before the current one (for `Esc`).
     pub history: Vec<Mode>,
-    /// The unit that Code, Impact and Tests refer to.
+    /// The unit the code pane shows.
     pub unit: Option<UnitId>,
     /// Units visited before the current one, oldest first. `<` walks back through them.
     pub(crate) unit_back: Vec<UnitId>,
@@ -505,43 +316,18 @@ pub struct App {
     pub collapsed: HashSet<RepoPath>,
     /// The code being read.
     pub code: CodeState,
-    /// The impact of the current symbol.
-    pub impact: ImpactState,
-    /// Scrolling of the impact view.
-    pub impact_view: Viewport,
-    /// Scrolling of the comments list.
-    pub comments_view: Viewport,
-    /// Scrolling of the context view.
-    pub context_view: Viewport,
-    /// Scrolling of the tests view.
-    pub tests_view: Viewport,
-    /// Scrolling of the follow-up list.
-    pub followup_view: Viewport,
-    /// Scrolling of the coverage view.
-    pub coverage_view: Viewport,
-    /// Scrolling of the flow view.
-    pub flow_view: Viewport,
-    /// Steps of the flow whose branches are folded away.
-    pub flow_folded: HashSet<usize>,
     /// A layer over the screen.
     pub overlay: Option<Overlay>,
     /// The last message.
     pub status: Option<(String, StatusKind)>,
     /// An action to run after the next frame is drawn (it blocks, so the screen says so first).
     pub deferred: Option<ConfirmAction>,
-    /// The tail of the output of the last test run started from the reader.
-    pub test_output: Option<String>,
     /// `q` was pressed once; a second press leaves.
     pub quit_armed: bool,
     /// Leave the reader.
     pub should_quit: bool,
     /// When the worktree was last probed for changes.
     pub last_probe: Instant,
-    /// The adapters for the programs a paste may go to. Empty by default, which means every
-    /// program gets the generic adapter and nothing is assumed about its state.
-    pub harnesses: crate::domain::harness::HarnessRegistry,
-    /// Where each tab was drawn last, so a mouse click can switch to it.
-    pub tab_hits: Vec<(ratatui::layout::Rect, Mode)>,
     /// Whether the terminal reports key releases. Only then can a key be held to look at the
     /// previous version.
     pub hold_supported: bool,
@@ -563,29 +349,17 @@ impl App {
         self
     }
 
-    /// Replaces the adapters consulted before a paste. The confirmation names the adapter it used.
-    #[must_use]
-    pub fn with_harnesses(mut self, harnesses: crate::domain::harness::HarnessRegistry) -> Self {
-        self.harnesses = harnesses;
-        self
-    }
-
     /// Whether a text field or the palette is open, where keys must arrive as typed.
     #[must_use]
     pub fn text_input_open(&self) -> bool {
         matches!(
             self.overlay,
-            Some(Overlay::Editor(_) | Overlay::Search { .. } | Overlay::Palette { .. })
+            Some(Overlay::Search { .. } | Overlay::Palette { .. })
         )
     }
 
     /// Creates the reader over an open session.
-    pub fn new(
-        session: ReviewSession,
-        parser: Arc<dyn SourceParser>,
-        agent: Option<Arc<dyn AgentChannel>>,
-        clipboard: Option<Arc<dyn Clipboard>>,
-    ) -> Self {
+    pub fn new(session: ReviewSession, parser: Arc<dyn SourceParser>) -> Self {
         let theme = Theme::new(session.analysis().config.ui.theme);
         let locale = session.analysis().config.ui.language.locale_or_default();
         let keymap = match Keymap::from_overrides(&session.analysis().config.keys) {
@@ -599,8 +373,6 @@ impl App {
         let mut app = Self {
             session,
             parser,
-            agent,
-            clipboard,
             theme,
             locale,
             keymap,
@@ -621,24 +393,12 @@ impl App {
             depth: Depth::Symbol,
             collapsed: HashSet::new(),
             code: CodeState::default(),
-            impact: ImpactState::default(),
-            impact_view: Viewport::default(),
-            comments_view: Viewport::default(),
-            context_view: Viewport::default(),
-            tests_view: Viewport::default(),
-            followup_view: Viewport::default(),
-            coverage_view: Viewport::default(),
-            flow_view: Viewport::default(),
-            flow_folded: HashSet::new(),
             overlay: None,
             status: None,
             deferred: None,
-            test_output: None,
             quit_armed: false,
             should_quit: false,
             last_probe: Instant::now(),
-            harnesses: crate::domain::harness::HarnessRegistry::default(),
-            tab_hits: Vec::new(),
             hold_supported: false,
             peek: None,
         };
@@ -808,9 +568,6 @@ impl App {
             };
             self.rebuild_code();
         }
-        if matches!(self.mode, Mode::Impact) {
-            self.rebuild_impact();
-        }
     }
 
     /// Selects the queue row of `unit` if it is visible.
@@ -871,72 +628,6 @@ impl App {
         modules.sort();
         modules.dedup();
         modules
-    }
-
-    // ---- flow ---------------------------------------------------------------------------------
-
-    /// The rows of the flow the reviewer can see: the layout minus the branches they folded.
-    ///
-    /// Each row says whether it has branches below it, so the view can draw the fold mark. A step
-    /// that was already shown higher up (a cycle or a join) never has branches of its own.
-    pub fn flow_rows(&self) -> Vec<FlowLine> {
-        let Some(flow) = &self.session.flow().flow else {
-            return Vec::new();
-        };
-        let all = crate::app::flow_layout(&flow.document);
-        let mut visible = Vec::with_capacity(all.len());
-        let mut hidden_below: Option<usize> = None;
-        for (index, row) in all.iter().enumerate() {
-            if let Some(depth) = hidden_below {
-                if row.depth > depth {
-                    continue;
-                }
-                hidden_below = None;
-            }
-            let has_branches = all
-                .get(index + 1)
-                .is_some_and(|next| next.depth > row.depth);
-            let folded = has_branches && self.flow_folded.contains(&row.step);
-            visible.push(FlowLine {
-                row: row.clone(),
-                has_branches,
-                folded,
-            });
-            if folded {
-                hidden_below = Some(row.depth);
-            }
-        }
-        visible
-    }
-
-    /// The steps from the start of the flow down to the selected row, selected one last.
-    ///
-    /// Computed on the whole layout, so folding never removes an ancestor from the path.
-    pub fn flow_breadcrumbs(&self) -> Vec<usize> {
-        let Some(flow) = &self.session.flow().flow else {
-            return Vec::new();
-        };
-        let Some(selected) = self
-            .flow_rows()
-            .get(self.flow_view.selected)
-            .map(|line| line.row.clone())
-        else {
-            return Vec::new();
-        };
-        let all = crate::app::flow_layout(&flow.document);
-        let Some(position) = all.iter().position(|row| *row == selected) else {
-            return vec![selected.step];
-        };
-        let mut path = vec![selected.step];
-        let mut depth = selected.depth;
-        for row in all[..position].iter().rev() {
-            if row.depth < depth {
-                path.push(row.step);
-                depth = row.depth;
-            }
-        }
-        path.reverse();
-        path
     }
 
     // ---- structure ---------------------------------------------------------------------------
@@ -1091,13 +782,10 @@ impl App {
             return;
         };
         let scope = self.code.scope.unwrap_or(CodeScope::Symbol);
-        let view = if let Some(key) = &self.code.detached {
-            self.session.code_view_of_symbol(self.parser.as_ref(), key)
-        } else {
-            self.session
-                .analysis()
-                .code_view(self.parser.as_ref(), &unit, version, scope)
-        };
+        let view = self
+            .session
+            .analysis()
+            .code_view(self.parser.as_ref(), &unit, version, scope);
         // Start on the first change when there is one, otherwise at the top.
         let first_change = view.as_ref().and_then(|v| {
             v.changes
@@ -1106,7 +794,6 @@ impl App {
         });
         self.code.cursor = first_change.unwrap_or(0);
         self.code.offset = self.code.cursor.saturating_sub(3);
-        self.code.selection = None;
         self.code.view = view;
     }
 
@@ -1119,188 +806,5 @@ impl App {
             }
             self.mode = mode;
         }
-        if mode == Mode::Impact {
-            self.rebuild_impact();
-        }
-    }
-
-    /// The comments of the previous round that still await a decision.
-    pub fn followups(&self) -> Vec<&crate::domain::review::Comment> {
-        let current = &self.session.review().review_id;
-        self.session
-            .review()
-            .comments
-            .iter()
-            .filter(|c| {
-                c.origin_review_id.as_ref().is_some_and(|o| o != current)
-                    || c.followup_status != FollowupStatus::Pending
-            })
-            .collect()
-    }
-    // ---- impact ----------------------------------------------------------------------------------
-
-    /// The symbol the impact view is about.
-    pub fn impact_subject(&self) -> Option<SymbolKey> {
-        self.impact.focus.clone().or_else(|| {
-            self.current_item()
-                .and_then(|item| item.unit.symbol.clone())
-        })
-    }
-
-    /// Recomputes the impact rows for the current subject.
-    pub fn rebuild_impact(&mut self) {
-        let mut rows = Vec::new();
-        let row = |kind: ImpactRowKind, text: String| ImpactRow {
-            kind,
-            text,
-            target: None,
-            origin: None,
-            detail: String::new(),
-            extra: String::new(),
-            depth: 0,
-        };
-        let note = |text: &str| row(ImpactRowKind::Note, text.to_owned());
-        let heading = |text: &str, count: usize| ImpactRow {
-            detail: count.to_string(),
-            ..row(ImpactRowKind::Heading, text.to_owned())
-        };
-        let locale = self.locale;
-        self.impact.summary.clear();
-        self.impact.evidence.clear();
-        let Some(subject) = self.impact_subject() else {
-            rows.push(note(t::impact_whole_file(locale)));
-            self.impact.report = None;
-            self.impact.rows = rows;
-            self.impact_view = Viewport::default();
-            return;
-        };
-        let report = self.session.impact(&subject);
-        match &report {
-            None => rows.push(note(t::impact_not_indexed(locale))),
-            Some(report) => {
-                self.impact.summary = t::impact_summary(
-                    locale,
-                    labels::reach(locale, report.scope),
-                    report.direct_callers(),
-                    report.entrypoints.len(),
-                    report.external_entrypoints(),
-                );
-                let c = &report.coverage;
-                let tail = if c.truncated {
-                    t::impact_depth_limit(locale)
-                } else {
-                    ""
-                };
-                self.impact.evidence = t::impact_evidence(
-                    locale,
-                    c.resolved_edges,
-                    c.heuristic_edges,
-                    c.unresolved_calls,
-                    tail,
-                );
-                rows.push(heading(
-                    t::impact_entrypoints(locale),
-                    report.entrypoints.len(),
-                ));
-                if report.entrypoints.is_empty() {
-                    rows.push(note(t::impact_no_entrypoints(locale)));
-                }
-                for reach in &report.entrypoints {
-                    let entry = &reach.entrypoint;
-                    let path: Vec<String> = reach
-                        .path
-                        .iter()
-                        .map(|step| sanitize_single_line(&step.symbol.qualified_name))
-                        .collect();
-                    rows.push(ImpactRow {
-                        target: Some(entry.symbol.clone()),
-                        origin: Some(reach.origin),
-                        detail: sanitize_single_line(&format!(
-                            "{} · {}, {} · {}",
-                            entry.symbol.file,
-                            labels::entrypoint_kind(locale, &entry.kind),
-                            labels::entrypoint_scope(locale, entry.scope),
-                            entry.evidence,
-                        )),
-                        extra: path.join(" → "),
-                        ..row(
-                            ImpactRowKind::Entrypoint,
-                            sanitize_single_line(&entry.symbol.qualified_name),
-                        )
-                    });
-                }
-                let callers: usize = report.callers.iter().map(|l| l.callers.len()).sum();
-                rows.push(heading(t::impact_callers(locale), callers));
-                if report.callers.is_empty() {
-                    rows.push(note(t::impact_no_callers(locale)));
-                }
-                for level in &report.callers {
-                    for step in &level.callers {
-                        rows.push(ImpactRow {
-                            target: Some(step.symbol.clone()),
-                            origin: Some(step.origin),
-                            detail: sanitize_single_line(step.symbol.file.as_ref()),
-                            depth: usize::try_from(level.depth.saturating_sub(1)).unwrap_or(0),
-                            ..row(
-                                ImpactRowKind::Caller,
-                                sanitize_single_line(&step.symbol.qualified_name),
-                            )
-                        });
-                    }
-                }
-                rows.push(heading(t::impact_calls(locale), report.callees.len()));
-                if report.callees.is_empty() {
-                    rows.push(note(t::impact_no_calls(locale)));
-                }
-                for step in &report.callees {
-                    rows.push(ImpactRow {
-                        target: Some(step.symbol.clone()),
-                        origin: Some(step.origin),
-                        detail: sanitize_single_line(step.symbol.file.as_ref()),
-                        ..row(
-                            ImpactRowKind::Callee,
-                            sanitize_single_line(&step.symbol.qualified_name),
-                        )
-                    });
-                }
-            }
-        }
-        self.impact.report = report;
-        self.impact.rows = rows;
-        // Start on the first thing that can be opened, not on a heading.
-        self.impact_view = Viewport {
-            selected: self
-                .impact
-                .rows
-                .iter()
-                .position(|r| r.target.is_some())
-                .unwrap_or(0),
-            ..Viewport::default()
-        };
-    }
-
-    /// Opens the code of a symbol: the changed unit when it is one, otherwise a read-only view.
-    pub fn open_symbol(&mut self, key: &SymbolKey) {
-        if let Some(unit) = self.session.unit_of_symbol(key) {
-            self.open_unit(&unit, None);
-            return;
-        }
-        let view = self.session.code_view_of_symbol(self.parser.as_ref(), key);
-        if view.is_none() {
-            self.say(
-                StatusKind::Warn,
-                t::impact_cannot_show(self.locale, &sanitize_single_line(&key.qualified_name)),
-            );
-            return;
-        }
-        self.code = CodeState {
-            version: Some(Version::After),
-            scope: Some(CodeScope::Symbol),
-            detached: Some(key.clone()),
-            ..CodeState::default()
-        };
-        self.code.cursor = 0;
-        self.code.view = view;
-        self.go(Mode::Code);
     }
 }

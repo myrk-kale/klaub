@@ -16,8 +16,7 @@ use klaub::adapters::storage::{
 };
 use klaub::app::{OpenOptions, Ports, ReviewSession};
 use klaub::domain::config::Config;
-use klaub::domain::finding::Priority;
-use klaub::domain::ports::{AgentChannel, AgentTarget, Clipboard, IdGenerator, PrepareOutcome};
+use klaub::domain::ports::IdGenerator;
 use klaub::domain::review::Version;
 use klaub::domain::snapshot::SnapshotRequest;
 use klaub::tui::{App, Mode, Overlay, draw, end_peek, handle_key, handle_mouse};
@@ -77,12 +76,7 @@ fn changed_repo() -> TempRepo {
 }
 
 fn reader(session: ReviewSession) -> App {
-    App::new(
-        session,
-        Arc::new(TreeSitterParser::new()),
-        None,
-        None::<Arc<dyn Clipboard>>,
-    )
+    App::new(session, Arc::new(TreeSitterParser::new()))
 }
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -192,98 +186,6 @@ fn contract_overlay_shows_the_change() {
 
     press(&mut app, 'x');
     assert!(app.overlay.is_none(), "any key should close the overlay");
-}
-
-/// Four functions in four files, a flow that branches at `start`, and the flow file on disk.
-fn flow_app() -> (TempRepo, App) {
-    let repo = TempRepo::new();
-    for (file, name, body) in [
-        ("a.py", "start", "mid()"),
-        ("b.py", "mid", "finish()"),
-        ("c.py", "finish", "1"),
-        ("d.py", "side", "2"),
-    ] {
-        repo.write(file, &format!("def {name}():\n    return {body}\n"));
-    }
-    repo.commit_all("initial");
-    for (file, name, body) in [
-        ("a.py", "start", "mid() + 1"),
-        ("b.py", "mid", "finish() + 1"),
-        ("c.py", "finish", "2"),
-        ("d.py", "side", "3"),
-    ] {
-        repo.write(file, &format!("def {name}():\n    return {body}\n"));
-    }
-    let mut session = open(&repo);
-    let snapshot = session.analysis().snapshot.clone();
-    let step = |id: &str, file: &str, symbol: &str| {
-        serde_json::json!({"id": id, "file_path": file, "symbol": symbol, "note": "n",
-            "changed": true, "confidence": "resolved"})
-    };
-    let edge = |from: &str, to: &str| serde_json::json!({"from": from, "to": to, "kind": "calls", "confidence": "resolved"});
-    let document = serde_json::json!({
-        "schema_version": 1, "snapshot_id": snapshot.id, "base_oid": snapshot.base_oid,
-        "worktree_id": snapshot.worktree.id, "title": "Branching flow", "summary": "s",
-        "steps": [step("start", "a.py", "start"), step("mid", "b.py", "mid"),
-                  step("finish", "c.py", "finish"), step("side", "d.py", "side")],
-        "edges": [edge("start", "mid"), edge("mid", "finish"), edge("start", "side")]
-    });
-    let path = repo.path().join(session.flow().expected_path.as_str());
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, document.to_string()).unwrap();
-    session.reload_flow().unwrap();
-    (repo, reader(session))
-}
-
-#[test]
-fn the_flow_is_an_indented_tree_with_a_breadcrumb_path() {
-    let (_repo, mut app) = flow_app();
-    press(&mut app, '0');
-    let rows = app.flow_rows();
-    assert_eq!(
-        rows.iter()
-            .map(|r| (r.row.step, r.row.depth))
-            .collect::<Vec<_>>(),
-        vec![(0, 0), (1, 1), (2, 2), (3, 1)],
-        "depth-first, branches in document order"
-    );
-
-    press(&mut app, 'j');
-    press(&mut app, 'j');
-    let shown = screen(&mut app, 110, 30);
-    assert!(
-        shown.contains("path: start › mid › finish"),
-        "the breadcrumb names every ancestor of the selected step:\n{shown}"
-    );
-}
-
-#[test]
-fn folding_hides_the_branches_and_keeps_the_step() {
-    let (_repo, mut app) = flow_app();
-    press(&mut app, '0');
-    handle_key(&mut app, key(KeyCode::Left));
-    assert_eq!(app.flow_rows().len(), 1, "start folded: only start remains");
-    assert!(screen(&mut app, 110, 30).contains('▸'));
-
-    handle_key(&mut app, key(KeyCode::Right));
-    assert_eq!(app.flow_rows().len(), 4);
-    handle_key(&mut app, key(KeyCode::Char(' ')));
-    assert_eq!(app.flow_rows().len(), 1, "space toggles");
-}
-
-#[test]
-fn enter_opens_the_step_that_is_selected_even_after_folding() {
-    let (_repo, mut app) = flow_app();
-    press(&mut app, '0');
-    press(&mut app, 'j');
-    handle_key(&mut app, key(KeyCode::Left)); // fold `mid`, hiding `finish`
-    assert_eq!(app.flow_rows().len(), 3);
-    press(&mut app, 'j'); // now on `side`
-    handle_key(&mut app, key(KeyCode::Enter));
-    assert!(matches!(app.mode, klaub::tui::Mode::Code));
-    let unit = app.unit.clone().unwrap();
-    let label = &app.session.analysis().item(&unit).unwrap().unit.label;
-    assert!(label.contains("side"), "{label}");
 }
 
 /// Two changed functions in two files, so the queue has two units to walk between.
@@ -426,10 +328,10 @@ fn contract_overlay_lists_parameters_raises_and_io_for_a_symbol() {
     press(&mut app, 'i');
     let shown = screen(&mut app, 110, 50);
     for expected in [
-        "parameters",
+        "Signature",
         "+ strict: bool = False",
-        "returns",
-        "raises",
+        ") → str",
+        "Raises",
         "+ ValueError",
         "calls requests.get (looks like I/O)",
     ] {
@@ -461,36 +363,6 @@ fn contract_overlay_reads_a_dependency_manifest() {
             "missing {expected:?} in:\n{shown}"
         );
     }
-}
-
-#[test]
-fn comment_empty_is_rejected() {
-    let repo = changed_repo();
-    let mut app = reader(open(&repo));
-    press(&mut app, 'c');
-    assert!(
-        matches!(app.overlay, Some(Overlay::Editor(_))),
-        "c should open the comment editor"
-    );
-
-    handle_key(&mut app, key(KeyCode::Enter));
-    match &app.overlay {
-        Some(Overlay::Editor(editor)) => {
-            assert!(editor.error.is_some(), "an empty comment must be rejected")
-        }
-        other => panic!("the editor should stay open, got {other:?}"),
-    }
-
-    type_word(&mut app, "parameterise");
-    handle_key(&mut app, key(KeyCode::Enter));
-    assert!(
-        app.overlay.is_none(),
-        "a non-empty comment should be saved and close the editor"
-    );
-    assert!(
-        !app.session.review().comments.is_empty(),
-        "the saved comment should be on the review"
-    );
 }
 
 #[test]
@@ -574,24 +446,11 @@ fn a_moved_movement_key_moves_the_cursor_and_releases_the_old_one() {
 #[test]
 fn the_footer_names_the_moved_movement_key() {
     let repo = changed_repo();
-    let mut app = reader_with_keys(&repo, &[("down", "z"), ("comment", "e")]);
+    let mut app = reader_with_keys(&repo, &[("down", "z"), ("explain", "e")]);
     let text = screen(&mut app, 140, 30);
     assert!(text.contains("z/k move"), "{text}");
-    assert!(text.contains("e comment"), "{text}");
+    assert!(text.contains("e why"), "{text}");
     assert!(!text.contains("j/k"), "{text}");
-}
-
-#[test]
-fn a_moved_follow_up_decision_key_does_not_leave_the_old_one_acting() {
-    let repo = changed_repo();
-    let mut app = reader_with_keys(&repo, &[("decide_resolved", "z")]);
-    // The decision keys only act on a comment of the previous round; without one they do nothing,
-    // so the check here is that the old key does not fall through to another action.
-    app.go(Mode::Followup);
-    press(&mut app, 'y');
-    assert!(app.overlay.is_none());
-    press(&mut app, 'z');
-    assert!(app.overlay.is_none(), "there is no comment to decide on");
 }
 
 fn released(c: char) -> KeyEvent {
@@ -714,20 +573,6 @@ fn three_changes() -> TempRepo {
 }
 
 #[test]
-fn clicking_a_tab_switches_to_that_mode() {
-    let repo = changed_repo();
-    let mut app = reader(open(&repo));
-    let _ = screen(&mut app, 140, 30);
-    let (area, mode) = *app
-        .tab_hits
-        .iter()
-        .find(|(_, mode)| *mode == Mode::Coverage)
-        .expect("the tab row is wide enough to show every tab");
-    click(&mut app, area.x + 1, area.y);
-    assert_eq!(app.mode, mode);
-}
-
-#[test]
 fn clicking_a_row_selects_it_and_clicking_the_selected_row_opens_it() {
     let repo = three_changes();
     let mut app = reader(open(&repo));
@@ -832,38 +677,32 @@ fn the_storage_notice_explains_klaub_dir_and_closes_on_any_key() {
     assert!(!shown.contains("Where Klaub keeps its files"));
 }
 
-/// A comment carrying the sequences a terminal must never act on.
-fn hostile_comment() -> String {
-    let mut text = String::from("looks fine ");
-    text.push('\u{1b}');
-    text.push_str("[31m");
-    text.push('\u{1b}');
-    text.push_str("]0;pwned\u{7}");
-    text.push('\u{202E}');
-    text.push('\u{202A}');
-    text.push_str(" end");
-    text
-}
-
+/// A docstring that tries to talk to the terminal: an escape sequence, an OSC title and bidi
+/// controls. The symbol panel shows the docstring, so it is where this text could get out.
 #[test]
 fn hostile_text_never_reaches_the_buffer() {
-    let repo = changed_repo();
-    let mut session = open(&repo);
-    let unit = session.analysis().queue[0].unit.id.clone();
-    session
-        .add_comment(
-            &unit,
-            Version::After,
-            None,
-            &hostile_comment(),
-            Some(Priority::P1),
-        )
-        .unwrap();
+    let repo = TempRepo::new();
+    repo.write("service.py", "def lookup(name):\n    return name\n");
+    repo.commit_all("initial");
+    let mut doc = String::from("looks fine ");
+    doc.push('\u{1b}');
+    doc.push_str("[31m");
+    doc.push('\u{1b}');
+    doc.push_str("]0;pwned\u{7}");
+    doc.push('\u{202E}');
+    doc.push('\u{202A}');
+    doc.push_str(" end");
+    repo.write(
+        "service.py",
+        &format!("def lookup(name, strict=False):\n    \"\"\"{doc}\"\"\"\n    return name\n"),
+    );
+    let mut app = reader(open(&repo));
+    let rendered = screen(&mut app, 170, 40);
 
-    let mut app = reader(session);
-    press(&mut app, '5');
-    let rendered = screen(&mut app, 120, 30);
-
+    assert!(
+        rendered.contains("looks fine"),
+        "the panel shows the docstring:\n{rendered}"
+    );
     assert!(
         !rendered.contains('\u{1b}'),
         "an escape byte reached the buffer:\n{rendered}"
@@ -881,8 +720,8 @@ fn hostile_text_never_reaches_the_buffer() {
         "the OSC introducer reached the buffer:\n{rendered}"
     );
     assert!(
-        rendered.contains("looks fine") && rendered.contains("end"),
-        "the readable part of the comment should survive:\n{rendered}"
+        rendered.contains("end"),
+        "the readable part of the text survives:\n{rendered}"
     );
 }
 
@@ -894,186 +733,6 @@ fn tiny_terminal() {
     assert!(
         rendered.contains("Terminal too small") || rendered.contains("too small"),
         "a terminal below the minimum should say so:\n{rendered}"
-    );
-}
-
-#[derive(Default)]
-struct FakeChannel {
-    pasted: std::sync::Mutex<Vec<String>>,
-}
-
-impl AgentChannel for FakeChannel {
-    fn target(&self) -> klaub::domain::Result<Option<AgentTarget>> {
-        Ok(Some(AgentTarget {
-            pane_id: "%7".to_owned(),
-            command: "agent".to_owned(),
-            description: "session klaub-1 · window agent · pane %7".to_owned(),
-        }))
-    }
-
-    fn prepare_input(&self, text: &str) -> klaub::domain::Result<PrepareOutcome> {
-        self.pasted.lock().unwrap().push(text.to_owned());
-        Ok(PrepareOutcome::Prepared)
-    }
-}
-
-/// A channel whose pane shows what the test says.
-struct ScreenChannel {
-    command: String,
-    screen: String,
-}
-
-impl AgentChannel for ScreenChannel {
-    fn target(&self) -> klaub::domain::Result<Option<AgentTarget>> {
-        Ok(Some(AgentTarget {
-            pane_id: "%7".to_owned(),
-            command: self.command.clone(),
-            description: "session klaub-1 · window agent · pane %7".to_owned(),
-        }))
-    }
-
-    fn prepare_input(&self, _text: &str) -> klaub::domain::Result<PrepareOutcome> {
-        Ok(PrepareOutcome::Prepared)
-    }
-
-    fn screen_tail(&self, _lines: usize) -> klaub::domain::Result<Option<String>> {
-        Ok(Some(self.screen.clone()))
-    }
-}
-
-struct BusyAware;
-
-impl klaub::domain::harness::HarnessAdapter for BusyAware {
-    fn id(&self) -> &'static str {
-        "busy-aware"
-    }
-    fn name(&self) -> &'static str {
-        "Busy-aware test harness"
-    }
-    fn recognizes(&self, command: &str) -> bool {
-        command == "busy-aware"
-    }
-    fn readiness(&self, screen_tail: &str) -> klaub::domain::harness::Readiness {
-        if screen_tail.contains("working") {
-            klaub::domain::harness::Readiness::Busy("it says it is still working".to_owned())
-        } else {
-            klaub::domain::harness::Readiness::Ready
-        }
-    }
-}
-
-/// The text of the confirmation that `Prepare in agent` opens.
-fn prepare_confirmation(command: &str, screen: &str, with_adapter: bool) -> String {
-    let repo = changed_repo();
-    let mut session = open(&repo);
-    let unit = session.analysis().queue[0].unit.id.clone();
-    session
-        .add_comment(&unit, Version::After, None, "use a parameter", None)
-        .unwrap();
-    let channel = Arc::new(ScreenChannel {
-        command: command.to_owned(),
-        screen: screen.to_owned(),
-    });
-    let mut app = App::new(
-        session,
-        Arc::new(TreeSitterParser::new()),
-        Some(channel),
-        None::<Arc<dyn Clipboard>>,
-    );
-    if with_adapter {
-        app = app.with_harnesses(
-            klaub::domain::harness::HarnessRegistry::default().with(Arc::new(BusyAware)),
-        );
-    }
-    press(&mut app, 'F');
-    press(&mut app, 'y');
-    // The delivery list: "Prepare in the agent" is the first option.
-    handle_key(&mut app, key(KeyCode::Enter));
-    screen_text(&mut app)
-}
-
-fn screen_text(app: &mut App) -> String {
-    screen(app, 140, 40)
-}
-
-#[test]
-fn the_confirmation_says_the_generic_adapter_knows_nothing_about_the_program() {
-    let text = prepare_confirmation("codex", "working...", false);
-    assert!(text.contains("harness: generic"), "{text}");
-    assert!(!text.contains("still working"), "{text}");
-}
-
-#[test]
-fn a_known_harness_adapter_can_warn_that_the_program_looks_busy() {
-    let text = prepare_confirmation("busy-aware", "working on it", true);
-    assert!(text.contains("harness: Busy-aware test harness"), "{text}");
-    assert!(text.contains("it says it is still working"), "{text}");
-
-    let idle = prepare_confirmation("busy-aware", "> ", true);
-    assert!(idle.contains("harness: Busy-aware test harness"), "{idle}");
-    assert!(!idle.contains("still working"), "{idle}");
-}
-
-#[test]
-fn finish_never_sends_enter() {
-    let repo = changed_repo();
-    let mut session = open(&repo);
-    let unit = session.analysis().queue[0].unit.id.clone();
-    session
-        .add_comment(&unit, Version::After, None, "use a parameter", None)
-        .unwrap();
-
-    let channel = Arc::new(FakeChannel::default());
-    let mut app = App::new(
-        session,
-        Arc::new(TreeSitterParser::new()),
-        Some(channel.clone()),
-        None::<Arc<dyn Clipboard>>,
-    );
-
-    press(&mut app, 'F');
-    press(&mut app, 'y');
-    match &app.overlay {
-        Some(Overlay::Finish(klaub::tui::FinishStage::Deliver { selected, .. })) => {
-            assert_eq!(
-                *selected, 0,
-                "the first delivery option is Prepare in agent"
-            );
-        }
-        other => panic!("finishing should offer delivery, got {other:?}"),
-    }
-
-    handle_key(&mut app, key(KeyCode::Enter));
-    let Overlay::Confirm(confirm) = app.overlay.as_ref().unwrap() else {
-        panic!("choosing Prepare in agent should ask for confirmation");
-    };
-    let shown = confirm.lines.join("\n");
-    assert!(
-        shown.contains("session klaub-1 · window agent · pane %7"),
-        "the confirmation should name the destination: {shown}"
-    );
-    assert!(
-        shown.contains("Klaub never presses Enter"),
-        "the confirmation should state that nothing is sent: {shown}"
-    );
-
-    let rendered = screen(&mut app, 100, 30);
-    assert!(
-        rendered.contains("session klaub-1") && rendered.contains("never presses Enter"),
-        "the confirmation should be on screen:\n{rendered}"
-    );
-
-    press(&mut app, 'y');
-    let pasted = channel.pasted.lock().unwrap().clone();
-    assert_eq!(
-        pasted.len(),
-        1,
-        "prepare_input should be called exactly once"
-    );
-    assert!(
-        !pasted[0].contains('\n') && !pasted[0].contains('\r'),
-        "the prepared text must be a single line: {:?}",
-        pasted[0]
     );
 }
 
@@ -1206,7 +865,7 @@ fn every_mode_and_overlay_draws_in_every_language_at_small_and_large_sizes() {
             }
             app.go(Mode::Queue);
             // Each key opens an overlay; the next one closes it again.
-            for opener in ['?', ':', '/', 'w', 'F', 'R', 'c'] {
+            for opener in ['?', ':', '/', 'w', 'R', 'i'] {
                 press(&mut app, opener);
                 let _ = screen(&mut app, width, height);
                 handle_key(&mut app, key(KeyCode::Esc));
@@ -1333,7 +992,7 @@ fn the_symbol_panel_shows_the_signature_types_and_the_documentation() {
         shown.contains("Finds a user by name."),
         "the docstring: {shown}"
     );
-    assert!(shown.contains("Review comments"), "{shown}");
+    assert!(shown.contains("Documentation"), "{shown}");
 }
 
 #[test]
@@ -1343,16 +1002,16 @@ fn k_hides_and_shows_the_symbol_panel() {
     handle_key(&mut app, key(KeyCode::Enter));
     let open = screen(&mut app, 170, 40);
     assert!(
-        open.contains("Review comments"),
+        open.contains("Documentation"),
         "the panel is open on a wide terminal"
     );
 
     press(&mut app, 'K');
     let closed = screen(&mut app, 170, 40);
-    assert!(!closed.contains("Review comments"), "K closes it");
+    assert!(!closed.contains("Documentation"), "K closes it");
     press(&mut app, 'K');
     assert!(
-        screen(&mut app, 170, 40).contains("Review comments"),
+        screen(&mut app, 170, 40).contains("Documentation"),
         "K opens it again"
     );
 }
