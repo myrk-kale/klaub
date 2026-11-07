@@ -30,7 +30,7 @@ Every key has a default, so an empty file (or none) is valid. The schema lives i
 | `ui.hold_to_peek` | `false` | Hold `B` (the `peek_previous` key) while reading code to see the previous version, and let go to come back. It needs a terminal that reports key releases (the kitty keyboard protocol: kitty, Ghostty, WezTerm, recent iTerm2 and foot). Where that is missing, which includes tmux, the key says so and `v` still toggles. While it is on, the terminal sends keys as escape codes except inside text fields, which keep ordinary input so compose and `AltGr` characters still type. |
 | `integration.submit_mode` | `"manual"` | The only mode. Klaub never presses `Enter` in the agent. |
 | `integration.paste_requires_confirmation` | `true` | Putting text in the agent's input always asks first. |
-| `integration.tmux_prefix` | `"C-b"` | The prefix of the session chords (`Prefix+R`, `Prefix+A`, `Prefix+I`, `Prefix+C`, `Prefix+T`, `Prefix+B`, `Prefix+L`, `Prefix+Q`, `Prefix+?`). |
+| `integration.tmux_prefix` | `"C-b"` | The prefix of the session chords. Moving between the agent and the reviewer needs no prefix: `Shift+←` goes to the agent and `Shift+→` to the reviewer. The rest are `Prefix+R`, `Prefix+A`, `Prefix+I`, `Prefix+C`, `Prefix+T`, `Prefix+B`, `Prefix+L`, `Prefix+Q` and `Prefix+?`. |
 
 ## `[keys]`
 
