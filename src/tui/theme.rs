@@ -62,8 +62,6 @@ struct Palette {
     faint: Rgb,
     /// Panel borders at rest.
     border: Rgb,
-    /// Bars and badges.
-    surface: Rgb,
     /// The selected row and the cursor line.
     raised: Rgb,
     /// Text drawn on a solid accent chip.
@@ -84,9 +82,8 @@ struct Palette {
 const DARK: Palette = Palette {
     fg: (192, 202, 245),
     muted: (130, 139, 184),
-    faint: (84, 92, 126),
-    border: (59, 66, 97),
-    surface: (31, 35, 53),
+    faint: (104, 114, 154),
+    border: (47, 53, 79),
     raised: (41, 46, 66),
     on_chip: (22, 22, 30),
     accent: (122, 162, 247),
@@ -106,7 +103,6 @@ const LIGHT: Palette = Palette {
     muted: (96, 104, 146),
     faint: (150, 156, 186),
     border: (192, 197, 218),
-    surface: (225, 228, 240),
     raised: (212, 218, 238),
     on_chip: (250, 250, 252),
     accent: (46, 105, 214),
@@ -127,7 +123,6 @@ const CATPPUCCIN_MOCHA: Palette = Palette {
     muted: (166, 173, 200),
     faint: (108, 112, 134),
     border: (88, 91, 112),
-    surface: (49, 50, 68),
     raised: (69, 71, 90),
     on_chip: (17, 17, 27),
     accent: (137, 180, 250),
@@ -148,7 +143,6 @@ const CATPPUCCIN_LATTE: Palette = Palette {
     muted: (108, 111, 133),
     faint: (140, 143, 161),
     border: (172, 176, 190),
-    surface: (204, 208, 218),
     raised: (188, 192, 204),
     on_chip: (239, 241, 245),
     accent: (30, 102, 245),
@@ -169,7 +163,6 @@ const DRACULA: Palette = Palette {
     muted: (180, 184, 208),
     faint: (98, 114, 164),
     border: (84, 88, 112),
-    surface: (52, 55, 70),
     raised: (68, 71, 90),
     on_chip: (40, 42, 54),
     accent: (189, 147, 249),
@@ -190,7 +183,6 @@ const GRUVBOX_DARK: Palette = Palette {
     muted: (168, 153, 132),
     faint: (124, 111, 100),
     border: (80, 73, 69),
-    surface: (50, 48, 47),
     raised: (60, 56, 54),
     on_chip: (40, 40, 40),
     accent: (131, 165, 152),
@@ -211,7 +203,6 @@ const NORD: Palette = Palette {
     muted: (170, 179, 197),
     faint: (97, 110, 136),
     border: (76, 86, 106),
-    surface: (59, 66, 82),
     raised: (67, 76, 94),
     on_chip: (46, 52, 64),
     accent: (136, 192, 208),
@@ -233,7 +224,6 @@ const ROSE_PINE: Palette = Palette {
     muted: (144, 140, 170),
     faint: (110, 106, 134),
     border: (74, 70, 98),
-    surface: (38, 35, 58),
     raised: (54, 50, 78),
     on_chip: (25, 23, 36),
     accent: (196, 167, 231),
@@ -342,7 +332,7 @@ impl Theme {
         if self.is_high_contrast() {
             Self::reversed()
         } else {
-            style.bg(self.color(self.pal().surface))
+            style
         }
     }
 
@@ -405,10 +395,7 @@ impl Theme {
         if self.is_high_contrast() {
             Self::reversed()
         } else {
-            let p = self.pal();
-            Style::default()
-                .fg(self.color(p.fg))
-                .bg(self.color(p.surface))
+            Style::default().fg(self.color(self.pal().fg))
         }
     }
 
@@ -417,10 +404,7 @@ impl Theme {
         if self.is_high_contrast() {
             Self::reversed()
         } else {
-            let p = self.pal();
-            Style::default()
-                .fg(self.color(p.muted))
-                .bg(self.color(p.surface))
+            Style::default().fg(self.color(self.pal().muted))
         }
     }
 
@@ -429,7 +413,7 @@ impl Theme {
         if self.is_high_contrast() {
             Self::reversed()
         } else {
-            self.solid(|p| p.accent)
+            self.accent()
         }
     }
 
@@ -438,7 +422,7 @@ impl Theme {
         if self.is_high_contrast() {
             Self::reversed()
         } else {
-            self.solid(|p| p.accent)
+            self.accent().add_modifier(Modifier::UNDERLINED)
         }
     }
 
@@ -737,7 +721,7 @@ mod tests {
             }
             let look = (
                 theme.accent().fg,
-                theme.bar().bg,
+                theme.faint().fg,
                 theme.selected().bg,
                 theme.mark_bg(LineMark::Added).bg,
                 theme.mark_bg(LineMark::Removed).bg,
@@ -747,7 +731,15 @@ mod tests {
                 "{name:?}"
             );
             assert_ne!(look.3, look.4, "{name:?}: added and removed look alike");
-            assert_ne!(theme.bar().bg, theme.selected().bg, "{name:?}");
+            assert!(
+                theme.bar().fg.is_some(),
+                "{name:?}: the bars have text colour"
+            );
+            assert_eq!(
+                theme.bar().bg,
+                None,
+                "{name:?}: the bars sit on the terminal"
+            );
             assert!(!seen.contains(&look), "{name:?} duplicates another theme");
             seen.push(look);
         }

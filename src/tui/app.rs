@@ -32,6 +32,8 @@ pub enum Mode {
     Queue,
     /// The module, file and symbol tree.
     Structure,
+    /// The changed files as one flat list.
+    Files,
     /// One version of the code.
     Code,
     /// Callers, entrypoints and callees of the selected unit.
@@ -52,9 +54,10 @@ pub enum Mode {
 
 impl Mode {
     /// Every mode in `Tab` order.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Queue,
         Self::Structure,
+        Self::Files,
         Self::Code,
         Self::Impact,
         Self::Comments,
@@ -70,6 +73,7 @@ impl Mode {
         match self {
             Self::Queue => t::mode_queue(locale),
             Self::Structure => t::mode_structure(locale),
+            Self::Files => t::mode_files(locale),
             Self::Code => t::mode_code(locale),
             Self::Impact => t::mode_impact(locale),
             Self::Comments => t::mode_comments(locale),
@@ -203,6 +207,19 @@ pub struct TreeRow {
     pub progress: (usize, usize),
 }
 
+/// A changed file in the flat list.
+#[derive(Debug, Clone)]
+pub struct FileRow {
+    /// The path as shown.
+    pub path: String,
+    /// The most urgent priority among its units.
+    pub priority: Priority,
+    /// `(reviewed, total)` units in the file.
+    pub progress: (usize, usize),
+    /// The unit shown when the file is picked: its most urgent one.
+    pub first: UnitId,
+}
+
 /// The code the reader is looking at.
 #[derive(Debug, Clone, Default)]
 pub struct CodeState {
@@ -263,6 +280,12 @@ pub struct ImpactRow {
     pub target: Option<SymbolKey>,
     /// How certain the connection is.
     pub origin: Option<EdgeOrigin>,
+    /// The second line of the row: where the symbol lives. For a heading, how many rows follow it.
+    pub detail: String,
+    /// The third line of the row, when it has one: the path an entrypoint takes to the symbol.
+    pub extra: String,
+    /// How many calls away the symbol is, to indent it. Zero for everything but a caller.
+    pub depth: usize,
 }
 
 /// The impact view of one symbol.
@@ -274,6 +297,10 @@ pub struct ImpactState {
     pub report: Option<ImpactReport>,
     /// What to draw.
     pub rows: Vec<ImpactRow>,
+    /// The one-line answer shown above the rows.
+    pub summary: String,
+    /// How much of that answer is certain, shown under it.
+    pub evidence: String,
 }
 
 /// What a text editor overlay is for.
@@ -461,6 +488,17 @@ pub struct App {
     pub queue_view: Viewport,
     /// Scrolling of the structure tree.
     pub structure_view: Viewport,
+    /// Cursor of the flat list of changed files.
+    pub files_view: Viewport,
+    /// Whether the user opened (`Some(true)`) or closed (`Some(false)`) the symbol panel. `None`
+    /// leaves it to the width of the terminal.
+    pub inspector: Option<bool>,
+    /// Whether the symbol panel was drawn last frame.
+    pub inspector_shown: bool,
+    /// Whether the terminal was wide enough for the symbol panel last frame.
+    pub inspector_fits: bool,
+    /// Which list the left pane shows: the last of Queue, Structure and Files that was current.
+    pub list: Mode,
     /// How deep the tree is open.
     pub depth: Depth,
     /// Files whose symbols are hidden.
@@ -575,6 +613,11 @@ impl App {
             filters: Filters::default(),
             queue_view: Viewport::default(),
             structure_view: Viewport::default(),
+            files_view: Viewport::default(),
+            inspector: None,
+            inspector_shown: false,
+            inspector_fits: false,
+            list: Mode::Queue,
             depth: Depth::Symbol,
             collapsed: HashSet::new(),
             code: CodeState::default(),
@@ -898,6 +941,32 @@ impl App {
 
     // ---- structure ---------------------------------------------------------------------------
 
+    /// The changed files, most urgent first, with how much of each is reviewed.
+    pub fn files_rows(&self) -> Vec<FileRow> {
+        let mut by_file: std::collections::BTreeMap<String, FileRow> =
+            std::collections::BTreeMap::new();
+        for item in self.visible_queue() {
+            let reviewed = self.session.review().is_reviewed(&item.unit.id);
+            let path = item.unit.file.as_str().to_owned();
+            let row = by_file.entry(path.clone()).or_insert_with(|| FileRow {
+                path,
+                priority: item.priority,
+                progress: (0, 0),
+                first: item.unit.id.clone(),
+            });
+            row.progress.1 += 1;
+            row.progress.0 += usize::from(reviewed);
+            // The queue is ordered by urgency, so the first unit seen is the most urgent one.
+        }
+        let mut rows: Vec<FileRow> = by_file.into_values().collect();
+        rows.sort_by(|a, b| {
+            a.priority
+                .cmp(&b.priority)
+                .then_with(|| a.path.cmp(&b.path))
+        });
+        rows
+    }
+
     /// Rows of the structure tree at the current depth.
     pub fn tree_rows(&self) -> Vec<TreeRow> {
         let analysis = self.session.analysis();
@@ -991,6 +1060,16 @@ impl App {
         self.go(Mode::Code);
     }
 
+    /// Shows `unit` in the code pane without moving the focus to it.
+    pub fn preview_unit(&mut self, unit: &UnitId) {
+        self.code = CodeState {
+            version: Some(self.default_version(unit)),
+            scope: Some(CodeScope::Symbol),
+            ..CodeState::default()
+        };
+        self.rebuild_code();
+    }
+
     /// The version a unit is first read in: the new code, or the old one when it was removed.
     fn default_version(&self, unit: &UnitId) -> Version {
         match self.session.analysis().change_of(unit) {
@@ -1071,22 +1150,23 @@ impl App {
     /// Recomputes the impact rows for the current subject.
     pub fn rebuild_impact(&mut self) {
         let mut rows = Vec::new();
-        let note = |text: &str| ImpactRow {
-            kind: ImpactRowKind::Note,
-            text: text.to_owned(),
-            target: None,
-            origin: None,
-        };
-        let heading = |text: String| ImpactRow {
-            kind: ImpactRowKind::Heading,
+        let row = |kind: ImpactRowKind, text: String| ImpactRow {
+            kind,
             text,
             target: None,
             origin: None,
+            detail: String::new(),
+            extra: String::new(),
+            depth: 0,
         };
-        let name = |key: &SymbolKey| {
-            sanitize_single_line(&format!("{} · {}", key.qualified_name, key.file))
+        let note = |text: &str| row(ImpactRowKind::Note, text.to_owned());
+        let heading = |text: &str, count: usize| ImpactRow {
+            detail: count.to_string(),
+            ..row(ImpactRowKind::Heading, text.to_owned())
         };
         let locale = self.locale;
+        self.impact.summary.clear();
+        self.impact.evidence.clear();
         let Some(subject) = self.impact_subject() else {
             rows.push(note(t::impact_whole_file(locale)));
             self.impact.report = None;
@@ -1098,87 +1178,105 @@ impl App {
         match &report {
             None => rows.push(note(t::impact_not_indexed(locale))),
             Some(report) => {
-                rows.push(heading(t::impact_summary(
+                self.impact.summary = t::impact_summary(
                     locale,
                     labels::reach(locale, report.scope),
                     report.direct_callers(),
                     report.entrypoints.len(),
                     report.external_entrypoints(),
-                )));
+                );
                 let c = &report.coverage;
                 let tail = if c.truncated {
                     t::impact_depth_limit(locale)
                 } else {
                     ""
                 };
-                rows.push(note(&t::impact_evidence(
+                self.impact.evidence = t::impact_evidence(
                     locale,
                     c.resolved_edges,
                     c.heuristic_edges,
                     c.unresolved_calls,
                     tail,
-                )));
-                rows.push(heading(t::impact_entrypoints(locale).to_owned()));
+                );
+                rows.push(heading(
+                    t::impact_entrypoints(locale),
+                    report.entrypoints.len(),
+                ));
                 if report.entrypoints.is_empty() {
                     rows.push(note(t::impact_no_entrypoints(locale)));
                 }
                 for reach in &report.entrypoints {
                     let entry = &reach.entrypoint;
-                    rows.push(ImpactRow {
-                        kind: ImpactRowKind::Entrypoint,
-                        text: format!(
-                            "{} [{}, {}] {}",
-                            name(&entry.symbol),
-                            labels::entrypoint_kind(locale, &entry.kind),
-                            labels::entrypoint_scope(locale, entry.scope),
-                            sanitize_single_line(&entry.evidence),
-                        ),
-                        target: Some(entry.symbol.clone()),
-                        origin: Some(reach.origin),
-                    });
                     let path: Vec<String> = reach
                         .path
                         .iter()
                         .map(|step| sanitize_single_line(&step.symbol.qualified_name))
                         .collect();
                     rows.push(ImpactRow {
-                        kind: ImpactRowKind::Note,
-                        text: format!("    {}", path.join(" → ")),
-                        target: None,
-                        origin: None,
+                        target: Some(entry.symbol.clone()),
+                        origin: Some(reach.origin),
+                        detail: sanitize_single_line(&format!(
+                            "{} · {}, {} · {}",
+                            entry.symbol.file,
+                            labels::entrypoint_kind(locale, &entry.kind),
+                            labels::entrypoint_scope(locale, entry.scope),
+                            entry.evidence,
+                        )),
+                        extra: path.join(" → "),
+                        ..row(
+                            ImpactRowKind::Entrypoint,
+                            sanitize_single_line(&entry.symbol.qualified_name),
+                        )
                     });
                 }
-                rows.push(heading(t::impact_callers(locale).to_owned()));
+                let callers: usize = report.callers.iter().map(|l| l.callers.len()).sum();
+                rows.push(heading(t::impact_callers(locale), callers));
                 if report.callers.is_empty() {
                     rows.push(note(t::impact_no_callers(locale)));
                 }
                 for level in &report.callers {
                     for step in &level.callers {
                         rows.push(ImpactRow {
-                            kind: ImpactRowKind::Caller,
-                            text: format!("{}  {}", level.depth, name(&step.symbol)),
                             target: Some(step.symbol.clone()),
                             origin: Some(step.origin),
+                            detail: sanitize_single_line(step.symbol.file.as_ref()),
+                            depth: usize::try_from(level.depth.saturating_sub(1)).unwrap_or(0),
+                            ..row(
+                                ImpactRowKind::Caller,
+                                sanitize_single_line(&step.symbol.qualified_name),
+                            )
                         });
                     }
                 }
-                rows.push(heading(t::impact_calls(locale).to_owned()));
+                rows.push(heading(t::impact_calls(locale), report.callees.len()));
                 if report.callees.is_empty() {
                     rows.push(note(t::impact_no_calls(locale)));
                 }
                 for step in &report.callees {
                     rows.push(ImpactRow {
-                        kind: ImpactRowKind::Callee,
-                        text: name(&step.symbol),
                         target: Some(step.symbol.clone()),
                         origin: Some(step.origin),
+                        detail: sanitize_single_line(step.symbol.file.as_ref()),
+                        ..row(
+                            ImpactRowKind::Callee,
+                            sanitize_single_line(&step.symbol.qualified_name),
+                        )
                     });
                 }
             }
         }
         self.impact.report = report;
         self.impact.rows = rows;
-        self.impact_view = Viewport::default();
+        // Start on the first thing that can be opened, not on a heading.
+        self.impact_view = Viewport {
+            selected: self
+                .impact
+                .rows
+                .iter()
+                .position(|r| r.target.is_some())
+                .unwrap_or(0),
+            ..Viewport::default()
+        };
     }
 
     /// Opens the code of a symbol: the changed unit when it is one, otherwise a read-only view.

@@ -43,9 +43,14 @@ const BINDABLE: &[Bindable] = &[
         defaults: &['2'],
     },
     Bindable {
+        id: "files",
+        action: Action::Mode(Mode::Files),
+        defaults: &['3'],
+    },
+    Bindable {
         id: "code",
         action: Action::Mode(Mode::Code),
-        defaults: &['3'],
+        defaults: &[],
     },
     Bindable {
         id: "impact",
@@ -291,6 +296,11 @@ const MODAL: &[Modal] = &[
     Modal {
         id: "inspect_contract",
         canonical: 'i',
+        modes: &[Mode::Code],
+    },
+    Modal {
+        id: "toggle_inspector",
+        canonical: 'K',
         modes: &[Mode::Code],
     },
     Modal {

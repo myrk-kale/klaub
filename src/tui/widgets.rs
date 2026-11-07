@@ -3,7 +3,7 @@
 use crate::domain::text::sanitize_single_line;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
@@ -138,8 +138,8 @@ pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-/// A rounded panel with a title (and a quieter hint after it) on its top edge. Returns the area
-/// inside the border. Lists draw their scrollbar on the right border, so they take this area as is.
+/// A section header (a title, and a quieter hint after it) with no box around the content. The
+/// content starts two rows down, after a blank row. Returns the area for the content.
 pub(crate) fn panel(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -150,7 +150,7 @@ pub(crate) fn panel(
     panel_with(frame, area, title, hint, Vec::new(), theme)
 }
 
-/// Like [`panel`], with `badges` right-aligned on the top edge.
+/// Like [`panel`], with `badges` right-aligned on the header row.
 pub(crate) fn panel_with(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -159,31 +159,52 @@ pub(crate) fn panel_with(
     badges: Vec<Span<'static>>,
     theme: Theme,
 ) -> Rect {
+    let width = usize::from(area.width);
     let badge_w: usize = badges.iter().map(|s| s.content.width()).sum();
-    let room = usize::from(area.width).saturating_sub(4 + badge_w + usize::from(badge_w > 0) * 2);
-    let title = fit(title, room.saturating_sub(2));
-    let used = title.width() + 2;
-    let mut spans = vec![Span::styled(format!(" {title} "), theme.accent())];
+    let room = width.saturating_sub(badge_w + usize::from(badge_w > 0) * 2);
+    let title = fit(title, room);
+    let used = title.width();
+    let mut spans = vec![Span::styled(
+        title,
+        theme.dim().add_modifier(Modifier::BOLD),
+    )];
     if !hint.is_empty() && room > used + 3 {
         spans.push(Span::styled(
-            format!("{} ", fit(hint, room - used - 1)),
+            format!("  {}", fit(hint, room - used - 2)),
             theme.faint(),
         ));
     }
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(theme.border())
-        .title_top(Line::from(spans));
-    if !badges.is_empty() {
-        let mut right = vec![Span::raw(" ")];
-        right.extend(badges);
-        right.push(Span::raw(" "));
-        block = block.title_top(Line::from(right).alignment(Alignment::Right));
+    if badge_w > 0 {
+        let gap = width.saturating_sub(used + hint_width(&spans, used) + badge_w);
+        spans.push(Span::raw(" ".repeat(gap)));
+        spans.extend(badges);
     }
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    inner
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)),
+        Rect { height: 1, ..area },
+    );
+    Rect {
+        y: area.y.saturating_add(2),
+        height: area.height.saturating_sub(2),
+        ..area
+    }
+}
+
+/// The columns taken by the spans after the title.
+fn hint_width(spans: &[Span<'static>], title_width: usize) -> usize {
+    spans
+        .iter()
+        .map(|s| s.content.width())
+        .sum::<usize>()
+        .saturating_sub(title_width)
+}
+
+/// A one-column vertical hairline down `area`'s left edge.
+pub(crate) fn vline(frame: &mut Frame<'_>, area: Rect, theme: Theme) {
+    let lines: Vec<Line<'static>> = (0..area.height)
+        .map(|_| Line::from(Span::styled("│", theme.border())))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), Rect { width: 1, ..area });
 }
 
 /// A rounded box for an overlay: the focus colour on the border, the title on the top edge.
@@ -235,9 +256,8 @@ pub(crate) fn scrollbar(
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(None)
             .end_symbol(None)
-            .track_symbol(Some("│"))
+            .track_symbol(None)
             .thumb_symbol("┃")
-            .track_style(theme.border())
             .thumb_style(theme.accent()),
         track,
         &mut state,
@@ -308,6 +328,58 @@ pub(crate) fn draw_list(
         .collect();
     frame.render_widget(Paragraph::new(lines), area);
     scrollbar(frame, area, total, view.offset, theme);
+}
+
+/// Draws a list whose rows take `stride` lines each. A card shorter than the stride is padded with
+/// blank lines; the selected card is filled across its whole width, without its last line when that
+/// line is only air between cards.
+pub(crate) fn draw_cards(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &mut Viewport,
+    cards: Vec<Vec<Line<'static>>>,
+    stride: usize,
+    theme: Theme,
+) {
+    let stride = stride.max(1);
+    view.stride = stride;
+    view.height = (usize::from(area.height) / stride).max(1);
+    view.area = area;
+    view.len = cards.len();
+    view.clamp(cards.len());
+    let window = view.window(cards.len());
+    let selected = view.selected;
+    let total = cards.len();
+    let width = usize::from(area.width);
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(window.len() * stride);
+    for (index, card) in cards
+        .into_iter()
+        .enumerate()
+        .skip(window.start)
+        .take(window.len())
+    {
+        let mut card = card.into_iter();
+        for k in 0..stride {
+            let line = card.next().unwrap_or_default();
+            let filled = index == selected && (stride < 3 || k + 1 < stride);
+            if filled {
+                let bar = if theme.is_high_contrast() {
+                    "▶"
+                } else {
+                    "▌"
+                };
+                let mut spans = vec![Span::styled(bar, theme.accent())];
+                spans.extend(line.spans);
+                lines.push(fill_line(Line::from(spans).style(theme.selected()), width));
+            } else {
+                let mut spans = vec![Span::raw(" ")];
+                spans.extend(line.spans);
+                lines.push(Line::from(spans));
+            }
+        }
+    }
+    frame.render_widget(Paragraph::new(lines), area);
+    scrollbar(frame, area, total * stride, view.offset * stride, theme);
 }
 
 /// `line` extended with spaces to `width` columns, so a background set on the line reaches the

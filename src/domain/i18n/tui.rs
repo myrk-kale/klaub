@@ -14,6 +14,16 @@ texts! {
         pt: "Estrutura",
         es: "Estructura",
     }
+    const tab_review {
+        en: "Review",
+        pt: "Revisão",
+        es: "Revisión",
+    }
+    const mode_files {
+        en: "Files",
+        pt: "Arquivos",
+        es: "Archivos",
+    }
     const mode_code {
         en: "Code",
         pt: "Código",
@@ -608,6 +618,16 @@ messages! {
         pt: "Fila · {visible} de {total} unidade(s){summary}",
         es: "Cola · {visible} de {total} unidad(es){summary}",
     }
+    fn list_count(visible: usize, total: usize, summary: &str) {
+        en: "{visible} of {total} unit(s){summary}",
+        pt: "{visible} de {total} unidade(s){summary}",
+        es: "{visible} de {total} unidad(es){summary}",
+    }
+    fn files_count(count: usize) {
+        en: "{count} changed file(s)",
+        pt: "{count} arquivo(s) alterado(s)",
+        es: "{count} archivo(s) modificado(s)",
+    }
     fn queue_filter_summary(filters: &str) {
         en: " · filter: {filters}",
         pt: " · filtro: {filters}",
@@ -1116,6 +1136,11 @@ texts! {
         pt: "contrato",
         es: "contrato",
     }
+    const hint_panel {
+        en: "panel",
+        pt: "painel",
+        es: "panel",
+    }
     const hint_file {
         en: "file",
         pt: "arquivo",
@@ -1594,6 +1619,11 @@ texts! {
         pt: "Ir para a Estrutura",
         es: "Ir a la Estructura",
     }
+    const action_go_files {
+        en: "Go to Files",
+        pt: "Ir para os Arquivos",
+        es: "Ir a los Archivos",
+    }
     const action_go_code {
         en: "Go to Code",
         pt: "Ir para o Código",
@@ -1683,6 +1713,46 @@ texts! {
         en: "Inspect the contract",
         pt: "Inspecionar o contrato",
         es: "Inspeccionar el contrato",
+    }
+    const action_toggle_inspector {
+        en: "Show or hide the symbol panel",
+        pt: "Mostrar ou ocultar o painel do símbolo",
+        es: "Mostrar u ocultar el panel del símbolo",
+    }
+    const inspector_too_narrow {
+        en: "The symbol panel needs a terminal at least 125 columns wide.",
+        pt: "O painel do símbolo precisa de um terminal com pelo menos 125 colunas.",
+        es: "El panel del símbolo necesita un terminal de al menos 125 columnas.",
+    }
+    const inspector_signature {
+        en: "Signature",
+        pt: "Assinatura",
+        es: "Firma",
+    }
+    const inspector_doc {
+        en: "Documentation",
+        pt: "Documentação",
+        es: "Documentación",
+    }
+    const inspector_no_doc {
+        en: "no documentation comment",
+        pt: "sem comentário de documentação",
+        es: "sin comentario de documentación",
+    }
+    const inspector_comments {
+        en: "Review comments",
+        pt: "Comentários da revisão",
+        es: "Comentarios de la revisión",
+    }
+    const inspector_no_comments {
+        en: "none yet · press c on a line",
+        pt: "nenhum ainda · pressione c em uma linha",
+        es: "ninguno aún · pulsa c en una línea",
+    }
+    const inspector_before {
+        en: "before",
+        pt: "antes",
+        es: "antes",
     }
     const action_open_whole_file {
         en: "Open the unit in the whole file",

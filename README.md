@@ -265,9 +265,10 @@ Every key below can be changed in `.klaub.toml` under `[keys]` ([configuration](
 
 | Key | Mode |
 | --- | --- |
-| `1` or `F2` | Queue |
-| `2` or `F3` | Structure: modules, files and symbols |
-| `3` or `F4` | Code |
+| `1` or `F2` | Review, with the queue on the left |
+| `2` or `F3` | Review, with the structure tree on the left: modules, files and symbols |
+| `3` | Review, with the flat list of changed files on the left |
+| `F4` | Review, with the code focused (`Enter` on a list gets there too) |
 | `4`, `g` or `F5` | Impact: callers, entrypoints, callees |
 | `5` or `F6` | Comments |
 | `6`, `b` or `F8` | Context: brief and acceptance criteria |
@@ -276,7 +277,9 @@ Every key below can be changed in `.klaub.toml` under `[keys]` ([configuration](
 | `9` | Coverage |
 | `0`, `f` or `F9` | Flow |
 | `Tab`, `Shift+Tab` | Next and previous mode |
-| `Esc` | Go back |
+| `Esc` | Go back (from the code, to the list you came from) |
+
+The review screen is a list on the left and the code of the selected unit on the right. The queue, the tree and the file list are three ways to fill the left side, and the code follows the cursor as you move in any of them. `K` shows or hides the panel beside the code: the symbol's signature with its types, the documentation comment it carries, the comments you wrote on it and the reasons for its priority.
 
 ### Moving and reading
 
@@ -291,6 +294,7 @@ Every key below can be changed in `.klaub.toml` under `[keys]` ([configuration](
 | `o` | Open the unit in its whole file |
 | `S` | Switch between the symbol and the whole file |
 | `i` | Inspect the contract |
+| `K` | Show or hide the symbol panel |
 | `<`, `>` | Back and forward through the units you visited |
 | `/` | Search |
 | `+`, `-` | Show more or less in the structure tree |

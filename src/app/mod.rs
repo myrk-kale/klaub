@@ -9,6 +9,7 @@
 
 mod analysis;
 mod contract;
+mod doc_comment;
 mod file_contract;
 mod session;
 mod signature;

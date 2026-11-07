@@ -198,6 +198,7 @@ fn list_of(app: &App) -> Option<&Viewport> {
     Some(match app.mode {
         Mode::Queue => &app.queue_view,
         Mode::Structure => &app.structure_view,
+        Mode::Files => &app.files_view,
         Mode::Impact => &app.impact_view,
         Mode::Comments => &app.comments_view,
         Mode::Context => &app.context_view,
@@ -428,6 +429,7 @@ fn mode_key(app: &mut App, key: KeyEvent) -> bool {
     match app.mode {
         Mode::Queue => queue_key(app, key),
         Mode::Structure => structure_key(app, key),
+        Mode::Files => files_key(app, key),
         Mode::Code => code_key(app, key),
         Mode::Impact => impact_key(app, key),
         Mode::Comments => comments_key(app, key),
@@ -460,13 +462,46 @@ fn queue_key(app: &mut App, key: KeyEvent) -> bool {
     false
 }
 
+fn files_key(app: &mut App, key: KeyEvent) -> bool {
+    let rows = app.files_rows();
+    if navigate(&mut app.files_view, key, rows.len()) {
+        if let Some(row) = rows.get(app.files_view.selected) {
+            app.adopt(row.first.clone());
+        }
+        return true;
+    }
+    if is_enter(key)
+        && let Some(row) = rows.get(app.files_view.selected)
+    {
+        app.open_unit(&row.first.clone(), None);
+        return true;
+    }
+    false
+}
+
 fn structure_key(app: &mut App, key: KeyEvent) -> bool {
     let rows = app.tree_rows();
     if navigate(&mut app.structure_view, key, rows.len()) {
-        if let Some(row) = rows.get(app.structure_view.selected)
-            && let TreeKind::Unit(unit) = &row.kind
-        {
-            app.adopt(unit.clone());
+        // A file or a module has no code of its own: the code pane shows its first unit.
+        let target = rows
+            .get(app.structure_view.selected)
+            .and_then(|row| match &row.kind {
+                TreeKind::Unit(unit) => Some(unit.clone()),
+                TreeKind::File(path) => app
+                    .visible_queue()
+                    .iter()
+                    .find(|item| &item.unit.file == path)
+                    .map(|item| item.unit.id.clone()),
+                TreeKind::Module(module) => app
+                    .visible_queue()
+                    .iter()
+                    .find(|item| {
+                        &app.session.analysis().modules.module_of(&item.unit.file) == module
+                    })
+                    .map(|item| item.unit.id.clone()),
+            });
+        if let Some(unit) = target {
+            app.adopt(unit);
         }
         return true;
     }
@@ -538,15 +573,47 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
             perform(app, Action::InspectContract);
             return true;
         }
+        KeyCode::Char('K') => {
+            perform(app, Action::ToggleInspector);
+            return true;
+        }
         _ => return false,
     }
     ensure_code_visible(app);
     true
 }
 
+/// After a move in the impact view, lands on the nearest row that can be opened in the direction
+/// of travel, so the cursor never rests on a heading or a note. With nothing openable that way it
+/// stays where it was, and going up past the first row scrolls to the top so the summary shows.
+fn settle_on_target(app: &mut App, before: usize) {
+    let rows = &app.impact.rows;
+    let openable = |i: usize| rows.get(i).is_some_and(|r| r.target.is_some());
+    let at = app.impact_view.selected;
+    if openable(at) {
+        return;
+    }
+    let found = if at >= before {
+        (at..rows.len()).find(|&i| openable(i))
+    } else {
+        (0..=at).rev().find(|&i| openable(i))
+    };
+    match found {
+        Some(i) => app.impact_view.select(i, rows.len()),
+        None => {
+            if at < before {
+                app.impact_view.offset = 0;
+            }
+            app.impact_view.select(before, rows.len());
+        }
+    }
+}
+
 fn impact_key(app: &mut App, key: KeyEvent) -> bool {
     let len = app.impact.rows.len();
+    let before = app.impact_view.selected;
     if navigate(&mut app.impact_view, key, len) {
+        settle_on_target(app, before);
         return true;
     }
     let target = app
