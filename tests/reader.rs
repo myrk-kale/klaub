@@ -426,10 +426,10 @@ fn contract_overlay_lists_parameters_raises_and_io_for_a_symbol() {
     press(&mut app, 'i');
     let shown = screen(&mut app, 110, 50);
     for expected in [
-        "parameters",
+        "Signature",
         "+ strict: bool = False",
-        "returns",
-        "raises",
+        ") → str",
+        "Raises",
         "+ ValueError",
         "calls requests.get (looks like I/O)",
     ] {
@@ -1389,4 +1389,41 @@ fn a_module_row_names_its_file_and_the_panel_explains_it() {
         !shown.contains("Signature"),
         "a module has no signature section: {shown}"
     );
+}
+
+#[test]
+fn the_impact_view_lists_tests_apart_from_the_callers_they_would_bury() {
+    let repo = TempRepo::new();
+    repo.write("service.py", "def lookup(name):\n    return name\n");
+    repo.write(
+        "handlers.py",
+        "from service import lookup\n\n\ndef handle(name):\n    return lookup(name)\n",
+    );
+    repo.write(
+        "tests/test_service.py",
+        "from service import lookup\n\n\ndef test_lookup():\n    assert lookup('a') == 'a'\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "service.py",
+        "def lookup(name):\n    cleaned = name.strip()\n    return cleaned\n",
+    );
+    let mut app = reader(open(&repo));
+    // The change is in `lookup`; move the cursor onto it, then open the impact view.
+    press(&mut app, '4');
+    let shown = screen(&mut app, 150, 40);
+    let at = |needle: &str| {
+        shown
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing {needle:?} in:\n{shown}"))
+    };
+    assert!(
+        at("Callers") < at("handle"),
+        "the production caller sits under Callers"
+    );
+    assert!(
+        at("handle") < at("Tests that call it"),
+        "tests come after the callers, under their own heading"
+    );
+    assert!(at("Tests that call it") < at("test_lookup"));
 }

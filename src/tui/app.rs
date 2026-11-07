@@ -1212,31 +1212,36 @@ impl App {
                         .iter()
                         .map(|step| sanitize_single_line(&step.symbol.qualified_name))
                         .collect();
+                    // The chain is worth a line only when it has something between the entrypoint
+                    // and the symbol; the evidence is the decorator's own text, which can run for
+                    // lines, so it stays out.
+                    let chain = if path.len() > 2 {
+                        path.join(" → ")
+                    } else {
+                        String::new()
+                    };
                     rows.push(ImpactRow {
                         target: Some(entry.symbol.clone()),
                         origin: Some(reach.origin),
                         detail: sanitize_single_line(&format!(
-                            "{} · {}, {} · {}",
+                            "{} · {}, {}",
                             entry.symbol.file,
                             labels::entrypoint_kind(locale, &entry.kind),
                             labels::entrypoint_scope(locale, entry.scope),
-                            entry.evidence,
                         )),
-                        extra: path.join(" → "),
+                        extra: chain,
                         ..row(
                             ImpactRowKind::Entrypoint,
                             sanitize_single_line(&entry.symbol.qualified_name),
                         )
                     });
                 }
-                let callers: usize = report.callers.iter().map(|l| l.callers.len()).sum();
-                rows.push(heading(t::impact_callers(locale), callers));
-                if report.callers.is_empty() {
-                    rows.push(note(t::impact_no_callers(locale)));
-                }
+                let analysis = self.session.analysis();
+                let mut production: Vec<ImpactRow> = Vec::new();
+                let mut tests: Vec<ImpactRow> = Vec::new();
                 for level in &report.callers {
                     for step in &level.callers {
-                        rows.push(ImpactRow {
+                        let row = ImpactRow {
                             target: Some(step.symbol.clone()),
                             origin: Some(step.origin),
                             detail: sanitize_single_line(step.symbol.file.as_ref()),
@@ -1245,8 +1250,22 @@ impl App {
                                 ImpactRowKind::Caller,
                                 sanitize_single_line(&step.symbol.qualified_name),
                             )
-                        });
+                        };
+                        if analysis.is_test_file(&step.symbol.file) {
+                            tests.push(row);
+                        } else {
+                            production.push(row);
+                        }
                     }
+                }
+                rows.push(heading(t::impact_callers(locale), production.len()));
+                if production.is_empty() {
+                    rows.push(note(t::impact_no_callers(locale)));
+                }
+                rows.extend(production);
+                if !tests.is_empty() {
+                    rows.push(heading(t::impact_test_callers(locale), tests.len()));
+                    rows.extend(tests);
                 }
                 rows.push(heading(t::impact_calls(locale), report.callees.len()));
                 if report.callees.is_empty() {

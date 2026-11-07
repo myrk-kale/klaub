@@ -331,8 +331,8 @@ pub(crate) fn draw_list(
 }
 
 /// Draws a list whose rows take `stride` lines each. A card shorter than the stride is padded with
-/// blank lines; the selected card is filled across its whole width, without its last line when that
-/// line is only air between cards.
+/// blank lines; the selected card is filled across its whole width, but not over those blank lines,
+/// which are only air between cards.
 pub(crate) fn draw_cards(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -358,10 +358,12 @@ pub(crate) fn draw_cards(
         .skip(window.start)
         .take(window.len())
     {
+        // Only the lines the card has are highlighted: the blank ones that fill its stride are air.
+        let card_len = card.len();
         let mut card = card.into_iter();
         for k in 0..stride {
             let line = card.next().unwrap_or_default();
-            let filled = index == selected && (stride < 3 || k + 1 < stride);
+            let filled = index == selected && k < card_len;
             if filled {
                 let bar = if theme.is_high_contrast() {
                     "▶"

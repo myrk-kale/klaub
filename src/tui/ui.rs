@@ -8,7 +8,7 @@
 //! Nothing drawn here comes from the repository, a comment or a document without passing through
 //! [`clean`] first, so a hostile sequence in a symbol name cannot reach the terminal.
 
-use crate::app::{ContractDelta, Delta, FileContract};
+use crate::app::{ContractDelta, FileContract};
 use crate::domain::finding::Priority;
 use crate::domain::i18n::{Locale, tui as t};
 use crate::domain::review::FeedbackRecord;
@@ -28,7 +28,7 @@ use crate::tui::keymap::Keymap;
 use crate::tui::labels;
 use crate::tui::theme::{Chip, Theme};
 use crate::tui::update::palette_matches;
-use crate::tui::views::{draw_mode, explain_lines};
+use crate::tui::views::{delta_lines, draw_mode, explain_lines, section, signature_lines};
 use crate::tui::widgets::{chip_span, clean, dialog, fill_line, fit, gauge, wrap};
 
 /// Below this the reader cannot lay out its bars, so it says so instead of drawing a broken frame.
@@ -785,20 +785,25 @@ fn draw_contract(
     unit: &crate::domain::ids::UnitId,
     theme: Theme,
 ) {
-    let area = panel(
-        body,
-        body.width.saturating_sub(4).min(78),
-        body.height.saturating_sub(2),
-    );
+    // The width is fixed first, so the text can be wrapped to it and the box can then be made as
+    // tall as the text needs instead of as tall as the screen.
+    let width = body.width.saturating_sub(4).min(88);
     let l = app.locale;
-    let inner = usize::from(area.width).saturating_sub(4);
+    let inner = usize::from(width).saturating_sub(4);
     let lines = if let Some(delta) = app.session.contract(unit) {
-        contract_lines(&delta, inner, l, theme)
+        contract_lines(&delta, inner, app)
     } else if let Some(file) = app.session.file_contract(unit) {
         file_contract_lines(&file, inner, l, theme)
     } else {
-        vec![Line::from(Span::styled(t::contract_none(l), theme.dim()))]
+        wrap(t::contract_none(l), inner.max(1))
+            .into_iter()
+            .map(|row| Line::from(Span::styled(row, theme.dim())))
+            .collect()
     };
+    let height = u16::try_from(lines.len() + 3)
+        .unwrap_or(u16::MAX)
+        .clamp(5, body.height.saturating_sub(2).max(5));
+    let area = panel(body, width, height);
     let lines = clip_lines(lines, usize::from(area.height).saturating_sub(2), l, theme);
     frame.render_widget(Clear, area);
     frame.render_widget(dialog(t::contract_title(l), lines, theme), area);
@@ -824,104 +829,88 @@ fn clip_lines(
     lines
 }
 
-fn contract_lines(
-    delta: &ContractDelta,
-    width: usize,
-    l: Locale,
-    theme: Theme,
-) -> Vec<Line<'static>> {
+/// What the change did to a symbol's contract: who it is, how its declaration changed (parameters
+/// with their types, marked), what else it declares, and who can reach it.
+fn contract_lines(delta: &ContractDelta, width: usize, app: &App) -> Vec<Line<'static>> {
+    use crate::domain::semantic::ChangeKind;
+    let theme = app.theme;
+    let l = app.locale;
     let none = t::contract_none_word(l);
-    let mut lines = vec![
-        labelled(
-            t::contract_change(l),
-            labels::change_kind(l, delta.change_kind),
-            theme,
-        ),
-        labelled(
-            t::contract_confidence(l),
-            &format!("{:.2}", delta.confidence.value()),
-            theme,
-        ),
-    ];
-    if let Some(schema) = &delta.schema {
-        lines.push(labelled(t::contract_data_type(l), schema, theme));
-    }
-    lines.push(labelled(
-        t::contract_before(l),
-        delta.before_signature.as_deref().unwrap_or(none),
-        theme,
-    ));
-    lines.push(labelled(
-        t::contract_after(l),
-        delta.after_signature.as_deref().unwrap_or(none),
-        theme,
-    ));
-    let parameters = Delta {
-        before: delta
-            .signature_before
-            .as_ref()
-            .map(|p| p.parameters.clone())
-            .unwrap_or_default(),
-        after: delta
-            .signature_after
-            .as_ref()
-            .map(|p| p.parameters.clone())
-            .unwrap_or_default(),
+
+    // Who it is, and what happened to it, on two lines.
+    let kind_style = match delta.change_kind {
+        ChangeKind::Added => theme.good(),
+        ChangeKind::Removed => theme.error(),
+        ChangeKind::FormatOnly => theme.dim(),
+        _ => theme.warn(),
     };
-    push_delta(
-        &mut lines,
-        t::contract_parameters(l),
-        &parameters,
-        width,
-        theme,
+    let mut facts = vec![Span::styled(
+        labels::change_kind(l, delta.change_kind).to_owned(),
+        kind_style.add_modifier(Modifier::BOLD),
+    )];
+    let mut rest = format!(
+        "  ·  {} {:.2}",
+        t::contract_confidence(l),
+        delta.confidence.value()
     );
-    let returns =
-        |parts: &Option<crate::app::SignatureParts>| parts.as_ref().and_then(|p| p.returns.clone());
-    match (
-        returns(&delta.signature_before),
-        returns(&delta.signature_after),
-    ) {
-        (Some(old), Some(new)) if old != new => {
-            lines.push(labelled(
-                t::contract_returns(l),
-                &format!("{old} -> {new}"),
-                theme,
-            ));
-        }
-        (Some(old), None) => lines.push(labelled(
-            t::contract_returns(l),
-            &format!("{old} -> {none}"),
-            theme,
+    if delta.visibility_before == delta.visibility_after
+        && let Some(visibility) = &delta.visibility_after
+    {
+        rest.push_str(&format!("  ·  {}", clean(visibility)));
+    }
+    if let Some(schema) = &delta.schema {
+        rest.push_str(&format!("  ·  {}", clean(schema)));
+    }
+    facts.push(Span::styled(fit(&rest, width), theme.dim()));
+    let mut lines = vec![
+        Line::from(Span::styled(
+            fit(&clean(&delta.name), width),
+            theme.strong(),
         )),
-        (None, Some(new)) => lines.push(labelled(
-            t::contract_returns(l),
-            &format!("{none} -> {new}"),
-            theme,
-        )),
-        (Some(same), Some(_)) => lines.push(labelled(t::contract_returns(l), &same, theme)),
-        (None, None) => {}
+        Line::from(facts),
+    ];
+
+    // The declaration. A callable shows its parameters and types; anything else shows the text.
+    let mut signature = if delta.signature_after.is_some() {
+        signature_lines(delta, width, app)
+    } else {
+        raw_declaration(delta, width, theme)
+    };
+    if !signature.is_empty() {
+        lines.extend(section(t::inspector_signature(l), width, theme));
+        lines.append(&mut signature);
     }
     if delta.visibility_before != delta.visibility_after {
-        lines.push(labelled(
-            t::contract_visibility(l),
-            &format!(
-                "{} -> {}",
-                delta.visibility_before.as_deref().unwrap_or(none),
-                delta.visibility_after.as_deref().unwrap_or(none)
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:<14}", t::contract_visibility(l)), theme.dim()),
+            Span::styled(
+                clean(delta.visibility_before.as_deref().unwrap_or(none)),
+                theme.faint(),
             ),
-            theme,
-        ));
-    } else if let Some(same) = &delta.visibility_after {
-        lines.push(labelled(t::contract_visibility(l), same, theme));
+            Span::styled(" → ", theme.faint()),
+            Span::styled(
+                clean(delta.visibility_after.as_deref().unwrap_or(none)),
+                theme.warn(),
+            ),
+        ]));
     }
-    for (heading, items) in [
+
+    for (heading, change) in [
         (t::contract_decorators(l), &delta.decorators),
         (t::contract_endpoints(l), &delta.endpoints),
         (t::contract_raises(l), &delta.raises),
         (t::contract_effects(l), &delta.effects),
         (t::contract_members(l), &delta.members),
     ] {
-        push_delta(&mut lines, heading, items, width, theme);
+        if !change.is_empty() {
+            lines.extend(section(heading, width, theme));
+            lines.extend(delta_lines(
+                change,
+                delta.before_signature.is_some(),
+                width,
+                theme,
+            ));
+        }
     }
     push_group(
         &mut lines,
@@ -947,11 +936,40 @@ fn contract_lines(
         width,
         theme,
     );
+    lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         fit(t::contract_any_key(l), width),
-        theme.dim(),
+        theme.faint(),
     )));
     lines
+}
+
+/// The declaration of a symbol that is not a callable (a class, a constant), whole and wrapped: the
+/// old text struck as removed and the new one as added when both exist and differ.
+fn raw_declaration(delta: &ContractDelta, width: usize, theme: Theme) -> Vec<Line<'static>> {
+    let rows = |text: &str, sign: &str, style: Style| -> Vec<Line<'static>> {
+        wrap(&clean(text), width.saturating_sub(2))
+            .into_iter()
+            .enumerate()
+            .map(|(i, chunk)| {
+                let lead = if i == 0 { sign } else { " " };
+                Line::from(vec![
+                    Span::styled(format!("{lead} "), style),
+                    Span::styled(chunk, style),
+                ])
+            })
+            .collect()
+    };
+    match (&delta.before_signature, &delta.after_signature) {
+        (Some(old), Some(new)) if old != new => {
+            let mut lines = rows(old, "−", theme.faint());
+            lines.extend(rows(new, "+", theme.good()));
+            lines
+        }
+        (_, Some(text)) if !text.trim().is_empty() => rows(text, " ", theme.text()),
+        (Some(old), None) if !old.trim().is_empty() => rows(old, "−", theme.faint()),
+        _ => Vec::new(),
+    }
 }
 
 /// A migration, a manifest or a settings file, as added, removed and changed entries.
@@ -1001,37 +1019,6 @@ fn file_contract_lines(
     lines
 }
 
-/// A list that changed: `+` for what appeared, `-` for what went away and a plain row for what
-/// stayed. Nothing is drawn when neither version has anything.
-fn push_delta(
-    lines: &mut Vec<Line<'static>>,
-    heading: &str,
-    delta: &Delta,
-    width: usize,
-    theme: Theme,
-) {
-    if delta.is_empty() {
-        return;
-    }
-    lines.push(Line::from(Span::styled(heading.to_owned(), theme.accent())));
-    let rows = delta
-        .added()
-        .into_iter()
-        .map(|item| ("+", item))
-        .chain(delta.removed().into_iter().map(|item| ("-", item)))
-        .chain(delta.kept().into_iter().map(|item| (" ", item)));
-    for (sign, item) in rows {
-        let style = match sign {
-            "+" => theme.good(),
-            "-" => theme.error(),
-            _ => theme.text(),
-        };
-        for row in wrap(&format!("  {sign} {}", clean(item)), width.max(1)) {
-            lines.push(Line::from(Span::styled(row, style)));
-        }
-    }
-}
-
 /// `label  value`, with the label dimmed and the value cleaned.
 fn labelled(label: &str, value: &str, theme: Theme) -> Line<'static> {
     Line::from(vec![
@@ -1049,12 +1036,11 @@ fn push_group(
     width: usize,
     theme: Theme,
 ) {
-    lines.push(Line::from(Span::styled(heading.to_owned(), theme.accent())));
+    lines.extend(section(heading, width, theme));
     if items.is_empty() {
-        lines.push(Line::from(Span::styled(
-            fit(&format!("  {empty}"), width),
-            theme.dim(),
-        )));
+        for row in wrap(empty, width.saturating_sub(2).max(1)) {
+            lines.push(Line::from(Span::styled(format!("  {row}"), theme.faint())));
+        }
         return;
     }
     for item in items {
@@ -1064,8 +1050,8 @@ fn push_group(
             Some('~') if item.starts_with("~ ") => theme.warn(),
             _ => theme.text(),
         };
-        for row in wrap(&format!("  {}", clean(item)), width.max(1)) {
-            lines.push(Line::from(Span::styled(row, style)));
+        for row in wrap(&clean(item), width.saturating_sub(2).max(1)) {
+            lines.push(Line::from(Span::styled(format!("  {row}"), style)));
         }
     }
 }

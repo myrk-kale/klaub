@@ -835,7 +835,7 @@ fn draw_inspector(frame: &mut Frame<'_>, area: Rect, app: &App, view: &crate::ap
 }
 
 /// A section title, capitalised, after a blank line.
-fn section(title: &str, _width: usize, theme: Theme) -> Vec<Line<'static>> {
+pub(crate) fn section(title: &str, _width: usize, theme: Theme) -> Vec<Line<'static>> {
     let mut chars = title.chars();
     let title: String = chars
         .next()
@@ -919,7 +919,12 @@ fn inspector_lines(app: &App, view: &crate::app::CodeView, width: usize) -> Vec<
                 continue;
             }
             lines.extend(section(label, width, theme));
-            lines.extend(delta_lines(change, width, theme));
+            lines.extend(delta_lines(
+                change,
+                d.before_signature.is_some(),
+                width,
+                theme,
+            ));
         }
     }
 
@@ -966,7 +971,7 @@ fn inspector_lines(app: &App, view: &crate::app::CodeView, width: usize) -> Vec<
 
 /// The signature as a typed parameter list: what each parameter is called and what type it has,
 /// marked `+` when the change added it and `−` when it removed it.
-fn signature_lines(
+pub(crate) fn signature_lines(
     delta: &crate::app::ContractDelta,
     width: usize,
     app: &App,
@@ -1092,10 +1097,16 @@ fn param_spans(param: &str, theme: Theme) -> Vec<Span<'static>> {
 }
 
 /// The entries of a before/after list, `+` for new ones and `−` for dropped ones.
-fn delta_lines(change: &crate::app::Delta, width: usize, theme: Theme) -> Vec<Line<'static>> {
+pub(crate) fn delta_lines(
+    change: &crate::app::Delta,
+    existed_before: bool,
+    width: usize,
+    theme: Theme,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     for item in &change.after {
-        let added = !change.before.is_empty() && !change.before.contains(item);
+        // Everything in a new symbol is new, so only a symbol that existed has entries to mark.
+        let added = existed_before && !change.before.contains(item);
         let mark = if added {
             Span::styled("+ ", theme.good())
         } else {
@@ -1189,7 +1200,24 @@ fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     };
 
     let width = usize::from(body.width).saturating_sub(2);
-    let lines = stride(app, 2, 3);
+    // A wide terminal gives each symbol one line (name, then where it lives); a narrow one gives it
+    // two, because the name and the path no longer fit side by side.
+    let one_line = width >= 96;
+    let lines = if one_line {
+        stride(app, 1, 2)
+    } else {
+        stride(app, 2, 3)
+    };
+    // The names line up in a column, as wide as the longest one up to a share of the line.
+    let name_col = app
+        .impact
+        .rows
+        .iter()
+        .filter(|r| r.target.is_some())
+        .map(|r| r.text.width() + r.depth * 2)
+        .max()
+        .unwrap_or(0)
+        .min(width * 55 / 100);
     let after_note: Vec<bool> = std::iter::once(false)
         .chain(
             app.impact
@@ -1210,15 +1238,13 @@ fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                     Span::styled(row.text.clone(), theme.accent()),
                     Span::styled(format!("  {}", row.detail), theme.faint()),
                 ]);
-                // After a note the air is already there.
-                let air = if after_note[index] {
-                    Vec::new()
-                } else {
-                    vec![Line::from("")]
-                };
-                let mut card = air;
+                // Air above the title only where there is room for it and none already.
+                let mut card = Vec::new();
+                if lines >= 3 && !after_note[index] {
+                    card.push(Line::from(""));
+                }
                 card.push(title);
-                if lines >= 3 {
+                if lines >= 2 {
                     card.push(rule);
                 }
                 card
@@ -1228,19 +1254,22 @@ fn impact(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
                 theme.dim(),
             ))],
             ImpactRowKind::Entrypoint | ImpactRowKind::Caller | ImpactRowKind::Callee => {
-                impact_card(l, theme, row, width)
+                impact_card(l, theme, row, width, one_line.then_some(name_col))
             }
         })
         .collect();
     draw_cards(frame, body, &mut app.impact_view, cards, lines, theme);
 }
 
-/// A symbol in the impact view: its name and how sure the link is, then where it lives.
+/// A symbol in the impact view. On a wide line, its name, where it lives and how sure the link is
+/// sit on one row (`name_col` is the width of the name column); on a narrow one the name and the
+/// certainty are on top and the file is under them.
 fn impact_card(
     l: crate::domain::i18n::Locale,
     theme: Theme,
     row: &crate::tui::app::ImpactRow,
     width: usize,
+    name_col: Option<usize>,
 ) -> Vec<Line<'static>> {
     let indent = " ".repeat(2 + row.depth * 2);
     let (mark, mark_style) = match row.origin {
@@ -1250,25 +1279,57 @@ fn impact_card(
     };
     let origin = row.origin.map_or("", |o| labels::origin(l, o));
     let lead = indent.width() + 2;
-    let name_w = width.saturating_sub(lead + origin.width() + 2);
+    let room = width.saturating_sub(lead);
+    let chain = (!row.extra.is_empty()).then(|| {
+        Line::from(vec![
+            Span::raw(" ".repeat(lead)),
+            Span::styled(fit(&format!("→ {}", row.extra), room), theme.dim()),
+        ])
+    });
+
+    if let Some(name_col) = name_col {
+        let status_w = if origin.is_empty() {
+            0
+        } else {
+            origin.width() + 2
+        };
+        let name_w = name_col
+            .saturating_sub(row.depth * 2)
+            .max(10)
+            .min(room.saturating_sub(status_w));
+        let place_w = room.saturating_sub(name_w + status_w + 2);
+        let mut spans = vec![
+            Span::raw(indent),
+            Span::styled(format!("{mark} "), mark_style),
+            Span::styled(pad(&fit(&row.text, name_w), name_w), theme.strong()),
+        ];
+        if place_w >= 8 {
+            spans.push(Span::styled(
+                format!("  {}", pad(&fit_tail(&row.detail, place_w), place_w)),
+                theme.faint(),
+            ));
+        }
+        if status_w > 0 {
+            spans.push(Span::styled(format!("  {origin}"), theme.faint()));
+        }
+        let mut card = vec![Line::from(spans)];
+        card.extend(chain);
+        return card;
+    }
+
+    let name_w = room.saturating_sub(origin.width() + 2);
     let top = Line::from(vec![
-        Span::raw(indent.clone()),
+        Span::raw(indent),
         Span::styled(format!("{mark} "), mark_style),
         Span::styled(pad(&fit(&row.text, name_w), name_w), theme.strong()),
-        Span::styled(format!("  {origin}"), mark_style),
+        Span::styled(format!("  {origin}"), theme.faint()),
     ]);
-    let room = width.saturating_sub(lead);
     let place = Line::from(vec![
         Span::raw(" ".repeat(lead)),
         Span::styled(fit_tail(&row.detail, room), theme.faint()),
     ]);
     let mut card = vec![top, place];
-    if !row.extra.is_empty() {
-        card.push(Line::from(vec![
-            Span::raw(" ".repeat(lead)),
-            Span::styled(fit(&format!("→ {}", row.extra), room), theme.dim()),
-        ]));
-    }
+    card.extend(chain);
     card
 }
 

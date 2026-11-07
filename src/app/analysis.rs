@@ -100,6 +100,12 @@ pub struct Analysis {
 }
 
 impl Analysis {
+    /// Whether `path` is a test file by the configured patterns.
+    #[must_use]
+    pub fn is_test_file(&self, path: &crate::domain::path::RepoPath) -> bool {
+        is_test_path(&self.config, path)
+    }
+
     /// The file entry containing `unit`.
     pub fn file_of(&self, unit: &UnitId) -> Option<&FileEntry> {
         self.units.get(unit).map(|u| &self.files[u.file_index])
