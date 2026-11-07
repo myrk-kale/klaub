@@ -457,7 +457,6 @@ impl Theme {
         match fill {
             Chip::Good => self.solid(|p| p.green),
             Chip::Warn => self.solid(|p| p.yellow),
-            Chip::Bad => self.solid(|p| p.red),
             Chip::Quiet => {
                 let p = self.pal();
                 Style::default()
@@ -611,8 +610,6 @@ pub(crate) enum Chip {
     Good,
     /// A warning.
     Warn,
-    /// A failure.
-    Bad,
     /// No emphasis.
     Quiet,
 }
@@ -689,7 +686,6 @@ mod tests {
             theme.mark(LineMark::Added),
             theme.mark_bg(LineMark::Added),
             theme.syntax(HighlightClass::Keyword),
-            theme.chip(Chip::Bad),
         ] {
             assert_eq!((style.fg, style.bg), (None, None), "{style:?}");
         }

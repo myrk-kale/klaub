@@ -9,9 +9,7 @@
 //! [`clean`] first, so a hostile sequence in a symbol name cannot reach the terminal.
 
 use crate::app::{ContractDelta, FileContract};
-use crate::domain::finding::Priority;
 use crate::domain::i18n::{Locale, tui as t};
-use crate::domain::review::FeedbackRecord;
 use crate::domain::snapshot::Drift;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -21,9 +19,7 @@ use ratatui::widgets::{Clear, Paragraph, Wrap};
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::actions::ENTRIES;
-use crate::tui::app::{
-    App, Confirm, Editor, EditorPurpose, FinishStage, Mode, Overlay, StatusKind, delivery_options,
-};
+use crate::tui::app::{App, Confirm, Mode, Overlay, StatusKind};
 use crate::tui::keymap::Keymap;
 use crate::tui::labels;
 use crate::tui::theme::{Chip, Theme};
@@ -44,32 +40,21 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
     }
 
     let theme = app.theme;
-    app.tab_hits.clear();
     let drift = app.session.drift() == Drift::Changed;
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(u16::from(drift)),
             Constraint::Min(1),
             Constraint::Length(1),
         ])
         .split(area);
-    let (title, tabs, banner, outer, status) = (rows[0], rows[1], rows[2], rows[3], rows[4]);
-    // Breathing room: a row under the tabs, one above the status bar, two columns at each side.
+    let (title, banner, outer, status) = (rows[0], rows[1], rows[2], rows[3]);
+    // Breathing room: a row under the title, one above the status bar, two columns at each side.
     let body = content_area(outer);
 
     draw_title(frame, margin(title), app, theme);
-    app.tab_hits = draw_tabs(
-        frame,
-        margin(tabs),
-        app.mode,
-        app.list,
-        app.locale,
-        &app.keymap,
-        theme,
-    );
     if drift {
         draw_banner(frame, margin(banner), app.locale, theme);
     }
@@ -134,11 +119,10 @@ fn draw_title(frame: &mut Frame<'_>, area: Rect, app: &App, theme: Theme) {
     let id = short_id(snapshot.id.as_str());
     let coverage = app.session.coverage();
     let progress = format!("{}/{}", coverage.reviewed, coverage.total);
-    let state = labels::review_status(app.locale, app.session.review().status);
 
     let width = usize::from(area.width);
     let brand = " ◆ klaub ";
-    let right_text = t::title_progress(app.locale, &progress, state);
+    let right_text = t::title_reviewed(app.locale, &progress);
     let (filled, track) = if width >= 70 {
         gauge(coverage.reviewed, coverage.total, 8)
     } else {
@@ -167,93 +151,6 @@ fn short_id(id: &str) -> &str {
     let bare = id.strip_prefix("snap_").unwrap_or(id);
     let end = bare.char_indices().nth(8).map_or(bare.len(), |(i, _)| i);
     &bare[..end]
-}
-
-// ---- mode tabs --------------------------------------------------------------------------------------------------
-
-/// The id a mode's key is filed under in the key map.
-fn mode_key_id(mode: Mode) -> &'static str {
-    match mode {
-        Mode::Queue => "queue",
-        Mode::Structure => "structure",
-        Mode::Files => "files",
-        Mode::Code => "code",
-        Mode::Impact => "impact",
-        Mode::Comments => "comments",
-        Mode::Context => "context",
-        Mode::Tests => "tests",
-        Mode::Followup => "followup",
-        Mode::Coverage => "coverage",
-        Mode::Flow => "flow",
-    }
-}
-
-/// The modes that share the review workspace: a list on the left and the code on the right.
-fn in_workspace(mode: Mode) -> bool {
-    matches!(
-        mode,
-        Mode::Queue | Mode::Structure | Mode::Files | Mode::Code
-    )
-}
-
-/// Draws the row of mode tabs and returns where each one is, for the mouse. The four workspace
-/// modes are one tab, `Review`; the lists inside it are picked in the pane's own header.
-fn draw_tabs(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    current: Mode,
-    list: Mode,
-    locale: Locale,
-    keymap: &Keymap,
-    theme: Theme,
-) -> Vec<(Rect, Mode)> {
-    let width = usize::from(area.width);
-    let mut tabs: Vec<(bool, Mode, String, String)> = vec![(
-        in_workspace(current),
-        list,
-        format!(" {}-{} ", keymap.key_for("queue"), keymap.key_for("files")),
-        format!("{} ", t::tab_review(locale)),
-    )];
-    for mode in Mode::ALL.iter().filter(|m| !in_workspace(**m)) {
-        tabs.push((
-            *mode == current,
-            *mode,
-            format!(" {} ", keymap.key_for(mode_key_id(*mode))),
-            format!("{} ", mode.label(locale)),
-        ));
-    }
-    let full: usize = tabs.iter().map(|(_, _, n, m)| n.width() + m.width()).sum();
-
-    // A narrow terminal shows only the current mode rather than a row of clipped names.
-    if full > width {
-        let label = format!(" {} ", current.label(locale));
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                fit(&label, width),
-                theme.tab_active(),
-            ))),
-            area,
-        );
-        return Vec::new();
-    }
-
-    let mut hits = Vec::with_capacity(tabs.len());
-    let mut x = area.x;
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    for (active, mode, number, name) in tabs {
-        let cells = u16::try_from(number.width() + name.width()).unwrap_or(u16::MAX);
-        hits.push((Rect::new(x, area.y, cells, 1), mode));
-        x = x.saturating_add(cells);
-        if active {
-            spans.push(Span::styled(format!("{number}{name}"), theme.tab_active()));
-        } else {
-            // The number is quieter than the name, so the row reads as names first.
-            spans.push(Span::styled(number, theme.faint()));
-            spans.push(Span::styled(name, theme.tab_idle()));
-        }
-    }
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
-    hits
 }
 
 fn draw_banner(frame: &mut Frame<'_>, area: Rect, locale: Locale, theme: Theme) {
@@ -329,19 +226,19 @@ fn hints_for(l: Locale, mode: Mode, filtered: bool, keys: &Keymap) -> Vec<(Strin
     let k = |id: &str| keys.key_for(id);
     let hint = |key: &dyn ToString, what: &str| (key.to_string(), what.to_owned());
     let moves = format!("{}/{}", k("down"), k("up"));
+    let help_or_filters = if filtered {
+        hint(&k("clear_filters"), t::hint_clear_filters(l))
+    } else {
+        hint(&k("help"), t::hint_help(l))
+    };
     match mode {
         Mode::Queue => vec![
             hint(&moves, t::hint_move(l)),
             hint(&"Enter".to_owned(), t::hint_open(l)),
-            hint(&k("comment"), t::hint_comment(l)),
             hint(&k("toggle_reviewed"), t::hint_reviewed(l)),
             hint(&k("explain"), t::hint_why(l)),
             hint(&k("search"), t::hint_search(l)),
-            if filtered {
-                hint(&k("clear_filters"), t::hint_clear_filters(l))
-            } else {
-                hint(&k("help"), t::hint_help(l))
-            },
+            help_or_filters,
             hint(&"q q".to_owned(), t::hint_quit(l)),
         ],
         Mode::Structure => vec![
@@ -351,76 +248,30 @@ fn hints_for(l: Locale, mode: Mode, filtered: bool, keys: &Keymap) -> Vec<(Strin
                 &format!("{}/{}", k("deeper_tree"), k("shallower_tree")),
                 t::hint_depth(l),
             ),
-            hint(&k("comment"), t::hint_comment(l)),
             hint(&k("toggle_reviewed"), t::hint_reviewed(l)),
-            hint(&k("help"), t::hint_help(l)),
+            help_or_filters,
         ],
         Mode::Files => vec![
             hint(&moves, t::hint_move(l)),
             hint(&"Enter".to_owned(), t::hint_open(l)),
-            hint(&k("comment"), t::hint_comment(l)),
             hint(&k("toggle_reviewed"), t::hint_reviewed(l)),
             hint(&k("search"), t::hint_search(l)),
-            hint(&k("help"), t::hint_help(l)),
+            help_or_filters,
         ],
         Mode::Code => vec![
             hint(&moves, t::hint_move(l)),
             hint(&k("inspect_contract"), t::hint_contract(l)),
+            hint(&k("toggle_inspector"), t::hint_panel(l)),
             hint(&k("open_file"), t::hint_file(l)),
             hint(&k("toggle_version"), t::hint_old_new(l)),
             hint(
                 &format!("{} {}", k("previous_change"), k("next_change")),
                 t::hint_change(l),
             ),
-            hint(&k("comment"), t::hint_comment(l)),
-            hint(&k("select_lines"), t::hint_select(l)),
             hint(
                 &format!("{} {}", k("history_back"), k("history_forward")),
                 t::hint_back_forward(l),
             ),
-        ],
-        Mode::Impact => vec![
-            hint(&moves, t::hint_move(l)),
-            hint(&"Enter".to_owned(), t::hint_open_symbol(l)),
-            hint(&k("impact"), t::hint_back_to_queue(l)),
-            hint(&k("help"), t::hint_help(l)),
-        ],
-        Mode::Comments => vec![
-            hint(&moves, t::hint_move(l)),
-            hint(&"Enter".to_owned(), t::hint_open_code(l)),
-            hint(&k("edit_comment"), t::hint_edit(l)),
-            hint(&k("delete_comment"), t::hint_delete_draft(l)),
-            hint(&k("help"), t::hint_help(l)),
-        ],
-        Mode::Context => vec![
-            hint(&moves, t::hint_scroll(l)),
-            hint(&k("edit_intent"), t::hint_set_intent(l)),
-            hint(&k("add_criterion"), t::hint_add_criterion(l)),
-            hint(&k("help"), t::hint_help(l)),
-        ],
-        Mode::Tests => vec![
-            hint(&moves, t::hint_move(l)),
-            hint(&k("run_tests"), t::hint_run_tests(l)),
-            hint(&k("reload_reports"), t::hint_reload_reports(l)),
-            hint(&k("help"), t::hint_help(l)),
-        ],
-        Mode::Followup => vec![
-            hint(&moves, t::hint_move(l)),
-            hint(&k("decide_resolved"), t::hint_resolved(l)),
-            hint(&k("decide_partial"), t::hint_partial(l)),
-            hint(&k("decide_unresolved"), t::hint_not_resolved(l)),
-            hint(&k("decide_regression"), t::hint_regression(l)),
-            hint(&k("help"), t::hint_help(l)),
-        ],
-        Mode::Coverage => vec![
-            hint(&moves, t::hint_move(l)),
-            hint(&"Enter".to_owned(), t::hint_open_pending(l)),
-            hint(&k("help"), t::hint_help(l)),
-        ],
-        Mode::Flow => vec![
-            hint(&moves, t::hint_scroll(l)),
-            hint(&k("request_flow"), t::hint_ask_diagram(l)),
-            hint(&k("reload_flow"), t::hint_reload(l)),
             hint(&k("help"), t::hint_help(l)),
         ],
     }
@@ -435,14 +286,12 @@ fn draw_overlay(frame: &mut Frame<'_>, body: Rect, app: &App, overlay: &Overlay,
             draw_palette(frame, body, app, input, *selected, theme);
         }
         Overlay::Search { input } => draw_search(frame, body, input, app.locale, theme),
-        Overlay::Editor(editor) => draw_editor(frame, body, editor, app.locale, theme),
         Overlay::Confirm(confirm) => draw_confirm(frame, body, confirm, app.locale, theme),
         Overlay::Notice { title, text } => {
             draw_notice(frame, body, title, text, app.locale, theme);
         }
         Overlay::Explain(unit) => draw_explain(frame, body, app, unit, theme),
         Overlay::Contract(unit) => draw_contract(frame, body, app, unit, theme),
-        Overlay::Finish(stage) => draw_finish(frame, body, stage, app.locale, theme),
     }
 }
 
@@ -473,27 +322,6 @@ fn hint_line(parts: &[(&str, &str)], theme: Theme) -> Line<'static> {
         spans.push(Span::styled((*what).to_owned(), theme.dim()));
     }
     Line::from(spans)
-}
-
-/// A row of a chooser: the chosen one is filled across the whole row.
-fn choice_row(text: &str, chosen: bool, width: usize, theme: Theme) -> Line<'static> {
-    if chosen {
-        let bar = if theme.is_high_contrast() {
-            "▶"
-        } else {
-            "▌"
-        };
-        fill_line(
-            Line::from(vec![
-                Span::styled(bar, theme.accent()),
-                Span::raw(format!(" {text}")),
-            ])
-            .style(theme.selected()),
-            width,
-        )
-    } else {
-        Line::from(Span::raw(format!("  {text}")))
-    }
 }
 
 fn draw_help(frame: &mut Frame<'_>, body: Rect, app: &App, theme: Theme) {
@@ -613,92 +441,6 @@ fn draw_search(frame: &mut Frame<'_>, body: Rect, input: &str, l: Locale, theme:
     ];
     frame.render_widget(Clear, area);
     frame.render_widget(dialog(t::search_title(l), lines, theme), area);
-}
-
-fn draw_editor(frame: &mut Frame<'_>, body: Rect, editor: &Editor, l: Locale, theme: Theme) {
-    let height = if editor.multiline { 12 } else { 7 };
-    let area = panel(
-        body,
-        body.width.saturating_sub(6).min(76),
-        height.min(body.height),
-    );
-    let inner = text_width(area);
-    let mut lines: Vec<Line<'static>> = Vec::new();
-
-    if shows_severity(&editor.purpose) {
-        lines.push(severity_line(editor.severity, l, theme));
-        lines.push(Line::from(""));
-    }
-    let typed = format!("{}▏", clean_editor(&editor.text));
-    for row in wrap(&typed, inner.max(1)) {
-        lines.push(Line::from(Span::raw(row)));
-    }
-    if editor.text.is_empty() {
-        lines.push(Line::from(Span::styled(t::editor_empty(l), theme.faint())));
-    }
-    if let Some(error) = &editor.error {
-        lines.push(Line::from(Span::styled(
-            fit(&clean(error), inner),
-            theme.error(),
-        )));
-    }
-    lines.push(Line::from(""));
-    lines.push(if editor.multiline {
-        hint_line(
-            &[
-                ("Enter", t::hint_saves(l)),
-                ("Ctrl-J", t::hint_new_line(l)),
-                ("Tab", t::hint_severity(l)),
-                ("Esc", t::hint_cancels(l)),
-            ],
-            theme,
-        )
-    } else {
-        hint_line(
-            &[("Enter", t::hint_saves(l)), ("Esc", t::hint_cancels(l))],
-            theme,
-        )
-    });
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(dialog(&clean(&editor.title), lines, theme), area);
-}
-
-/// Editor text may be several lines, and every one of them is untrusted.
-fn clean_editor(text: &str) -> String {
-    text.split('\n').map(clean).collect::<Vec<_>>().join("\n")
-}
-
-fn shows_severity(purpose: &EditorPurpose) -> bool {
-    matches!(
-        purpose,
-        EditorPurpose::NewComment { .. } | EditorPurpose::EditComment(_)
-    )
-}
-
-/// `P0 P1 P2 P3 none`, with the current choice filled. The word is always there, not just the colour.
-fn severity_line(current: Option<Priority>, l: Locale, theme: Theme) -> Line<'static> {
-    let choices = [
-        Some(Priority::P0),
-        Some(Priority::P1),
-        Some(Priority::P2),
-        Some(Priority::P3),
-        None,
-    ];
-    let mut spans = vec![Span::styled(t::severity_label(l), theme.dim())];
-    for choice in choices {
-        let label = choice.map_or(t::severity_none(l), Priority::label);
-        let chosen = choice == current;
-        let style = match (chosen, choice) {
-            (true, _) if theme.is_high_contrast() => theme.selected(),
-            (true, Some(p)) => theme.priority_chip(p),
-            (true, None) => theme.chip(Chip::Quiet),
-            (false, Some(p)) => theme.priority(p),
-            (false, None) => theme.dim(),
-        };
-        spans.push(Span::styled(format!(" {label} "), style));
-    }
-    Line::from(spans)
 }
 
 fn draw_confirm(frame: &mut Frame<'_>, body: Rect, confirm: &Confirm, l: Locale, theme: Theme) {
@@ -1054,99 +796,4 @@ fn push_group(
             lines.push(Line::from(Span::styled(format!("  {row}"), style)));
         }
     }
-}
-
-fn draw_finish(frame: &mut Frame<'_>, body: Rect, stage: &FinishStage, l: Locale, theme: Theme) {
-    match stage {
-        FinishStage::Confirm { warnings } => draw_finish_confirm(frame, body, warnings, l, theme),
-        FinishStage::Deliver { record, selected } => {
-            draw_deliver(frame, body, record, *selected, l, theme);
-        }
-    }
-}
-
-fn draw_finish_confirm(
-    frame: &mut Frame<'_>,
-    body: Rect,
-    warnings: &[String],
-    l: Locale,
-    theme: Theme,
-) {
-    let area = panel(
-        body,
-        body.width.saturating_sub(4).min(78),
-        body.height.saturating_sub(2),
-    );
-    let inner = usize::from(area.width).saturating_sub(4);
-    let mut lines = vec![Line::from(Span::raw(fit(t::finish_intro(l), inner)))];
-    if warnings.is_empty() {
-        lines.push(Line::from(Span::styled(
-            t::finish_no_warnings(l),
-            theme.good(),
-        )));
-    } else {
-        lines.push(Line::from(Span::styled(
-            t::finish_warnings(l),
-            theme.warn(),
-        )));
-        for warning in warnings {
-            for row in wrap(&format!("· {}", clean(warning)), inner.max(1)) {
-                lines.push(Line::from(Span::styled(row, theme.warn())));
-            }
-        }
-    }
-    lines.push(Line::from(""));
-    lines.push(hint_line(
-        &[
-            ("y / Enter", t::hint_finishes(l)),
-            ("n / Esc", t::hint_goes_back(l)),
-        ],
-        theme,
-    ));
-    frame.render_widget(Clear, area);
-    frame.render_widget(dialog(t::finish_title(l), lines, theme), area);
-}
-
-fn draw_deliver(
-    frame: &mut Frame<'_>,
-    body: Rect,
-    record: &FeedbackRecord,
-    selected: usize,
-    l: Locale,
-    theme: Theme,
-) {
-    let area = panel(
-        body,
-        body.width.saturating_sub(4).min(78),
-        body.height.saturating_sub(2),
-    );
-    let inner = usize::from(area.width).saturating_sub(4);
-    let mut lines = vec![
-        Line::from(Span::styled(
-            fit(
-                &t::deliver_saved_as(l, &clean(record.feedback_id.as_str())),
-                inner,
-            ),
-            theme.dim(),
-        )),
-        Line::from(""),
-    ];
-    for (index, option) in delivery_options(l).iter().enumerate() {
-        lines.push(choice_row(option, index == selected, inner, theme));
-    }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(t::deliver_pasted(l), theme.dim())));
-    for row in wrap(&clean(&record.prompt), inner.max(1)) {
-        lines.push(Line::from(Span::raw(row)));
-    }
-    lines.push(Line::from(""));
-    lines.push(hint_line(
-        &[
-            ("Enter", t::hint_chooses(l)),
-            ("Esc", t::hint_closes_finished(l)),
-        ],
-        theme,
-    ));
-    frame.render_widget(Clear, area);
-    frame.render_widget(dialog(t::deliver_title(l), lines, theme), area);
 }

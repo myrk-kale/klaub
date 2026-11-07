@@ -73,16 +73,15 @@ To work with the agent and the reviewer side by side, start the agent through Kl
 klaub wrap codex                 # or: klaub wrap -- claude --model <model>
 ```
 
-Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Ctrl+B` then `R` to open the reviewer, `Ctrl+B` then `A` to go back to the agent (lower case works too), and `Ctrl+B` then `d` to leave the session running in the background. `klaub session attach` brings it back. `Ctrl+B` then `Q` ends the session and the agent.
+Klaub runs the agent in a session of its own with a reviewer window next to it. Press `Shift+→` to go to the reviewer and `Shift+←` to go back to the agent. `Ctrl+B` then `d` leaves the session running in the background, and `klaub session attach` brings it back. `Ctrl+B` then `Q` ends the session and the agent.
 
-### Your first review in six keys
+### Your first review in five keys
 
-1. Open the queue with `klaub review`. The riskiest change is first.
+1. Open the queue with `klaub review`. The riskiest change is first, and the code of the selected one is beside it.
 2. Press `w` to see why it has that priority.
-3. Press `Enter` to read the whole function. Press `v` to flip between the old and the new version.
-4. Press `i` for the contract and `4` for the callers and the routes that reach the change.
-5. Press `c` to comment on a line, and `r` to mark a unit as reviewed.
-6. Press `F` to finish. Klaub saves the comments and prepares one short instruction for the agent.
+3. Press `Enter` to focus the code, `v` to flip between the old and the new version and `[` and `]` to jump between the changed regions.
+4. Press `i` for the contract and `K` for the symbol panel: its signature with the types, its documentation and its priority.
+5. Press `r` to mark a unit as reviewed, and `2` or `3` to read the same change as a tree or as a list of files.
 
 Press `?` at any time for the key list.
 
@@ -265,21 +264,14 @@ Every key below can be changed in `.klaub.toml` under `[keys]` ([configuration](
 
 | Key | Mode |
 | --- | --- |
-| `1` or `F2` | Review, with the queue on the left |
-| `2` or `F3` | Review, with the structure tree on the left: modules, files and symbols |
-| `3` | Review, with the flat list of changed files on the left |
-| `F4` | Review, with the code focused (`Enter` on a list gets there too) |
-| `4`, `g` or `F5` | Impact: callers, entrypoints, callees |
-| `5` or `F6` | Comments |
-| `6`, `b` or `F8` | Context: brief and acceptance criteria |
-| `7`, `t` or `F7` | Tests |
-| `8` or `F10` | Follow-up: decide on the previous round's comments |
-| `9` | Coverage |
-| `0`, `f` or `F9` | Flow |
+| `1` or `F2` | The queue on the left, ranked by risk |
+| `2` or `F3` | The structure tree on the left: modules, files and symbols |
+| `3` | The flat list of changed files on the left |
+| `F4` | The code focused (`Enter` on a list gets there too) |
 | `Tab`, `Shift+Tab` | Next and previous mode |
 | `Esc` | Go back (from the code, to the list you came from) |
 
-The review screen is a list on the left and the code of the selected unit on the right. The queue, the tree and the file list are three ways to fill the left side, and the code follows the cursor as you move in any of them. `K` shows or hides the panel beside the code: the symbol's signature with its types, the documentation comment it carries, the comments you wrote on it and the reasons for its priority.
+The screen is a list on the left and the code of the selected unit on the right. The queue, the tree and the file list are three ways to fill the left side, and the code follows the cursor as you move in any of them. `K` shows or hides the panel beside the code: the symbol's signature with its types, the documentation comment it carries and the reasons for its priority.
 
 ### Moving and reading
 
@@ -287,7 +279,7 @@ The review screen is a list on the left and the code of the selected unit on the
 | --- | --- |
 | `j`, `k` or arrows | Move |
 | `h`, `l` | Scroll sideways in code |
-| `Enter` | Open the selected unit, symbol or step |
+| `Enter` | Open the selected unit |
 | `v` | Toggle old and new |
 | `B` (hold) | Show the previous version while held, in supported terminals |
 | `[`, `]` | Previous and next changed region |
@@ -303,15 +295,11 @@ The review screen is a list on the left and the code of the selected unit on the
 
 | Key | Action |
 | --- | --- |
-| `c` | Comment on the selection (`V` selects several lines) |
 | `w` | Why this priority, and silence a false positive |
 | `r` | Mark reviewed or unmark |
 | `m`, `,` | Bookmark a unit, jump to the next bookmark |
 | `n`, `P` | Next and previous unreviewed unit |
 | `N` | Next unreviewed P0 or P1 unit |
-| `e`, `d` | In Comments: edit or delete a draft |
-| `y`, `p`, `u`, `X` | In Follow-up: resolved, partial, unresolved, regression |
-| `F` | Finish the review |
 | `R` | Take a new snapshot after the worktree changed |
 
 ### Filters and tools
@@ -326,10 +314,6 @@ The review screen is a list on the left and the code of the selected unit on the
 | `s` | Minimum reach: local, module or global |
 | `M` | Next module |
 | `x` | Clear filters |
-| `X` | Run the associated tests (asks first) |
-| `U` | Reload test reports |
-| `L` | Reload the flow diagram |
-| `p` | In Impact: pivot on a symbol. In Flow: ask the agent for a diagram |
 
 ### Around the agent
 
@@ -337,14 +321,15 @@ These work after `klaub wrap`. Press the prefix (`Ctrl+B` by default), release i
 
 | Key | Action |
 | --- | --- |
+| `Shift+→` | Open the reviewer, with no prefix |
+| `Shift+←` | Back to the agent, with no prefix |
 | `R` or `r` | Open the reviewer |
 | `A` or `a` | Back to the agent |
-| `I`, `C`, `T`, `B`, `L` | Open the reviewer on impact, comments, tests, brief or flow |
 | `d` | Detach and leave the session running (`klaub session attach` brings it back) |
 | `Q` | End the session and its agent, after a `y/n` confirmation |
 | `?` | Print these chords |
 
-An optional mouse mode (`[ui] mouse = true`) adds wheel scrolling and clicks on tabs, rows and code lines.
+An optional mouse mode (`[ui] mouse = true`) adds wheel scrolling and clicks on rows and code lines.
 
 ## Command reference
 

@@ -1,10 +1,10 @@
-//! Process-backed adapters: the test runner and the clipboard.
+//! Process-backed adapter: the test runner.
 //!
-//! Both spawn a program directly, never through a shell, so a test id or a copied comment cannot
-//! be interpreted as shell syntax. Output is capped and sanitised before it comes back, because it
+//! It spawns the program directly, never through a shell, so a test id cannot be interpreted as
+//! shell syntax. Output is capped and sanitised before it comes back, because it
 //! is later drawn on screen.
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::domain::error::{Error, Result};
-use crate::domain::ports::{CancelToken, Clipboard, TestRunOutcome, TestRunRequest, TestRunner};
+use crate::domain::ports::{CancelToken, TestRunOutcome, TestRunRequest, TestRunner};
 use crate::domain::text::sanitize_terminal_text;
 
 /// How much of a test run's output is kept. The tail is what the reader shows.
@@ -190,54 +190,6 @@ fn tail(text: &str) -> String {
         cut += 1;
     }
     text[cut..].to_owned()
-}
-
-/// Copies text with `pbcopy` on macOS and `wl-copy` or `xclip` elsewhere. A missing program is an
-/// error the reader reports, not a panic.
-#[derive(Debug, Default)]
-pub(crate) struct ClipboardCopy;
-
-impl Clipboard for ClipboardCopy {
-    fn copy(&self, text: &str) -> Result<()> {
-        let candidates: &[(&str, &[&str])] = if cfg!(target_os = "macos") {
-            &[("pbcopy", &[])]
-        } else {
-            &[("wl-copy", &[]), ("xclip", &["-selection", "clipboard"])]
-        };
-        let mut last = None;
-        for (program, args) in candidates {
-            match pipe_to(program, args, text) {
-                Ok(()) => return Ok(()),
-                Err(error) => last = Some(error),
-            }
-        }
-        Err(last
-            .unwrap_or_else(|| Error::invalid("clipboard", "no clipboard program is available")))
-    }
-}
-
-fn pipe_to(program: &str, args: &[&str], text: &str) -> Result<()> {
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| Error::io(program, error))?;
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(text.as_bytes())
-            .map_err(|error| Error::io(program, error))?;
-    }
-    let status = child.wait().map_err(|error| Error::io(program, error))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::invalid(
-            "clipboard",
-            format!("{program} exited with {status}"),
-        ))
-    }
 }
 
 #[cfg(test)]

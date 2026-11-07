@@ -33,7 +33,7 @@ use klaub::adapters::storage::{
 };
 use klaub::app::{OpenOptions, Ports, ReviewSession};
 use klaub::domain::config::Config;
-use klaub::domain::ports::{Clipboard, IdGenerator};
+use klaub::domain::ports::IdGenerator;
 use klaub::domain::snapshot::SnapshotRequest;
 use klaub::tui::{App, draw, handle_key};
 use ratatui::Terminal;
@@ -105,12 +105,7 @@ fn app() -> (TempRepo, App) {
         &OpenOptions::default(),
     )
     .unwrap();
-    let app = App::new(
-        session,
-        Arc::new(TreeSitterParser::new()),
-        None,
-        None::<Arc<dyn Clipboard>>,
-    );
+    let app = App::new(session, Arc::new(TreeSitterParser::new()));
     (repo, app)
 }
 

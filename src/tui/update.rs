@@ -2,24 +2,16 @@
 
 use std::time::{Duration, Instant};
 
-use crate::domain::finding::Priority;
 use crate::domain::i18n::{Locale, tui as t};
-use crate::domain::ports::{CancelToken, PrepareOutcome};
-use crate::domain::review::{CriterionStatus, Version};
+use crate::domain::review::Version;
 use crate::domain::snapshot::Drift;
-use crate::domain::text::{sanitize_single_line, sanitize_terminal_text};
+use crate::domain::text::sanitize_single_line;
 use ratatui::crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 
-use crate::tui::actions::{
-    self, Action, ENTRIES, ensure_code_visible, followup_decision, perform, prepare_confirm,
-};
-use crate::tui::app::{
-    App, Confirm, ConfirmAction, DELIVERY_COUNT, Editor, EditorPurpose, FinishStage, Mode, Overlay,
-    Peek, StatusKind, TreeKind,
-};
-use crate::tui::labels;
+use crate::tui::actions::{self, Action, ENTRIES, ensure_code_visible, perform};
+use crate::tui::app::{App, Confirm, ConfirmAction, Mode, Overlay, Peek, StatusKind, TreeKind};
 use crate::tui::viewport::Viewport;
 
 /// How often the worktree is probed for changes.
@@ -157,10 +149,6 @@ fn click(app: &mut App, x: u16, y: u16) {
         return;
     }
     app.quit_armed = false;
-    if let Some(&(_, mode)) = app.tab_hits.iter().find(|(area, _)| inside(*area, x, y)) {
-        perform(app, Action::Mode(mode));
-        return;
-    }
     if app.mode == Mode::Code {
         if inside(app.code.area, x, y)
             && let Some(len) = app.code.view.as_ref().map(|v| v.lines.len())
@@ -199,13 +187,7 @@ fn list_of(app: &App) -> Option<&Viewport> {
         Mode::Queue => &app.queue_view,
         Mode::Structure => &app.structure_view,
         Mode::Files => &app.files_view,
-        Mode::Impact => &app.impact_view,
-        Mode::Comments => &app.comments_view,
-        Mode::Context => &app.context_view,
-        Mode::Followup => &app.followup_view,
-        Mode::Coverage => &app.coverage_view,
-        Mode::Flow => &app.flow_view,
-        Mode::Code | Mode::Tests => return None,
+        Mode::Code => return None,
     })
 }
 
@@ -220,30 +202,17 @@ fn translated(app: &App, mut key: KeyEvent) -> KeyEvent {
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return key;
     }
-    let mode = match &app.overlay {
-        None => Some(app.mode),
-        Some(Overlay::Finish(FinishStage::Deliver { .. })) => None,
-        Some(_) => return key,
-    };
-    key.code = KeyCode::Char(app.keymap.translate(mode, c));
+    if app.overlay.is_some() {
+        return key;
+    }
+    key.code = KeyCode::Char(app.keymap.translate(Some(app.mode), c));
     key
 }
 
 /// Applies pasted text (terminal bracketed paste) to whichever field is open.
 pub(crate) fn handle_paste(app: &mut App, text: &str) {
-    match &mut app.overlay {
-        Some(Overlay::Editor(editor)) => {
-            let clean = if editor.multiline {
-                sanitize_terminal_text(text)
-            } else {
-                sanitize_single_line(text)
-            };
-            editor.text.push_str(&clean);
-        }
-        Some(Overlay::Search { input } | Overlay::Palette { input, .. }) => {
-            input.push_str(&sanitize_single_line(text));
-        }
-        _ => {}
+    if let Some(Overlay::Search { input } | Overlay::Palette { input, .. }) = &mut app.overlay {
+        input.push_str(&sanitize_single_line(text));
     }
 }
 
@@ -269,35 +238,6 @@ pub(crate) fn run_deferred(app: &mut App) {
         return;
     };
     match action {
-        ConfirmAction::RunTests(request) => {
-            match app.session.run_tests(&request, &CancelToken::default()) {
-                Ok(outcome) => {
-                    let l = app.locale;
-                    let what = if outcome.timed_out {
-                        t::tests_timed_out(l).to_owned()
-                    } else if outcome.cancelled {
-                        t::tests_cancelled(l).to_owned()
-                    } else {
-                        match outcome.exit_code {
-                            Some(0) => t::tests_passed_exit(l).to_owned(),
-                            Some(code) => t::tests_failed_exit(l, code),
-                            None => t::tests_no_exit_code(l).to_owned(),
-                        }
-                    };
-                    app.test_output = Some(sanitize_terminal_text(&outcome.output_tail));
-                    let kind = if outcome.exit_code == Some(0) {
-                        StatusKind::Info
-                    } else {
-                        StatusKind::Warn
-                    };
-                    app.say(
-                        kind,
-                        t::tests_finished(l, &what, outcome.duration.as_secs_f32()),
-                    );
-                }
-                Err(error) => app.say(StatusKind::Error, error.to_string()),
-            }
-        }
         ConfirmAction::Refresh => match app.session.refresh() {
             Ok(()) => {
                 after_refresh(app);
@@ -320,14 +260,13 @@ fn after_refresh(app: &mut App) {
         if app.mode == Mode::Code {
             app.mode = Mode::Queue;
         }
-    } else if app.mode == Mode::Code && app.code.detached.is_none() {
+    } else if app.mode == Mode::Code {
         app.rebuild_code();
     }
     let len = app.visible_queue().len();
     app.queue_view.clamp(len);
     let rows = app.tree_rows().len();
     app.structure_view.clamp(rows);
-    app.rebuild_impact();
 }
 
 // ---- global keys ---------------------------------------------------------------------------------
@@ -338,12 +277,6 @@ fn function_key(n: u8) -> Option<Action> {
         2 => Action::Mode(Mode::Queue),
         3 => Action::Mode(Mode::Structure),
         4 => Action::Mode(Mode::Code),
-        5 => Action::Mode(Mode::Impact),
-        6 => Action::Mode(Mode::Comments),
-        7 => Action::Mode(Mode::Tests),
-        8 => Action::Mode(Mode::Context),
-        9 => Action::Mode(Mode::Flow),
-        10 => Action::Mode(Mode::Followup),
         _ => return None,
     })
 }
@@ -392,9 +325,6 @@ fn global_key(app: &mut App, key: KeyEvent, quit_was_armed: bool) {
 fn go_back(app: &mut App) {
     if let Some(previous) = app.history.pop() {
         app.mode = previous;
-        if previous == Mode::Impact {
-            app.rebuild_impact();
-        }
     } else if app.filters.any() {
         perform(app, Action::ClearFilters);
     }
@@ -431,18 +361,7 @@ fn mode_key(app: &mut App, key: KeyEvent) -> bool {
         Mode::Structure => structure_key(app, key),
         Mode::Files => files_key(app, key),
         Mode::Code => code_key(app, key),
-        Mode::Impact => impact_key(app, key),
-        Mode::Comments => comments_key(app, key),
-        Mode::Context => context_key(app, key),
-        Mode::Tests => scroll_only(&mut app.tests_view, key),
-        Mode::Followup => followup_key(app, key),
-        Mode::Coverage => coverage_key(app, key),
-        Mode::Flow => flow_key(app, key),
     }
-}
-
-fn scroll_only(view: &mut Viewport, key: KeyEvent) -> bool {
-    navigate(view, key, usize::MAX / 2)
 }
 
 fn queue_key(app: &mut App, key: KeyEvent) -> bool {
@@ -539,7 +458,6 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
     let height = app.code.height.max(1);
     let page = height.saturating_sub(1).max(1);
     let max = len.saturating_sub(1);
-    let selecting = app.code.selection.is_some();
     match key.code {
         KeyCode::Down | KeyCode::Char('j') => app.code.cursor = (app.code.cursor + 1).min(max),
         KeyCode::Up | KeyCode::Char('k') => app.code.cursor = app.code.cursor.saturating_sub(1),
@@ -549,22 +467,8 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::End => app.code.cursor = max,
         KeyCode::Right | KeyCode::Char('l') => app.code.hscroll += 8,
         KeyCode::Left | KeyCode::Char('h') => app.code.hscroll = app.code.hscroll.saturating_sub(8),
-        KeyCode::Char('V') => {
-            app.code.selection = if selecting {
-                None
-            } else {
-                Some(app.code.cursor)
-            };
-            return true;
-        }
-        KeyCode::Esc if selecting => {
-            app.code.selection = None;
-            return true;
-        }
-        KeyCode::Enter => {
-            perform(app, Action::Mode(Mode::Impact));
-            return true;
-        }
+        // `Enter` does what it does in the lists: it stays here, the code is already open.
+        KeyCode::Enter => return true,
         KeyCode::Char('o') => {
             perform(app, Action::OpenWholeFile);
             return true;
@@ -581,319 +485,6 @@ fn code_key(app: &mut App, key: KeyEvent) -> bool {
     }
     ensure_code_visible(app);
     true
-}
-
-/// After a move in the impact view, lands on the nearest row that can be opened in the direction
-/// of travel, so the cursor never rests on a heading or a note. With nothing openable that way it
-/// stays where it was, and going up past the first row scrolls to the top so the summary shows.
-fn settle_on_target(app: &mut App, before: usize) {
-    let rows = &app.impact.rows;
-    let openable = |i: usize| rows.get(i).is_some_and(|r| r.target.is_some());
-    let at = app.impact_view.selected;
-    if openable(at) {
-        return;
-    }
-    let found = if at >= before {
-        (at..rows.len()).find(|&i| openable(i))
-    } else {
-        (0..=at).rev().find(|&i| openable(i))
-    };
-    match found {
-        Some(i) => app.impact_view.select(i, rows.len()),
-        None => {
-            if at < before {
-                app.impact_view.offset = 0;
-            }
-            app.impact_view.select(before, rows.len());
-        }
-    }
-}
-
-fn impact_key(app: &mut App, key: KeyEvent) -> bool {
-    let len = app.impact.rows.len();
-    let before = app.impact_view.selected;
-    if navigate(&mut app.impact_view, key, len) {
-        settle_on_target(app, before);
-        return true;
-    }
-    let target = app
-        .impact
-        .rows
-        .get(app.impact_view.selected)
-        .and_then(|r| r.target.clone());
-    match key.code {
-        KeyCode::Enter => {
-            if let Some(target) = target {
-                app.open_symbol(&target);
-            }
-            true
-        }
-        KeyCode::Char('p') => {
-            match target {
-                Some(target) => {
-                    app.impact.focus = Some(target);
-                    app.rebuild_impact();
-                    app.say(StatusKind::Info, t::impact_pivoted(app.locale));
-                }
-                None => app.say(StatusKind::Info, t::impact_pick_target(app.locale)),
-            }
-            true
-        }
-        KeyCode::Esc if app.impact.focus.is_some() => {
-            app.impact.focus = None;
-            app.rebuild_impact();
-            true
-        }
-        _ => false,
-    }
-}
-
-fn comments_key(app: &mut App, key: KeyEvent) -> bool {
-    let len = app.session.review().comments.len();
-    if navigate(&mut app.comments_view, key, len) {
-        return true;
-    }
-    let Some(comment) = app
-        .session
-        .review()
-        .comments
-        .get(app.comments_view.selected)
-        .cloned()
-    else {
-        return false;
-    };
-    match key.code {
-        KeyCode::Enter => {
-            let unit = comment
-                .anchor
-                .symbol_id
-                .clone()
-                .filter(|u| app.session.analysis().units.contains_key(u))
-                .or_else(|| {
-                    app.session
-                        .analysis()
-                        .queue
-                        .iter()
-                        .find(|i| i.unit.file == comment.anchor.file_path)
-                        .map(|i| i.unit.id.clone())
-                });
-            match unit {
-                Some(unit) => app.open_unit(&unit, Some(comment.anchor.version)),
-                None => app.say(StatusKind::Warn, t::comment_code_missing(app.locale)),
-            }
-            true
-        }
-        KeyCode::Char('e') => {
-            if comment.status == crate::domain::review::CommentStatus::Draft {
-                app.overlay = Some(Overlay::Editor(Editor {
-                    title: t::comment_edit_title(app.locale).to_owned(),
-                    purpose: EditorPurpose::EditComment(comment.comment_id.clone()),
-                    text: comment.text.clone(),
-                    severity: comment.severity,
-                    multiline: true,
-                    error: None,
-                }));
-            } else {
-                app.say(StatusKind::Info, t::comment_edit_only_drafts(app.locale));
-            }
-            true
-        }
-        KeyCode::Char('d') => {
-            if comment.status == crate::domain::review::CommentStatus::Draft {
-                app.overlay = Some(Overlay::Confirm(Confirm {
-                    title: t::comment_delete_title(app.locale).to_owned(),
-                    lines: vec![sanitize_single_line(&comment.text)],
-                    action: ConfirmAction::DeleteComment(comment.comment_id.clone()),
-                }));
-            } else {
-                app.say(StatusKind::Info, t::comment_delete_only_drafts(app.locale));
-            }
-            true
-        }
-        _ => false,
-    }
-}
-
-fn next_criterion_status(status: CriterionStatus) -> CriterionStatus {
-    match status {
-        CriterionStatus::NotChecked => CriterionStatus::Verified,
-        CriterionStatus::Verified => CriterionStatus::Pending,
-        CriterionStatus::Pending => CriterionStatus::NotApplicable,
-        CriterionStatus::NotApplicable => CriterionStatus::NotChecked,
-    }
-}
-
-fn context_key(app: &mut App, key: KeyEvent) -> bool {
-    // Row 0 is the intent summary; criteria follow.
-    let len = 1 + app.session.brief().acceptance_criteria.len();
-    if navigate(&mut app.context_view, key, len) {
-        return true;
-    }
-    let edit_intent = |app: &mut App| {
-        let text = app
-            .session
-            .brief()
-            .intent_summary
-            .clone()
-            .unwrap_or_default();
-        app.overlay = Some(Overlay::Editor(Editor {
-            title: t::intent_title(app.locale).to_owned(),
-            purpose: EditorPurpose::Intent,
-            text,
-            severity: None,
-            multiline: true,
-            error: None,
-        }));
-    };
-    match key.code {
-        KeyCode::Char('i') => {
-            edit_intent(app);
-            true
-        }
-        KeyCode::Char('a') => {
-            app.overlay = Some(Overlay::Editor(Editor {
-                title: t::criterion_title(app.locale).to_owned(),
-                purpose: EditorPurpose::Criterion,
-                text: String::new(),
-                severity: None,
-                multiline: false,
-                error: None,
-            }));
-            true
-        }
-        KeyCode::Enter | KeyCode::Char(' ') => {
-            let selected = app.context_view.selected;
-            if selected == 0 {
-                edit_intent(app);
-            } else if let Some(criterion) = app
-                .session
-                .brief()
-                .acceptance_criteria
-                .get(selected - 1)
-                .cloned()
-            {
-                let next = next_criterion_status(criterion.status);
-                if let Err(error) = app.session.set_criterion(&criterion.id, next, None) {
-                    app.say(StatusKind::Error, error.to_string());
-                }
-            }
-            true
-        }
-        _ => false,
-    }
-}
-
-fn followup_key(app: &mut App, key: KeyEvent) -> bool {
-    let comments: Vec<_> = app.followups().into_iter().cloned().collect();
-    if navigate(&mut app.followup_view, key, comments.len()) {
-        return true;
-    }
-    let Some(comment) = comments.get(app.followup_view.selected) else {
-        return false;
-    };
-    if let KeyCode::Char(c) = key.code
-        && let Some(status) = followup_decision(c)
-    {
-        app.overlay = Some(Overlay::Editor(Editor {
-            title: t::followup_decision_title(
-                app.locale,
-                labels::followup_status(app.locale, status),
-            ),
-            purpose: EditorPurpose::FollowupNote {
-                comment: comment.comment_id.clone(),
-                status,
-            },
-            text: String::new(),
-            severity: None,
-            multiline: false,
-            error: None,
-        }));
-        return true;
-    }
-    if is_enter(key) {
-        let unit = comment
-            .anchor
-            .symbol_id
-            .clone()
-            .filter(|u| app.session.analysis().units.contains_key(u));
-        match unit {
-            Some(unit) => app.open_unit(&unit, Some(Version::After)),
-            None => app.say(StatusKind::Warn, t::followup_code_missing(app.locale)),
-        }
-        return true;
-    }
-    false
-}
-
-fn coverage_key(app: &mut App, key: KeyEvent) -> bool {
-    let coverage = app.session.coverage();
-    let len = coverage.by_module.len();
-    if navigate(&mut app.coverage_view, key, len) {
-        return true;
-    }
-    if is_enter(key)
-        && let Some(module) = coverage.by_module.keys().nth(app.coverage_view.selected)
-    {
-        app.filters.module = Some(module.clone());
-        app.filters.unreviewed_only = true;
-        app.queue_view = Viewport::default();
-        app.go(Mode::Queue);
-        app.say(StatusKind::Info, t::coverage_showing_pending(app.locale));
-        return true;
-    }
-    false
-}
-
-fn flow_key(app: &mut App, key: KeyEvent) -> bool {
-    let rows = app.flow_rows();
-    if navigate(&mut app.flow_view, key, rows.len()) {
-        return true;
-    }
-    let selected = rows.get(app.flow_view.selected);
-    match key.code {
-        KeyCode::Char('p') => {
-            perform(app, Action::RequestFlow);
-            true
-        }
-        KeyCode::Char('u') => {
-            perform(app, Action::ReloadFlow);
-            true
-        }
-        // Folding hides the branches below a step; the step itself stays in the list.
-        KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') => {
-            if let Some(line) = selected.filter(|line| line.has_branches) {
-                let step = line.row.step;
-                let fold = match key.code {
-                    KeyCode::Left => true,
-                    KeyCode::Right => false,
-                    _ => !line.folded,
-                };
-                if fold {
-                    app.flow_folded.insert(step);
-                } else {
-                    app.flow_folded.remove(&step);
-                }
-                let len = app.flow_rows().len();
-                app.flow_view.clamp(len);
-            }
-            true
-        }
-        KeyCode::Enter => {
-            let step = selected.map(|line| line.row.step);
-            let target = step.and_then(|step| {
-                let resolved = app.session.flow().flow.as_ref()?.steps.get(step)?;
-                let file = resolved.file.clone()?;
-                let symbol = resolved.symbol.clone()?;
-                Some(crate::domain::graph::SymbolKey::new(file, symbol))
-            });
-            match target {
-                Some(key) => app.open_symbol(&key),
-                None => app.say(StatusKind::Info, t::flow_step_no_symbol(app.locale)),
-            }
-            true
-        }
-        _ => false,
-    }
 }
 
 // ---- overlays ----------------------------------------------------------------------------------------------
@@ -969,7 +560,6 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
             }
             _ => app.overlay = Some(Overlay::Search { input }),
         },
-        Overlay::Editor(editor) => editor_key(app, editor, key),
         Overlay::Confirm(confirm) => match key.code {
             KeyCode::Char('y' | 'Y') | KeyCode::Enter => confirmed(app, confirm.action),
             KeyCode::Esc | KeyCode::Char('n' | 'N') => {
@@ -977,7 +567,6 @@ fn overlay_key(app: &mut App, key: KeyEvent) {
             }
             _ => app.overlay = Some(Overlay::Confirm(confirm)),
         },
-        Overlay::Finish(stage) => finish_key(app, stage, key),
     }
 }
 
@@ -1013,89 +602,8 @@ fn explain_key(app: &mut App, unit: crate::domain::ids::UnitId, key: KeyEvent) {
     }));
 }
 
-fn editor_key(app: &mut App, mut editor: Editor, key: KeyEvent) {
-    let control = key.modifiers.contains(KeyModifiers::CONTROL);
-    match key.code {
-        KeyCode::Esc => return,
-        KeyCode::Enter => match save_editor(app, &editor) {
-            Ok(()) => return,
-            Err(message) => editor.error = Some(message),
-        },
-        KeyCode::Char('j') if control && editor.multiline => editor.text.push('\n'),
-        KeyCode::Tab => {
-            if matches!(
-                editor.purpose,
-                EditorPurpose::NewComment { .. } | EditorPurpose::EditComment(_)
-            ) {
-                editor.severity = match editor.severity {
-                    None => Some(Priority::P0),
-                    Some(Priority::P0) => Some(Priority::P1),
-                    Some(Priority::P1) => Some(Priority::P2),
-                    Some(Priority::P2) => Some(Priority::P3),
-                    Some(Priority::P3) => None,
-                };
-            }
-        }
-        KeyCode::Backspace => {
-            editor.text.pop();
-            editor.error = None;
-        }
-        KeyCode::Char(c) if !control && !c.is_control() => {
-            editor.text.push(c);
-            editor.error = None;
-        }
-        _ => {}
-    }
-    app.overlay = Some(Overlay::Editor(editor));
-}
-
-fn save_editor(app: &mut App, editor: &Editor) -> Result<(), String> {
-    let l = app.locale;
-    let text = editor.text.trim();
-    let outcome = match &editor.purpose {
-        EditorPurpose::NewComment {
-            unit,
-            version,
-            lines,
-        } => app
-            .session
-            .add_comment(unit, *version, *lines, text, editor.severity)
-            .map(|_| t::saved_comment(l).to_owned()),
-        EditorPurpose::EditComment(id) => app
-            .session
-            .edit_comment(id, text, editor.severity)
-            .map(|()| t::saved_comment_updated(l).to_owned()),
-        EditorPurpose::Intent => app
-            .session
-            .set_intent(text)
-            .map(|()| t::saved_intent(l).to_owned()),
-        EditorPurpose::Criterion => app
-            .session
-            .add_criterion(text)
-            .map(|_| t::saved_criterion(l).to_owned()),
-        EditorPurpose::FollowupNote { comment, status } => {
-            let note = (!text.is_empty()).then(|| text.to_owned());
-            app.session
-                .decide_followup(comment, *status, note)
-                .map(|()| t::recorded_decision(l, labels::followup_status(l, *status)))
-        }
-    };
-    match outcome {
-        Ok(message) => {
-            app.code.selection = None;
-            app.say(StatusKind::Info, message);
-            Ok(())
-        }
-        Err(error) => Err(error.to_string()),
-    }
-}
-
 fn confirmed(app: &mut App, action: ConfirmAction) {
     match action {
-        ConfirmAction::RunTests(_) => {
-            app.say(StatusKind::Info, t::tests_running(app.locale));
-            app.deferred = Some(action);
-        }
         ConfirmAction::Refresh => {
             app.say(StatusKind::Info, t::snapshot_taking(app.locale));
             app.deferred = Some(action);
@@ -1123,107 +631,6 @@ fn run_confirmed(app: &mut App, action: ConfirmAction) {
             }
             Err(error) => app.say(StatusKind::Error, error.to_string()),
         },
-        ConfirmAction::PrepareInAgent => {
-            let Some(channel) = app.agent.clone() else {
-                app.say(StatusKind::Warn, t::agent_none_feedback(app.locale));
-                return;
-            };
-            match app.session.prepare_in_agent(channel.as_ref()) {
-                Ok(PrepareOutcome::Prepared) => {
-                    app.say(StatusKind::Info, t::agent_prepared_feedback(app.locale));
-                }
-                Ok(PrepareOutcome::Unavailable(why)) => app.say(
-                    StatusKind::Warn,
-                    t::agent_could_not_prepare_feedback(app.locale, &sanitize_single_line(&why)),
-                ),
-                Err(error) => app.say(StatusKind::Error, error.to_string()),
-            }
-        }
-        ConfirmAction::PrepareFlowRequest => {
-            let Some(channel) = app.agent.clone() else {
-                app.say(StatusKind::Warn, t::agent_none_diagram(app.locale));
-                return;
-            };
-            match app.session.prepare_flow_request(channel.as_ref()) {
-                Ok(PrepareOutcome::Prepared) => {
-                    app.say(StatusKind::Info, t::agent_prepared_diagram(app.locale));
-                }
-                Ok(PrepareOutcome::Unavailable(why)) => app.say(
-                    StatusKind::Warn,
-                    t::agent_could_not_prepare(app.locale, &sanitize_single_line(&why)),
-                ),
-                Err(error) => app.say(StatusKind::Error, error.to_string()),
-            }
-        }
-        ConfirmAction::DeleteComment(id) => match app.session.delete_comment(&id) {
-            Ok(()) => {
-                let len = app.session.review().comments.len();
-                app.comments_view.clamp(len);
-                app.say(StatusKind::Info, t::comment_deleted(app.locale));
-            }
-            Err(error) => app.say(StatusKind::Error, error.to_string()),
-        },
-        ConfirmAction::RunTests(_) | ConfirmAction::Refresh => confirmed(app, action),
-    }
-}
-
-fn finish_key(app: &mut App, stage: FinishStage, key: KeyEvent) {
-    match stage {
-        FinishStage::Confirm { warnings } => match key.code {
-            KeyCode::Char('y' | 'Y') | KeyCode::Enter => match app.session.finish() {
-                Ok(record) => {
-                    app.overlay = Some(Overlay::Finish(FinishStage::Deliver {
-                        record,
-                        selected: 0,
-                    }));
-                }
-                Err(error) => app.say(StatusKind::Warn, error.to_string()),
-            },
-            KeyCode::Esc | KeyCode::Char('n' | 'N') => {}
-            _ => app.overlay = Some(Overlay::Finish(FinishStage::Confirm { warnings })),
-        },
-        FinishStage::Deliver {
-            record,
-            mut selected,
-        } => match key.code {
-            KeyCode::Down | KeyCode::Char('j') => {
-                selected = (selected + 1).min(DELIVERY_COUNT - 1);
-                app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected }));
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                selected = selected.saturating_sub(1);
-                app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected }));
-            }
-            KeyCode::Esc => {
-                app.say(StatusKind::Info, t::finished_delivery_again(app.locale));
-            }
-            KeyCode::Enter => deliver(app, &record, selected),
-            _ => app.overlay = Some(Overlay::Finish(FinishStage::Deliver { record, selected })),
-        },
-    }
-}
-
-fn deliver(app: &mut App, record: &crate::domain::review::FeedbackRecord, selected: usize) {
-    match selected {
-        0 => {
-            app.overlay = Some(Overlay::Confirm(prepare_confirm(
-                app,
-                t::feedback_request_title(app.locale),
-                &record.prompt,
-                ConfirmAction::PrepareInAgent,
-            )));
-        }
-        1 => perform(app, Action::CopyFeedback),
-        2 => match app.session.mark_shown() {
-            Ok(()) => {
-                let file = app.session.review_file();
-                app.say(
-                    StatusKind::Info,
-                    t::feedback_file(app.locale, &file, &sanitize_single_line(&record.prompt)),
-                );
-            }
-            Err(error) => app.say(StatusKind::Error, error.to_string()),
-        },
-        _ => app.say(StatusKind::Info, t::finished_saved(app.locale)),
+        ConfirmAction::Refresh => confirmed(app, action),
     }
 }

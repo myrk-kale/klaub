@@ -18,5 +18,5 @@ pub mod tmux;
 mod process;
 mod system;
 
-pub(crate) use process::{ClipboardCopy, ProcessTestRunner};
+pub(crate) use process::ProcessTestRunner;
 pub(crate) use system::{RandomIds, SystemClock};

@@ -222,16 +222,6 @@ pub(crate) fn dialog<'a>(title: &str, lines: Vec<Line<'a>>, theme: Theme) -> Par
     )
 }
 
-/// `area` shrunk by `columns` on the left and right.
-pub(crate) fn inset(area: Rect, columns: u16) -> Rect {
-    let columns = columns.min(area.width / 2);
-    Rect {
-        x: area.x + columns,
-        width: area.width - columns * 2,
-        ..area
-    }
-}
-
 /// A scrollbar on the border just right of `area`, drawn only when there is more than fits.
 pub(crate) fn scrollbar(
     frame: &mut Frame<'_>,
@@ -284,50 +274,6 @@ pub(crate) fn empty_state(frame: &mut Frame<'_>, area: Rect, text: &str, theme: 
         ..area
     };
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), place);
-}
-
-/// Draws the visible window of a list, highlighting the selected row, and records the height.
-pub(crate) fn draw_list(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    view: &mut Viewport,
-    rows: Vec<Line<'static>>,
-    theme: Theme,
-) {
-    view.height = usize::from(area.height);
-    view.area = area;
-    view.len = rows.len();
-    view.clamp(rows.len());
-    let window = view.window(rows.len());
-    let selected = view.selected;
-    let total = rows.len();
-    let lines: Vec<Line<'static>> = rows
-        .into_iter()
-        .enumerate()
-        .skip(window.start)
-        .take(window.len())
-        .map(|(i, line)| {
-            if i == selected {
-                let bar = if theme.is_high_contrast() {
-                    "▶"
-                } else {
-                    "▌"
-                };
-                let mut spans = vec![Span::styled(bar, theme.accent())];
-                spans.extend(line.spans);
-                fill_line(
-                    Line::from(spans).style(theme.selected()),
-                    usize::from(area.width),
-                )
-            } else {
-                let mut spans = vec![Span::raw(" ")];
-                spans.extend(line.spans);
-                Line::from(spans)
-            }
-        })
-        .collect();
-    frame.render_widget(Paragraph::new(lines), area);
-    scrollbar(frame, area, total, view.offset, theme);
 }
 
 /// Draws a list whose rows take `stride` lines each. A card shorter than the stride is padded with
