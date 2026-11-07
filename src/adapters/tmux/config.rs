@@ -25,9 +25,9 @@ pub struct SessionConfig<'a> {
 }
 
 /// The help shown by `Prefix ?`.
-pub const HELP_TEXT: &str = "klaub  Prefix+R review  Prefix+A agent  Prefix+I impact  Prefix+C comments  \
-Prefix+T tests  Prefix+B brief  Prefix+L flow  Prefix+d detach  Prefix+Q quit  \
-(Prefix is Ctrl+B unless configured; R and A also work in lower case)";
+pub const HELP_TEXT: &str = "klaub  Shift+Left agent  Shift+Right review (no prefix)  Prefix+R review  \
+Prefix+A agent  Prefix+I impact  Prefix+C comments  Prefix+T tests  Prefix+B brief  Prefix+L flow  \
+Prefix+d detach  Prefix+Q quit  (Prefix is Ctrl+B unless configured; R and A also work in lower case)";
 
 /// Checks a tmux key name such as `C-b`, `C-Space` or `M-a`.
 pub fn validate_prefix(prefix: &str) -> Result<()> {
@@ -97,7 +97,7 @@ pub fn configuration(spec: &SessionConfig<'_>) -> Result<Vec<Vec<String>>> {
             "set-option",
             "-g",
             "status-right",
-            " Prefix+R review  Prefix+A agent  Prefix+Q quit  Prefix+? help ",
+            " Shift+← agent  Shift+→ review  Prefix+Q quit  Prefix+? help ",
         ]),
         command(&["set-option", "-g", "status-right-length", "80"]),
         command(&[
@@ -161,6 +161,24 @@ pub fn configuration(spec: &SessionConfig<'_>) -> Result<Vec<Vec<String>>> {
             "run-shell",
             "-b",
             "#{@klaub-focus-agent}",
+        ]));
+    }
+    // Moving between the two windows is the thing done most, so it takes one key and no prefix. The
+    // agent window is the first and the reviewer the second, which is the way the arrows point.
+    // Neither the agent nor the reader uses these keys, and they reach tmux whole in every terminal
+    // that encodes Shift+arrow the usual way.
+    for (key, target) in [
+        ("S-Left", "#{@klaub-focus-agent}"),
+        ("S-Right", "#{@klaub-focus-review}"),
+    ] {
+        commands.push(command(&[
+            "bind-key",
+            "-T",
+            "root",
+            key,
+            "run-shell",
+            "-b",
+            target,
         ]));
     }
     // Ends the whole session (the agent included), which `Prefix+d` does not: that only detaches.
@@ -257,6 +275,16 @@ mod tests {
         assert!(
             flat.iter()
                 .any(|c| c == "bind-key -T prefix A run-shell -b #{@klaub-focus-agent}")
+        );
+        assert!(
+            flat.iter()
+                .any(|c| c == "bind-key -T root S-Left run-shell -b #{@klaub-focus-agent}"),
+            "Shift+Left reaches the agent without the prefix"
+        );
+        assert!(
+            flat.iter()
+                .any(|c| c == "bind-key -T root S-Right run-shell -b #{@klaub-focus-review}"),
+            "Shift+Right reaches the reviewer without the prefix"
         );
         assert!(flat.iter().any(|c| c == "set-option -g @klaub-focus-review /usr/bin/klaub session focus --id ses_abc123 review"));
         for key in ["r", "a"] {
